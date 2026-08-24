@@ -69,7 +69,7 @@ bash tools/build-package.sh
 
 The package is written to `artifacts/rf-5-0.1.0.rfplugin`. GitHub Actions tests
 x86-64 and ARM64 before publishing the portable package as a workflow artifact.
-The audition command writes fourteen unnormalized listening files and their metrics
+The audition command writes sixteen unnormalized listening files and their metrics
 to `artifacts/auditions`; see
 [`docs/AUDITION_RENDERER.md`](docs/AUDITION_RENDERER.md).
 

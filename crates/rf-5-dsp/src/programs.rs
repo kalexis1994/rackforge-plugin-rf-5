@@ -266,6 +266,21 @@ impl Program {
         values[Parameter::FilterEnvelopeAmount as usize] = 0.08;
         Self::normal(values)
     }
+
+    fn unison_priority() -> Self {
+        let mut values = BASELINE_LEAD;
+        values[Parameter::Unison as usize] = 1.0;
+        values[Parameter::Glide as usize] = 0.14;
+        values[Parameter::AmpAttack as usize] = 0.01;
+        values[Parameter::AmpDecay as usize] = 0.32;
+        values[Parameter::AmpSustain as usize] = 0.68;
+        values[Parameter::AmpRelease as usize] = 0.22;
+        values[Parameter::FilterAttack as usize] = 0.01;
+        values[Parameter::FilterDecay as usize] = 0.36;
+        values[Parameter::FilterSustain as usize] = 0.42;
+        values[Parameter::FilterRelease as usize] = 0.25;
+        Self::normal(values)
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -294,6 +309,7 @@ pub(crate) fn find(id: &str) -> Option<Program> {
         "audition-poly-mod-filter-envelope" => Program::poly_mod_filter_envelope(),
         "audition-wheel-noise-filter" => Program::wheel_noise_filter(),
         "audition-hard-sync" => Program::hard_sync(),
+        "audition-unison-priority" => Program::unison_priority(),
         _ => return None,
     })
 }
@@ -322,6 +338,7 @@ mod tests {
             "audition-poly-mod-filter-envelope",
             "audition-wheel-noise-filter",
             "audition-hard-sync",
+            "audition-unison-priority",
         ] {
             let program = find(id).expect("catalog program exists");
             assert!(rf_5_contract::Settings::from_array(program.values).is_some());

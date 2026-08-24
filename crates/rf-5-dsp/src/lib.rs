@@ -1,5 +1,6 @@
 #![no_std]
 
+mod allocation;
 mod control;
 mod cv;
 mod lfo;
@@ -7,6 +8,7 @@ mod noise;
 mod output;
 mod programs;
 
+use allocation::PolyAllocator;
 use lfo::{Lfo, LfoWaveSelection};
 use noise::PinkNoise;
 use rf_5_contract::{PARAMETER_COUNT, Parameter, Settings, hardware::quantize_analog_pot};
@@ -70,8 +72,11 @@ impl HeldNoteStack {
         true
     }
 
-    fn latest(self) -> Option<HeldNote> {
-        self.len.checked_sub(1).map(|index| self.entries[index])
+    fn lowest(self) -> Option<HeldNote> {
+        self.entries[..self.len]
+            .iter()
+            .copied()
+            .min_by_key(|held| held.note)
     }
 
     fn contains(self, channel: u8, note: u8) -> bool {
@@ -89,7 +94,7 @@ pub struct Engine {
     settings: Settings,
     voices: [Voice; VOICE_COUNT],
     sample_rate: f32,
-    next_voice: usize,
+    poly_allocator: PolyAllocator,
     lfo: Lfo,
     noise: PinkNoise,
     mod_wheel: f32,
@@ -120,7 +125,7 @@ impl Default for Engine {
             settings,
             voices: [Voice::default(); VOICE_COUNT],
             sample_rate: 48_000.0,
-            next_voice: 0,
+            poly_allocator: PolyAllocator::default(),
             lfo: Lfo::default(),
             noise: PinkNoise::default(),
             mod_wheel: 0.0,
@@ -163,7 +168,7 @@ impl Engine {
 
     pub fn reset_voices(&mut self) {
         self.voices = [Voice::default(); VOICE_COUNT];
-        self.next_voice = 0;
+        self.poly_allocator.reset();
     }
 
     /// Re-runs the ten-channel oscillator calibration and captures the present
@@ -205,20 +210,23 @@ impl Engine {
             self.note_off(channel, note);
             return;
         }
+        let had_held_keys = self.held_notes.len != 0;
         self.held_notes.push(channel, note, velocity);
         if self.unison_enabled() {
-            self.start_unison(channel, note, velocity);
+            let lowest = self
+                .held_notes
+                .lowest()
+                .expect("the incoming note is now held");
+            if had_held_keys {
+                if self.glide_target_note as u8 != lowest.note {
+                    self.retune_unison(lowest.channel, lowest.note);
+                }
+            } else {
+                self.start_unison(lowest.channel, lowest.note, lowest.velocity);
+            }
             return;
         }
-        let voice_index = self
-            .voices
-            .iter()
-            .position(|voice| !voice.is_active())
-            .unwrap_or_else(|| {
-                let index = self.next_voice;
-                self.next_voice = (self.next_voice + 1) % VOICE_COUNT;
-                index
-            });
+        let voice_index = self.poly_allocator.assign(channel, note);
         self.voices[voice_index].start(channel, note, velocity, voice_index);
         self.refresh_voice_cv(voice_index);
     }
@@ -234,8 +242,8 @@ impl Engine {
             if self.glide_target_note as u8 != note {
                 return;
             }
-            if let Some(latest) = self.held_notes.latest() {
-                self.retune_unison(latest.channel, latest.note);
+            if let Some(lowest) = self.held_notes.lowest() {
+                self.retune_unison(lowest.channel, lowest.note);
             } else {
                 self.release_all_voices();
             }
@@ -264,9 +272,9 @@ impl Engine {
 
     fn release_sustained_notes(&mut self) {
         if self.unison_enabled() {
-            if let Some(latest) = self.held_notes.latest() {
-                if self.glide_target_note as u8 != latest.note {
-                    self.retune_unison(latest.channel, latest.note);
+            if let Some(lowest) = self.held_notes.lowest() {
+                if self.glide_target_note as u8 != lowest.note {
+                    self.retune_unison(lowest.channel, lowest.note);
                 }
             } else {
                 self.release_all_voices();
@@ -500,11 +508,11 @@ impl Engine {
 
     fn rebuild_allocation_for_mode(&mut self) {
         self.voices = [Voice::default(); VOICE_COUNT];
-        self.next_voice = 0;
+        self.poly_allocator.reset();
         self.glide_initialized = false;
         if self.unison_enabled() {
-            if let Some(latest) = self.held_notes.latest() {
-                self.start_unison(latest.channel, latest.note, latest.velocity);
+            if let Some(lowest) = self.held_notes.lowest() {
+                self.start_unison(lowest.channel, lowest.note, lowest.velocity);
             }
             return;
         }
@@ -516,12 +524,7 @@ impl Engine {
     }
 
     fn note_on_without_tracking(&mut self, channel: u8, note: u8, velocity: u8) {
-        let voice_index = self
-            .voices
-            .iter()
-            .position(|voice| !voice.is_active())
-            .unwrap_or(self.next_voice);
-        self.next_voice = (voice_index + 1) % VOICE_COUNT;
+        let voice_index = self.poly_allocator.assign(channel, note);
         self.voices[voice_index].start(channel, note, velocity, voice_index);
         self.refresh_voice_cv(voice_index);
     }
@@ -661,18 +664,45 @@ mod tests {
     }
 
     #[test]
-    fn unison_assigns_all_five_voices_and_falls_back_to_last_held_note() {
+    fn unison_uses_low_note_priority_and_releases_after_the_last_key() {
         let mut engine = Engine::default();
         assert!(engine.set_parameter(Parameter::Unison as u32, 1.0));
-        engine.note_on(0, 60, 100);
-        assert!(engine.voices.iter().all(|voice| voice.matches(0, 60)));
-
         engine.note_on(0, 67, 100);
         assert!(engine.voices.iter().all(|voice| voice.matches(0, 67)));
-        engine.note_off(0, 67);
+
+        engine.note_on(0, 60, 100);
         assert!(engine.voices.iter().all(|voice| voice.matches(0, 60)));
+        engine.note_on(0, 72, 100);
+        assert!(engine.voices.iter().all(|voice| voice.matches(0, 60)));
+
         engine.note_off(0, 60);
+        assert!(engine.voices.iter().all(|voice| voice.matches(0, 67)));
+        engine.note_off(0, 67);
+        assert!(engine.voices.iter().all(|voice| voice.matches(0, 72)));
+        engine.note_off(0, 72);
         assert!(engine.voices.iter().all(|voice| voice.is_active()));
+    }
+
+    #[test]
+    fn unison_legato_note_on_is_a_retune_without_envelope_retrigger() {
+        let mut routed = Engine::default();
+        let mut explicit = Engine::default();
+        for engine in [&mut routed, &mut explicit] {
+            assert!(engine.prepare(48_000.0));
+            assert!(engine.set_parameter(Parameter::Unison as u32, 1.0));
+            engine.note_on(0, 67, 100);
+            for _ in 0..4_096 {
+                let _ = engine.next_sample();
+            }
+        }
+
+        routed.note_on(0, 60, 100);
+        explicit.held_notes.push(0, 60, 100);
+        explicit.retune_unison(0, 60);
+
+        for _ in 0..2_048 {
+            assert_eq!(routed.next_sample(), explicit.next_sample());
+        }
     }
 
     #[test]
@@ -681,11 +711,11 @@ mod tests {
         assert!(engine.prepare(48_000.0));
         assert!(engine.set_parameter(Parameter::Unison as u32, 1.0));
         assert!(engine.set_parameter(Parameter::Glide as u32, 1.0));
-        engine.note_on(0, 48, 100);
         engine.note_on(0, 60, 100);
+        engine.note_on(0, 48, 100);
         let target_settings = engine.settings;
         let offset = engine.advance_glide(target_settings);
-        assert!(offset < -11.9);
+        assert!(offset > 11.9);
 
         assert!(engine.set_parameter(Parameter::Unison as u32, 0.0));
         let target_settings = engine.settings;
@@ -713,19 +743,23 @@ mod tests {
     }
 
     #[test]
-    fn a_sixth_note_steals_without_exceeding_five_voices() {
+    fn engine_uses_the_documented_polyphonic_assignment_queue() {
         let mut engine = Engine::default();
-        for note in 60..66 {
+        for note in 60..65 {
             engine.note_on(0, note, 100);
         }
-        assert_eq!(
-            engine
-                .voices
-                .iter()
-                .filter(|voice| voice.is_active())
-                .count(),
-            5
-        );
+        for (voice, note) in engine.voices.iter().zip(60..65) {
+            assert!(voice.matches(0, note));
+        }
+
+        engine.note_on(0, 65, 100);
+        assert!(engine.voices[0].matches(0, 65));
+        assert!(engine.held_notes.contains(0, 60));
+
+        engine.note_on(0, 62, 100);
+        assert!(engine.voices[2].matches(0, 62));
+        engine.note_on(0, 66, 100);
+        assert!(engine.voices[1].matches(0, 66));
     }
 
     #[test]

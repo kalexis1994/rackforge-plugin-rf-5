@@ -324,7 +324,66 @@ fn scenes() -> Vec<Scene> {
                 (4.20, 60),
             ]),
         },
+        Scene {
+            id: "15_voice_assignment",
+            program: "baseline-warm",
+            description: "First-five assignment, earliest-used stealing and same-voice note repetition",
+            events: voice_assignment_sequence(),
+        },
+        Scene {
+            id: "16_unison_low_note_legato",
+            program: "audition-unison-priority",
+            description: "Five-voice low-note-priority Unison with legato retuning and no envelope retrigger",
+            events: unison_priority_sequence(),
+        },
     ]
+}
+
+fn voice_assignment_sequence() -> Vec<MidiAction> {
+    let mut events = Vec::new();
+    for (start, note) in [
+        (0.20, 48),
+        (0.55, 52),
+        (0.90, 55),
+        (1.25, 59),
+        (1.60, 62),
+        (1.95, 67),
+        (2.45, 52),
+    ] {
+        events.push(MidiAction {
+            frame: seconds_to_frame(start),
+            data: [0x90, note, 112],
+        });
+    }
+    for note in [48, 52, 55, 59, 62, 67] {
+        events.push(MidiAction {
+            frame: seconds_to_frame(3.45),
+            data: [0x80, note, 0],
+        });
+    }
+    events.extend(chord_sequence(&[(4.05, 5.20, &[48, 55, 60])]));
+    events.sort_by_key(|event| event.frame);
+    events
+}
+
+fn unison_priority_sequence() -> Vec<MidiAction> {
+    let actions = [
+        (0.20, [0x90, 60, 112]),
+        (0.90, [0x90, 67, 112]),
+        (1.55, [0x90, 55, 112]),
+        (2.25, [0x80, 55, 0]),
+        (2.95, [0x80, 67, 0]),
+        (3.55, [0x80, 60, 0]),
+        (4.15, [0x90, 48, 112]),
+        (5.20, [0x80, 48, 0]),
+    ];
+    actions
+        .into_iter()
+        .map(|(seconds, data)| MidiAction {
+            frame: seconds_to_frame(seconds),
+            data,
+        })
+        .collect()
 }
 
 fn chord_sequence(entries: &[(f32, f32, &[u8])]) -> Vec<MidiAction> {

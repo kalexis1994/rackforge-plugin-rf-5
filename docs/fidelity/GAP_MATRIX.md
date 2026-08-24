@@ -2,7 +2,7 @@
 
 | Block | Active implementation | Evidence state | Release status |
 | --- | --- | --- | --- |
-| Voice allocation | Deterministic five-voice round robin | Architecture inventory | Baseline |
+| Voice allocation | Physical voices 1-5 on the first five notes, then earliest-used stealing; repeated notes retain and refresh their assigned voice | Rev 3 technical-manual assignment algorithm accepted | Candidate |
 | VCO A/B | Independent, free-running, 4x-oversampled saw/pulse A and saw/triangle/pulse B with PolyBLEP edges; ten bounded output profiles and post-tune drift paths; separate audio/Poly Mod polarity | Rev 3 topology and resistor weighting plus CEM3340 voltage, symmetry and 50/200 ppm drift limits accepted; populated-unit waveforms and thermal time evolution unmeasured | Candidate |
 | Hard sync | Both capacitively coupled B-pulse edges drive the CEM3340 polarity-sensitive direction reversal at 4x; the B audio switches do not break sync | Rev 3 gate/coupling network and CEM3340 positive/negative behavior accepted; sub-sample transient bandwidth unmeasured | Candidate |
 | LFO | One common free-running saw/triangle/square source with additive switches, 50% square and SD334/CEM3340 waveform weighting | Rev 3 topology, board resistors, output spans and service behavior accepted; absolute frequency range unmeasured | Candidate |
@@ -13,8 +13,8 @@
 | Filter envelope | Five independent profiled true-RC CEM3310 candidates driving cutoff and inverted Poly Mod | Data-sheet shape, voltage/scale bounds, RC tracking and Rev 3 polarity accepted; populated capacitors and panel taper unmeasured | Candidate |
 | Amplifier envelope | Five independent profiled true-RC CEM3310 candidates driving voice level | Data-sheet shape, voltage/scale bounds and RC tracking accepted; populated capacitors, panel taper and VCA interaction unmeasured | Candidate |
 | VCA/output | Five service-equalized but strong-signal-profiled linearized CA3280 voice VCAs at 4x, equal 39k summer, profiled master CA3280 and smooth host boundary | SD430/SD431-SD435 topology, service trims and CA3280 transfer/output bounds accepted; normalized gain staging and THD unmeasured | Candidate |
-| Unison/glide | Five-voice last-note Unison with held-note fallback and Unison-only linear CV Glide | Rev 3 routing and service limits accepted; priority and panel taper unmeasured | Candidate |
+| Unison/glide | Five simultaneous gates, low-note priority, legato retuning without envelope retrigger and Unison-only linear CV Glide | Rev 3 routing, priority/retrigger behavior and service limits accepted; panel taper unmeasured | Candidate |
 | Control scanning/CV | Unified 62-position CPU cycle with 24 pot reads, 38 independent S/H strobes, bounded droop and 6 ms idle/11 ms changed timing | Topology, pot order, resolution, loop timing and service droop limit accepted; exact ROM strobe order and component leakage population unmeasured | Candidate |
 | Automatic tune | Ten-VCO tune mux, 2.5 MHz period counter, 14-bit successive approximation, 200-byte C0-C9 bias table, runtime interpolation and non-serialized retune/reconditioning action | C3-C9 measurement and C0-C2 extrapolation accepted; exact ROM extrapolation arithmetic and measured component population unavailable | Candidate |
 | Performance controls | Note on/off, all notes off, CC1, CC64 sustain and 14-bit pitch bend; velocity correctly ignored | MIDI contract plus original service behaviour | Candidate |
-| Factory programs | Four original baseline programs plus thirteen no-UI audition conditions for Wheel/Poly Mod, bipolar Sync, filter, envelope, CA3280 drive and common-noise behaviour | Internal; render-tested without UI | Expand |
+| Factory programs | Four original baseline programs plus fourteen no-UI audition conditions and sixteen rendered scenes for modulation, voice assignment, Unison and analog-path evaluation | Internal; render-tested without UI | Expand |

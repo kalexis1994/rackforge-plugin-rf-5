@@ -16,9 +16,13 @@ polyphonic playing. The original keyboard has neither velocity nor aftertouch.
 - CC1 remains the live modulation-wheel amount and is not stored in programs.
 - MIDI CC64 defers key releases until the sustain pedal rises, in both
   polyphonic and Unison allocation.
-- Unison retriggers all five physical voices on the newest key.
-- A fixed-capacity last-note stack returns to the previous held key without
-  retriggering the envelopes when the newest key is released.
+- Polyphonic assignment gives the first five distinct notes to physical voices
+  1 through 5. Later notes steal the earliest-used voice, while a repeated
+  pitch reuses its current physical voice and refreshes its queue age.
+- Unison derives the pitch of all five physical voices from the lowest held
+  key. All five gates occur together.
+- The first held key triggers both envelopes; overlapping Unison notes only
+  retune the voices, preserving the envelope capacitor trajectories.
 - Glide is a linear control-voltage slew. Its maximum setting moves at twelve
   semitones per second, satisfying five octaves in five seconds, while the
   remaining panel range changes the slew rate exponentially.
@@ -28,18 +32,19 @@ polyphonic playing. The original keyboard has neither velocity nor aftertouch.
 
 ## Bounded uncertainty
 
-The feature routing and service limits are accepted. Exact pitch-wheel span,
-Glide potentiometer taper, OTA current law, keyboard priority and envelope
-retrigger behaviour need instrument measurements. The current candidate uses
-last-note priority because it is deterministic and playable, not because the
-manual fully specifies every overlapping-key sequence.
+The feature routing, polyphonic assignment, Unison priority/retrigger rules and
+service limits are accepted. Exact pitch-wheel span, Glide potentiometer taper
+and OTA current law still need instrument measurements.
 
 ## Acceptance tests
 
 - 14-bit pitch bend reaches exact negative, centre and positive endpoints;
 - maximum Glide traverses sixty semitones in five seconds;
 - Glide produces no offset when Unison is disabled;
-- Unison allocates all five voices and falls back to the previous held note;
+- the first five notes map to voices 1-5, the sixth steals voice 1, and a
+  repeated pitch keeps its physical voice;
+- Unison allocates all five voices, follows the lowest held key and preserves
+  envelope state across legato pitch changes;
 - different nonzero MIDI velocities render identical voice samples.
 - sustain holds released keys and releases them when the pedal rises.
 
