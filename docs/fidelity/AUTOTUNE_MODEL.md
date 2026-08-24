@@ -46,6 +46,12 @@ publish the operating ROM's exact arithmetic. RF-5 currently fits a quadratic
 to all seven measured octave biases and evaluates its lower three points. That
 choice is isolated in `extrapolate_lower_octaves`.
 
+Temperature motion after this measurement is deliberately outside the held
+DAC table, because it originates inside the compensated VCO at a given control
+voltage. Pressing the engine's momentary Tune action captures the current
+thermal state; its bounded evolution is described in
+[`VCO_DRIFT_MODEL.md`](VCO_DRIFT_MODEL.md).
+
 Likewise, the ten offset, scale and curvature profiles are deterministic
 component-tolerance fixtures. They make the calibration mechanism observable
 and testable; they are not measurements from a specific vintage instrument.

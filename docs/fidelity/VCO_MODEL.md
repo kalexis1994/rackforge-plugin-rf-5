@@ -57,8 +57,8 @@ items are:
 - pulse-width transfer limits and behavior at both extremes;
 - exact hard-sync edge, reset phase and transient shape;
 - final calibration of the frequency-knob and B fine-control laws;
-- measured component populations, temperature drift and exact low-octave tune
-  extrapolation arithmetic;
+- measured component populations, exact drift time evolution and exact
+  low-octave tune extrapolation arithmetic;
 - band-limiting of triangle corners and sync discontinuities under extreme
 modulation.
 
@@ -66,6 +66,8 @@ The active CV-to-frequency mapping and its explicit hypotheses are maintained
 separately in [`TUNING_MODEL.md`](TUNING_MODEL.md).
 The ten-channel calibration pipeline is documented in
 [`AUTOTUNE_MODEL.md`](AUTOTUNE_MODEL.md).
+The ten independent post-tune trajectories and their data-sheet magnitude
+limits are documented in [`VCO_DRIFT_MODEL.md`](VCO_DRIFT_MODEL.md).
 
 The candidate becomes accepted only after spectral sweeps at 44.1, 48, 96 and
 192 kHz pass the alias threshold and legally usable hardware measurements bound

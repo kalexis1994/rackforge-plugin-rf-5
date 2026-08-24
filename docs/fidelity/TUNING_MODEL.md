@@ -47,6 +47,6 @@ C0-C2 are extrapolated, as described by the technical manual.
 
 The detailed acceptance bounds and the remaining uncertainty around the exact
 low-octave extrapolation arithmetic are recorded in
-[`AUTOTUNE_MODEL.md`](AUTOTUNE_MODEL.md). `VintageSpread` remains an explicit
-RF-5 extension layered after calibration; it is not presented as failed or
-disabled automatic tuning.
+[`AUTOTUNE_MODEL.md`](AUTOTUNE_MODEL.md). Post-tune temperature motion and the
+new bounded meaning of `VintageSpread` are documented independently in
+[`VCO_DRIFT_MODEL.md`](VCO_DRIFT_MODEL.md).

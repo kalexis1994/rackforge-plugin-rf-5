@@ -6,6 +6,7 @@
 use rf_5_contract::{Parameter, Settings, hardware::quantize_analog_pot};
 
 pub mod autotune;
+pub mod drift;
 pub mod envelope;
 pub mod filter;
 pub mod tuning;
@@ -17,7 +18,6 @@ use filter::Cem3320Filter;
 pub use tuning::note_frequency;
 use vco::{Vco, WaveSelection};
 
-const VOICE_SPREAD: [f32; 5] = [-0.0030, -0.0014, 0.0, 0.0016, 0.0031];
 const INITIAL_PHASE_A: [f32; 5] = [0.07, 0.31, 0.58, 0.83, 0.19];
 const INITIAL_PHASE_B: [f32; 5] = [0.67, 0.11, 0.42, 0.74, 0.93];
 const OSCILLATOR_OVERSAMPLING: usize = 4;
@@ -75,7 +75,7 @@ impl Voice {
     pub fn start(&mut self, channel: u8, note: u8, _velocity: u8, voice_index: usize) {
         self.note = note;
         self.channel = channel;
-        self.voice_index = voice_index % VOICE_SPREAD.len();
+        self.voice_index = voice_index % INITIAL_PHASE_A.len();
         self.active = true;
         if !self.oscillators_initialized {
             let index = self.voice_index;
@@ -160,19 +160,17 @@ impl Voice {
         let level_a = quantize_analog_pot(settings.get(Parameter::OscillatorALevel));
         let level_b = quantize_analog_pot(settings.get(Parameter::OscillatorBLevel));
         let sync = parameter_enabled(settings, Parameter::OscillatorSync);
-        let spread = VOICE_SPREAD[self.voice_index] * settings.get(Parameter::VintageSpread);
         let frequency_a = tuning::oscillator_a_frequency(
             self.note,
             settings.get(Parameter::OscillatorAFrequency),
-        ) * (1.0 + spread);
+        );
         let frequency_b = tuning::oscillator_b_frequency(
             self.note,
             settings.get(Parameter::OscillatorBFrequency),
             settings.get(Parameter::OscillatorBDetune),
             parameter_enabled(settings, Parameter::OscillatorBKeyboard),
             parameter_enabled(settings, Parameter::OscillatorBLowFrequency),
-        ) * semitone_ratio(modulation.oscillator_b_semitones)
-            * (1.0 - spread);
+        ) * semitone_ratio(modulation.oscillator_b_semitones);
         let internal_rate = sample_rate.max(1.0) * OSCILLATOR_OVERSAMPLING as f32;
         let mut output = 0.0;
         let poly_filter_envelope = -filter_envelope

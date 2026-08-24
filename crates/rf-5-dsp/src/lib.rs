@@ -9,7 +9,12 @@ mod output;
 use lfo::{Lfo, LfoWaveSelection};
 use noise::PinkNoise;
 use rf_5_contract::{PARAMETER_COUNT, Parameter, Settings, hardware::quantize_analog_pot};
-use rf_5_voice::{Voice, VoiceModulation, autotune::AutoTune, tuning};
+use rf_5_voice::{
+    Voice, VoiceModulation,
+    autotune::{AutoTune, Oscillator},
+    drift::VcoDriftBank,
+    tuning,
+};
 
 pub const VOICE_COUNT: usize = 5;
 pub const STATE_BYTES: usize = PARAMETER_COUNT * 4;
@@ -95,6 +100,7 @@ pub struct Engine {
     glide_initialized: bool,
     controls: control::ControlScheduler,
     autotune: AutoTune,
+    vco_drift: VcoDriftBank,
     cv: cv::CvDistributor,
 }
 
@@ -124,6 +130,7 @@ impl Default for Engine {
             glide_initialized: false,
             controls: control::ControlScheduler::default(),
             autotune,
+            vco_drift: VcoDriftBank::default(),
             cv,
         }
     }
@@ -137,6 +144,8 @@ impl Engine {
         self.sample_rate = sample_rate as f32;
         self.controls.prepare(self.settings, self.sample_rate);
         self.autotune = AutoTune::calibrated();
+        self.vco_drift = VcoDriftBank::default();
+        self.vco_drift.retune();
         self.reset_voices();
         self.cv.prepare(self.cv_targets(self.settings));
         self.lfo.reset();
@@ -152,6 +161,15 @@ impl Engine {
     pub fn reset_voices(&mut self) {
         self.voices = [Voice::default(); VOICE_COUNT];
         self.next_voice = 0;
+    }
+
+    /// Re-runs the ten-channel oscillator calibration and captures the present
+    /// thermal condition. Like the hardware Tune control, this changes machine
+    /// state but never patch or serialized host state.
+    pub fn tune_oscillators(&mut self) {
+        self.autotune = AutoTune::calibrated();
+        self.vco_drift.retune();
+        self.refresh_all_voice_cvs();
     }
 
     pub fn settings(&self) -> Settings {
@@ -291,6 +309,8 @@ impl Engine {
             self.cv.strobe(destination, targets);
         }
         let applied_settings = self.cv.apply_common(control_tick.settings);
+        self.vco_drift.advance(self.sample_rate);
+        let drift_character = applied_settings.get(Parameter::VintageSpread);
         let glide_offset = self.advance_glide(applied_settings);
         let performance_pitch = self.pitch_wheel * PITCH_WHEEL_RANGE_SEMITONES + glide_offset;
         let lfo_sample = self.lfo.next(
@@ -352,10 +372,20 @@ impl Engine {
                 parameter_enabled(applied_settings, Parameter::OscillatorBLowFrequency),
             );
             let mut calibrated_modulation = modulation;
-            calibrated_modulation.oscillator_a_semitones +=
-                self.cv.oscillator_semitones(voice_index, false) - tuning_a;
-            calibrated_modulation.oscillator_b_semitones +=
-                self.cv.oscillator_semitones(voice_index, true) - tuning_b;
+            calibrated_modulation.oscillator_a_semitones += self
+                .cv
+                .oscillator_semitones(voice_index, false)
+                - tuning_a
+                + self
+                    .vco_drift
+                    .correction_semitones(voice_index, Oscillator::A, drift_character);
+            calibrated_modulation.oscillator_b_semitones += self
+                .cv
+                .oscillator_semitones(voice_index, true)
+                - tuning_b
+                + self
+                    .vco_drift
+                    .correction_semitones(voice_index, Oscillator::B, drift_character);
             let filter_keyboard = cv::filter_keyboard_octaves(
                 note,
                 parameter_enabled(applied_settings, Parameter::FilterKeyboard),
@@ -720,6 +750,33 @@ mod tests {
         assert!(engine.load_baseline_program("baseline-lead"));
         assert!(engine.load_state(&state));
         assert_eq!(engine.settings(), expected);
+    }
+
+    #[test]
+    fn oscillator_tune_reconditions_machine_state_without_changing_the_patch() {
+        let mut engine = Engine::default();
+        assert!(engine.prepare(48_000.0));
+        assert!(engine.load_baseline_program("baseline-pad"));
+        let expected_settings = engine.settings();
+        for _ in 0..480_000 {
+            let _ = engine.next_sample();
+        }
+        assert!(engine.vco_drift.correction_ppm(0, Oscillator::A, 1.0).abs() > 0.001);
+
+        engine.tune_oscillators();
+
+        assert_eq!(engine.settings(), expected_settings);
+        for voice in 0..VOICE_COUNT {
+            for oscillator in [Oscillator::A, Oscillator::B] {
+                assert!(
+                    engine
+                        .vco_drift
+                        .correction_ppm(voice, oscillator, 1.0)
+                        .abs()
+                        <= f32::EPSILON
+                );
+            }
+        }
     }
 
     #[test]

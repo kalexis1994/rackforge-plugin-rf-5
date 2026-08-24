@@ -48,6 +48,9 @@ Its control-voltage law and calibration hypotheses are isolated in
 [`fidelity/TUNING_MODEL.md`](fidelity/TUNING_MODEL.md).
 The ten-channel counter, DAC search and runtime bias tables are documented in
 [`fidelity/AUTOTUNE_MODEL.md`](fidelity/AUTOTUNE_MODEL.md).
+The independent post-tune motion of all ten VCOs, including its published
+magnitude bounds and hypothesized time evolution, is documented in
+[`fidelity/VCO_DRIFT_MODEL.md`](fidelity/VCO_DRIFT_MODEL.md).
 The unified CPU service cycle, destination map and bounded sample/hold leakage
 are documented in
 [`fidelity/SAMPLE_HOLD_MODEL.md`](fidelity/SAMPLE_HOLD_MODEL.md).
