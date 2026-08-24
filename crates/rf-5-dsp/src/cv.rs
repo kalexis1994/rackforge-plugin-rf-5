@@ -12,7 +12,7 @@ use rf_5_voice::{
     tuning,
 };
 
-const COMMON_CV_SPAN_VOLTS: f32 = 5.0;
+pub(crate) const COMMON_CV_SPAN_VOLTS: f32 = 5.0;
 const SEMITONES_PER_CONTROL_VOLT: f32 = 12.0;
 
 #[derive(Clone, Copy, Debug)]

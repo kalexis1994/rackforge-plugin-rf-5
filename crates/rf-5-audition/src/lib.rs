@@ -348,6 +348,12 @@ fn scenes() -> Vec<Scene> {
             description: "Fast common-LFO rate using the same hardware-derived exponential law",
             events: chord_sequence(&[(0.15, 5.35, &[57])]),
         },
+        Scene {
+            id: "19_unison_glide_circuit",
+            program: "audition-unison-glide",
+            description: "Panel-six Unison transitions through the Q309/CA3280/C376 Glide circuit",
+            events: unison_glide_sequence(),
+        },
     ]
 }
 
@@ -388,6 +394,24 @@ fn unison_priority_sequence() -> Vec<MidiAction> {
         (3.55, [0x80, 60, 0]),
         (4.15, [0x90, 48, 112]),
         (5.20, [0x80, 48, 0]),
+    ];
+    actions
+        .into_iter()
+        .map(|(seconds, data)| MidiAction {
+            frame: seconds_to_frame(seconds),
+            data,
+        })
+        .collect()
+}
+
+fn unison_glide_sequence() -> Vec<MidiAction> {
+    let actions = [
+        (0.20, [0x90, 36, 112]),
+        (1.10, [0x90, 60, 112]),
+        (2.10, [0x80, 36, 0]),
+        (3.10, [0x90, 48, 112]),
+        (4.10, [0x80, 48, 0]),
+        (5.15, [0x80, 60, 0]),
     ];
     actions
         .into_iter()

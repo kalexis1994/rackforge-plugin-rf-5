@@ -2,7 +2,7 @@
 
 | ID | Source | Scope | Class | Status |
 | --- | --- | --- | --- | --- |
-| SRC-001 | Sequential, *Prophet-5 User's Guide 1.3* | Public control architecture, performance behaviour, Poly Mod routing | Manufacturer documentation | Accepted for topology; numerical mappings pending |
+| SRC-001 | Sequential, original *Prophet-5 Owner's Manual* | Public control architecture, performance behaviour, pitch-wheel span and Poly Mod routing | Manufacturer documentation | Accepted for topology and approximately +/-one-fifth pitch-wheel span; other numerical mappings pending |
 | SRC-002 | Sequential, current Prophet-5 product specifications | Oscillator, filter, envelope and performance inventory | Manufacturer documentation | Accepted for inventory only |
 | SRC-003 | Original program patch sheets published by Sequential | Historical control positions | Manufacturer document | Reference only; programs will not be redistributed |
 | SRC-004 | Sequential Circuits, *Prophet-5 Synthesizer Technical Manual*, TM1000D.2, Oct. 1981 ([archival scan](https://www.synfo.nl/servicemanuals/Sequential/SEQUENTIAL_PROPHET-5-REV3_SERVICE_MANUAL.pdf)) | Rev 3.0-3.2 topology, schematics, calibration, control scanning and selected IC data sheets | Manufacturer technical manual | Accepted; SHA-256 `6B8701C4F526AB415CBA8BE2CA5538BDE14B228A0948151EBA964DA06A97BD25` |

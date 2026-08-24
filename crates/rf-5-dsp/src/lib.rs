@@ -3,6 +3,7 @@
 mod allocation;
 mod control;
 mod cv;
+mod glide;
 mod lfo;
 mod noise;
 mod output;
@@ -23,8 +24,6 @@ use rf_5_voice::{
 pub const VOICE_COUNT: usize = 5;
 pub const STATE_BYTES: usize = PARAMETER_COUNT * 4;
 const PITCH_WHEEL_RANGE_SEMITONES: f32 = 7.0;
-const MAXIMUM_GLIDE_RATE_SEMITONES_PER_SECOND: f32 = 2_400.0;
-const MINIMUM_GLIDE_RATE_SEMITONES_PER_SECOND: f32 = 12.0;
 
 #[derive(Clone, Copy, Debug, Default)]
 struct HeldNote {
@@ -505,7 +504,7 @@ impl Engine {
             return 0.0;
         }
         let amount = quantize_analog_pot(applied_settings.get(Parameter::Glide));
-        self.glide_current_note = advance_glide_note(
+        self.glide_current_note = glide::advance_note(
             self.glide_current_note,
             self.glide_target_note,
             amount,
@@ -581,23 +580,6 @@ fn pitch_wheel_normalized(value: u16) -> f32 {
     }
 }
 
-fn glide_rate_semitones_per_second(amount: f32) -> f32 {
-    let amount = amount.clamp(0.0, 1.0);
-    MAXIMUM_GLIDE_RATE_SEMITONES_PER_SECOND
-        * libm::powf(
-            MINIMUM_GLIDE_RATE_SEMITONES_PER_SECOND / MAXIMUM_GLIDE_RATE_SEMITONES_PER_SECOND,
-            amount,
-        )
-}
-
-fn advance_glide_note(current: f32, target: f32, amount: f32, sample_rate: f32) -> f32 {
-    if amount <= 0.0 {
-        return target;
-    }
-    let maximum_step = glide_rate_semitones_per_second(amount) / sample_rate.max(1.0);
-    current + (target - current).clamp(-maximum_step, maximum_step)
-}
-
 #[cfg(test)]
 mod tests {
     extern crate std;
@@ -658,17 +640,6 @@ mod tests {
         let mut engine = Engine::default();
         engine.handle_midi([0xe0, 0, 127]);
         assert!((engine.pitch_wheel - (16_256.0 - 8_192.0) / 8_191.0).abs() < 1.0e-6);
-    }
-
-    #[test]
-    fn maximum_glide_traverses_five_octaves_in_five_seconds() {
-        let sample_rate = 48_000.0;
-        let mut note = 0.0;
-        for _ in 0..(sample_rate as usize * 5) {
-            note = advance_glide_note(note, 60.0, 1.0, sample_rate);
-        }
-        assert!((note - 60.0).abs() < 0.001, "five-octave result: {note}");
-        assert_eq!(advance_glide_note(24.0, 60.0, 0.0, sample_rate), 60.0);
     }
 
     #[test]

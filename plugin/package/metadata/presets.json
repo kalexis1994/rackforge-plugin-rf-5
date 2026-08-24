@@ -23,7 +23,8 @@
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-hard-sync", "name": "Audition - Bipolar Hard Sync", "order": 12, "tags": ["rf5", "audition", "oscillator", "hard-sync", "cem3340"] },
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-unison-priority", "name": "Audition - Unison Low Note", "order": 13, "tags": ["rf5", "audition", "unison", "low-note-priority", "legato"] },
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-lfo-slow", "name": "Audition - LFO Slow Range", "order": 14, "tags": ["rf5", "audition", "lfo", "slow"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-lfo-fast", "name": "Audition - LFO Fast Range", "order": 15, "tags": ["rf5", "audition", "lfo", "fast"] }
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-lfo-fast", "name": "Audition - LFO Fast Range", "order": 15, "tags": ["rf5", "audition", "lfo", "fast"] },
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-unison-glide", "name": "Audition - Unison Glide Circuit", "order": 16, "tags": ["rf5", "audition", "unison", "glide", "ca3280"] }
   ],
   "schema_version": 1
 }

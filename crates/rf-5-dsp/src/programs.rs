@@ -290,6 +290,13 @@ impl Program {
         values[Parameter::FilterRelease as usize] = 0.25;
         Self::normal(values)
     }
+
+    fn unison_glide() -> Self {
+        let mut program = Self::unison_priority();
+        // Service test 4-4 calls panel position 6 a medium glide.
+        program.values[Parameter::Glide as usize] = 0.6;
+        program
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -319,6 +326,7 @@ pub(crate) fn find(id: &str) -> Option<Program> {
         "audition-wheel-noise-filter" => Program::wheel_noise_filter(),
         "audition-hard-sync" => Program::hard_sync(),
         "audition-unison-priority" => Program::unison_priority(),
+        "audition-unison-glide" => Program::unison_glide(),
         "audition-lfo-slow" => Program::lfo_rate(0.10),
         "audition-lfo-fast" => Program::lfo_rate(0.82),
         _ => return None,
@@ -350,6 +358,7 @@ mod tests {
             "audition-wheel-noise-filter",
             "audition-hard-sync",
             "audition-unison-priority",
+            "audition-unison-glide",
             "audition-lfo-slow",
             "audition-lfo-fast",
         ] {
