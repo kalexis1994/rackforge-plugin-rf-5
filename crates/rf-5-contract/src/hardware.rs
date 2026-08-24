@@ -38,6 +38,139 @@ pub const CONTROL_LOOP_IDLE_MICROSECONDS: u32 = 6_000;
 pub const CONTROL_LOOP_CHANGED_MICROSECONDS: u32 = 11_000;
 pub const SAMPLE_HOLD_SERVICE_DROOP_LIMIT_VOLTS_PER_7_MS: f32 = 0.0005;
 
+/// Logical sample/hold destinations grouped as shown on SD333 and SD430.
+/// The numeric order is RF-5's stable control-plane vocabulary; exact ROM
+/// strobe order remains an independently testable hypothesis.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum ControlVoltageDestination {
+    FilterAttack = 0,
+    FilterDecay = 1,
+    FilterSustain = 2,
+    FilterRelease = 3,
+    AmplifierAttack = 4,
+    AmplifierDecay = 5,
+    AmplifierSustain = 6,
+    AmplifierRelease = 7,
+    FilterCutoff = 8,
+    FilterEnvelopeAmount = 9,
+    OscillatorBMix = 10,
+    OscillatorBPulseWidth = 11,
+    OscillatorAMix = 12,
+    OscillatorAPulseWidth = 13,
+    NoiseMix = 14,
+    FilterResonance = 15,
+    Glide = 16,
+    LfoFrequency = 17,
+    WheelModSourceMix = 18,
+    PolyModOscillatorBAmount = 19,
+    PolyModFilterEnvelopeAmount = 20,
+    Unison = 21,
+    SequencerOutput = 22,
+    Oscillator1A = 23,
+    Oscillator1B = 24,
+    Oscillator2A = 25,
+    Oscillator2B = 26,
+    Oscillator3A = 27,
+    Oscillator3B = 28,
+    Oscillator4A = 29,
+    Oscillator4B = 30,
+    Oscillator5A = 31,
+    Oscillator5B = 32,
+    Filter1 = 33,
+    Filter2 = 34,
+    Filter3 = 35,
+    Filter4 = 36,
+    Filter5 = 37,
+}
+
+impl TryFrom<u8> for ControlVoltageDestination {
+    type Error = ();
+
+    fn try_from(index: u8) -> Result<Self, Self::Error> {
+        const DESTINATIONS: [ControlVoltageDestination; CONTROL_VOLTAGE_DESTINATION_COUNT] = [
+            ControlVoltageDestination::FilterAttack,
+            ControlVoltageDestination::FilterDecay,
+            ControlVoltageDestination::FilterSustain,
+            ControlVoltageDestination::FilterRelease,
+            ControlVoltageDestination::AmplifierAttack,
+            ControlVoltageDestination::AmplifierDecay,
+            ControlVoltageDestination::AmplifierSustain,
+            ControlVoltageDestination::AmplifierRelease,
+            ControlVoltageDestination::FilterCutoff,
+            ControlVoltageDestination::FilterEnvelopeAmount,
+            ControlVoltageDestination::OscillatorBMix,
+            ControlVoltageDestination::OscillatorBPulseWidth,
+            ControlVoltageDestination::OscillatorAMix,
+            ControlVoltageDestination::OscillatorAPulseWidth,
+            ControlVoltageDestination::NoiseMix,
+            ControlVoltageDestination::FilterResonance,
+            ControlVoltageDestination::Glide,
+            ControlVoltageDestination::LfoFrequency,
+            ControlVoltageDestination::WheelModSourceMix,
+            ControlVoltageDestination::PolyModOscillatorBAmount,
+            ControlVoltageDestination::PolyModFilterEnvelopeAmount,
+            ControlVoltageDestination::Unison,
+            ControlVoltageDestination::SequencerOutput,
+            ControlVoltageDestination::Oscillator1A,
+            ControlVoltageDestination::Oscillator1B,
+            ControlVoltageDestination::Oscillator2A,
+            ControlVoltageDestination::Oscillator2B,
+            ControlVoltageDestination::Oscillator3A,
+            ControlVoltageDestination::Oscillator3B,
+            ControlVoltageDestination::Oscillator4A,
+            ControlVoltageDestination::Oscillator4B,
+            ControlVoltageDestination::Oscillator5A,
+            ControlVoltageDestination::Oscillator5B,
+            ControlVoltageDestination::Filter1,
+            ControlVoltageDestination::Filter2,
+            ControlVoltageDestination::Filter3,
+            ControlVoltageDestination::Filter4,
+            ControlVoltageDestination::Filter5,
+        ];
+        DESTINATIONS.get(index as usize).copied().ok_or(())
+    }
+}
+
+impl ControlVoltageDestination {
+    pub const fn oscillator(voice_index: usize, oscillator_b: bool) -> Option<Self> {
+        if voice_index >= VOICE_COUNT {
+            return None;
+        }
+        let index = Self::Oscillator1A as u8 + voice_index as u8 * 2 + oscillator_b as u8;
+        Self::from_valid_index(index)
+    }
+
+    pub const fn filter(voice_index: usize) -> Option<Self> {
+        if voice_index >= VOICE_COUNT {
+            return None;
+        }
+        Self::from_valid_index(Self::Filter1 as u8 + voice_index as u8)
+    }
+
+    const fn from_valid_index(index: u8) -> Option<Self> {
+        // Kept explicit so these helpers remain const without unsafe casts.
+        match index {
+            23 => Some(Self::Oscillator1A),
+            24 => Some(Self::Oscillator1B),
+            25 => Some(Self::Oscillator2A),
+            26 => Some(Self::Oscillator2B),
+            27 => Some(Self::Oscillator3A),
+            28 => Some(Self::Oscillator3B),
+            29 => Some(Self::Oscillator4A),
+            30 => Some(Self::Oscillator4B),
+            31 => Some(Self::Oscillator5A),
+            32 => Some(Self::Oscillator5B),
+            33 => Some(Self::Filter1),
+            34 => Some(Self::Filter2),
+            35 => Some(Self::Filter3),
+            36 => Some(Self::Filter4),
+            37 => Some(Self::Filter5),
+            _ => None,
+        }
+    }
+}
+
 pub const PROGRAM_COUNT: usize = 40;
 pub const PROGRAM_BYTES: usize = 24;
 
@@ -209,6 +342,29 @@ mod tests {
             COMMON_AND_PATCH_SAMPLE_HOLD_COUNT + INDIVIDUAL_OSCILLATOR_AND_FILTER_SAMPLE_HOLD_COUNT,
             CONTROL_VOLTAGE_DESTINATION_COUNT
         );
+    }
+
+    #[test]
+    fn control_voltage_destination_map_is_complete() {
+        for index in 0..CONTROL_VOLTAGE_DESTINATION_COUNT as u8 {
+            assert_eq!(
+                ControlVoltageDestination::try_from(index).unwrap() as u8,
+                index
+            );
+        }
+        assert!(
+            ControlVoltageDestination::try_from(CONTROL_VOLTAGE_DESTINATION_COUNT as u8).is_err()
+        );
+        for voice in 0..VOICE_COUNT {
+            assert_eq!(
+                ControlVoltageDestination::oscillator(voice, false).unwrap() as usize,
+                COMMON_AND_PATCH_SAMPLE_HOLD_COUNT + voice * 2
+            );
+            assert_eq!(
+                ControlVoltageDestination::filter(voice).unwrap() as usize,
+                COMMON_AND_PATCH_SAMPLE_HOLD_COUNT + AUDIO_OSCILLATOR_COUNT + voice
+            );
+        }
     }
 
     #[test]

@@ -57,9 +57,8 @@ the original program data is not part of the product.
   mapping must be explicit at the circuit boundary.
 - Oscillator pitch cannot share the coarse seven-bit path used by general CVs.
 - Control-rate stepping and sample/hold behaviour now live in a dedicated
-  scheduler, separate from audio-rate modulation. It refreshes the 24 scanned
-  pots in documented order across a 6 ms unchanged cycle or an 11 ms changed
-  cycle, then updates the switch latches.
+  scheduler, separate from audio-rate modulation. One 6 ms unchanged or 11 ms
+  changed cycle contains the 24 documented pot reads and all 38 CV writes.
 - Automatic tune corrections belong to each physical oscillator, not to a
   single global detune control.
 - Program decoding must remain independent from current UI parameter indices.
@@ -72,9 +71,9 @@ cycle. Master volume bypasses the scheduler because SD430 shows it as a direct
 analog path to the master CA3280, and program changes preserve its value.
 
 The physical machine refreshes 38 DAC destinations, including individual
-oscillator and filter sample-and-holds. The active candidate schedules the 24
-source controls and latches the resulting switch state at cycle completion.
-The ten individual oscillator destinations now receive their own automatic
-tune correction at fourteen-bit resolution. Exact interleaving of those writes
-with the other 28 destinations and the five per-voice filter correction values
-remains a lower-level timing refinement.
+oscillator and filter sample-and-holds. The active candidate now models all 38
+cells, their sequential strobes and bounded leakage. The ten oscillator cells
+receive independent automatic-tune corrections at fourteen-bit resolution;
+the five filter cells retain per-voice keyboard CV. Exact operating-ROM strobe
+order and measured leakage populations remain open and are isolated in
+[`SAMPLE_HOLD_MODEL.md`](SAMPLE_HOLD_MODEL.md).

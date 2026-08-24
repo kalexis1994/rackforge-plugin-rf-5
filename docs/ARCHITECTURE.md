@@ -12,10 +12,10 @@ RackForge MIDI + automation
             |
             v
       rf-5-dsp engine
-     /      |       |       |          |          \
-allocator  MIDI   state   common LFO  pink noise  auto-tune
-     |                       |          |          |
-     +-----------+-----------+----------+----------+
+     /      |       |       |          |          |          \
+allocator  MIDI   state   common LFO  pink noise  auto-tune  38-cell CV S/H
+     |                       |          |          |          |
+     +-----------+-----------+----------+----------+----------+
                  v
  five independent rf-5-voice instances
        |
@@ -48,6 +48,9 @@ Its control-voltage law and calibration hypotheses are isolated in
 [`fidelity/TUNING_MODEL.md`](fidelity/TUNING_MODEL.md).
 The ten-channel counter, DAC search and runtime bias tables are documented in
 [`fidelity/AUTOTUNE_MODEL.md`](fidelity/AUTOTUNE_MODEL.md).
+The unified CPU service cycle, destination map and bounded sample/hold leakage
+are documented in
+[`fidelity/SAMPLE_HOLD_MODEL.md`](fidelity/SAMPLE_HOLD_MODEL.md).
 The shared modulation topology, implemented Wheel Mod routes and remaining
 depth/range uncertainty are recorded in
 [`fidelity/LFO_AND_WHEEL_MOD_MODEL.md`](fidelity/LFO_AND_WHEEL_MOD_MODEL.md).

@@ -9,15 +9,23 @@ use rf_5_contract::{
     PARAMETER_COUNT, Parameter, Settings,
     hardware::{
         ANALOG_POT_COUNT, AnalogPot, CONTROL_LOOP_CHANGED_MICROSECONDS,
-        CONTROL_LOOP_IDLE_MICROSECONDS,
+        CONTROL_LOOP_IDLE_MICROSECONDS, CONTROL_VOLTAGE_DESTINATION_COUNT,
     },
 };
+
+const CONTROL_SERVICE_STEP_COUNT: usize = ANALOG_POT_COUNT + CONTROL_VOLTAGE_DESTINATION_COUNT;
+
+#[derive(Clone, Copy, Debug)]
+pub struct ControlTick {
+    pub settings: Settings,
+    pub cv_strobe: Option<usize>,
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct ControlScheduler {
     applied: Settings,
-    scan_index: usize,
-    samples_until_scan: u32,
+    service_index: usize,
+    samples_until_service: u32,
     cycle_samples: u32,
     changed_cycle: bool,
 }
@@ -26,9 +34,9 @@ impl Default for ControlScheduler {
     fn default() -> Self {
         Self {
             applied: Settings::default(),
-            scan_index: 0,
-            samples_until_scan: 1,
-            cycle_samples: ANALOG_POT_COUNT as u32,
+            service_index: 0,
+            samples_until_service: 1,
+            cycle_samples: CONTROL_SERVICE_STEP_COUNT as u32,
             changed_cycle: false,
         }
     }
@@ -46,8 +54,8 @@ impl ControlScheduler {
         }
         let old_cycle = self.cycle_samples.max(1);
         let new_cycle = cycle_samples(sample_rate, CONTROL_LOOP_CHANGED_MICROSECONDS);
-        self.samples_until_scan = self
-            .samples_until_scan
+        self.samples_until_service = self
+            .samples_until_service
             .saturating_mul(new_cycle)
             .div_ceil(old_cycle)
             .max(1);
@@ -55,27 +63,44 @@ impl ControlScheduler {
         self.changed_cycle = true;
     }
 
-    pub fn next(&mut self, target: Settings, sample_rate: f32) -> Settings {
-        if self.samples_until_scan > 1 {
-            self.samples_until_scan -= 1;
-            return self.with_direct_controls(target);
+    pub fn next(&mut self, target: Settings, sample_rate: f32) -> ControlTick {
+        if self.samples_until_service > 1 {
+            self.samples_until_service -= 1;
+            return ControlTick {
+                settings: self.with_direct_controls(target),
+                cv_strobe: None,
+            };
         }
 
-        let pot = AnalogPot::try_from(self.scan_index as u8).expect("valid scan position");
-        copy_parameter(&mut self.applied, target, pot.parameter());
-        self.scan_index += 1;
+        let cv_strobe = if self.service_index < ANALOG_POT_COUNT {
+            let pot = AnalogPot::try_from(self.service_index as u8).expect("valid scan position");
+            copy_parameter(&mut self.applied, target, pot.parameter());
+            None
+        } else {
+            if self.service_index == ANALOG_POT_COUNT {
+                self.copy_switch_latches(target);
+            }
+            Some(self.service_index - ANALOG_POT_COUNT)
+        };
+        self.service_index += 1;
 
-        if self.scan_index == ANALOG_POT_COUNT {
-            self.copy_switch_latches(target);
+        if self.service_index == CONTROL_SERVICE_STEP_COUNT {
             self.begin_cycle(target, sample_rate);
         } else {
-            self.samples_until_scan = scan_spacing(self.cycle_samples, self.scan_index);
+            self.samples_until_service = service_spacing(self.cycle_samples, self.service_index);
         }
+        ControlTick {
+            settings: self.with_direct_controls(target),
+            cv_strobe,
+        }
+    }
+
+    pub fn current(&self, target: Settings) -> Settings {
         self.with_direct_controls(target)
     }
 
     fn begin_cycle(&mut self, target: Settings, sample_rate: f32) {
-        self.scan_index = 0;
+        self.service_index = 0;
         self.changed_cycle = target != self.applied;
         let microseconds = if self.changed_cycle {
             CONTROL_LOOP_CHANGED_MICROSECONDS
@@ -83,7 +108,7 @@ impl ControlScheduler {
             CONTROL_LOOP_IDLE_MICROSECONDS
         };
         self.cycle_samples = cycle_samples(sample_rate, microseconds);
-        self.samples_until_scan = scan_spacing(self.cycle_samples, 0);
+        self.samples_until_service = service_spacing(self.cycle_samples, 0);
     }
 
     fn copy_switch_latches(&mut self, target: Settings) {
@@ -126,14 +151,14 @@ fn is_direct_control(parameter: Parameter) -> bool {
 
 fn cycle_samples(sample_rate: f32, microseconds: u32) -> u32 {
     (libm::roundf(sample_rate.max(1.0) * microseconds as f32 / 1_000_000.0) as u32)
-        .max(ANALOG_POT_COUNT as u32)
+        .max(CONTROL_SERVICE_STEP_COUNT as u32)
 }
 
-fn scan_spacing(cycle_samples: u32, scan_index: usize) -> u32 {
-    let count = ANALOG_POT_COUNT as u32;
+fn service_spacing(cycle_samples: u32, service_index: usize) -> u32 {
+    let count = CONTROL_SERVICE_STEP_COUNT as u32;
     let base = cycle_samples / count;
     let remainder = cycle_samples % count;
-    base + u32::from((scan_index as u32) < remainder)
+    base + u32::from((service_index as u32) < remainder)
 }
 
 #[cfg(test)]
@@ -147,9 +172,9 @@ mod tests {
         scheduler.prepare(settings, 48_000.0);
         assert_eq!(scheduler.cycle_samples, 288);
         for _ in 0..288 {
-            assert_eq!(scheduler.next(settings, 48_000.0), settings);
+            assert_eq!(scheduler.next(settings, 48_000.0).settings, settings);
         }
-        assert_eq!(scheduler.scan_index, 0);
+        assert_eq!(scheduler.service_index, 0);
     }
 
     #[test]
@@ -166,8 +191,8 @@ mod tests {
         for _ in 0..527 {
             let _ = scheduler.next(target, 48_000.0);
         }
-        assert_ne!(scheduler.next(target, 48_000.0), initial);
-        assert_eq!(scheduler.next(target, 48_000.0), target);
+        assert_ne!(scheduler.next(target, 48_000.0).settings, initial);
+        assert_eq!(scheduler.next(target, 48_000.0).settings, target);
     }
 
     #[test]
@@ -180,8 +205,24 @@ mod tests {
         assert_eq!(
             scheduler
                 .next(target, 48_000.0)
+                .settings
                 .get(Parameter::MasterVolume),
             0.1
         );
+    }
+
+    #[test]
+    fn one_cpu_cycle_contains_all_pot_reads_and_cv_writes() {
+        let settings = Settings::default();
+        let mut scheduler = ControlScheduler::default();
+        scheduler.prepare(settings, 48_000.0);
+        let mut strobed = [false; CONTROL_VOLTAGE_DESTINATION_COUNT];
+        for _ in 0..288 {
+            if let Some(destination) = scheduler.next(settings, 48_000.0).cv_strobe {
+                assert!(!strobed[destination]);
+                strobed[destination] = true;
+            }
+        }
+        assert!(strobed.into_iter().all(|value| value));
     }
 }

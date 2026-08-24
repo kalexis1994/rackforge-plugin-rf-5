@@ -1,6 +1,7 @@
 #![no_std]
 
 mod control;
+mod cv;
 mod lfo;
 mod noise;
 mod output;
@@ -8,11 +9,7 @@ mod output;
 use lfo::{Lfo, LfoWaveSelection};
 use noise::PinkNoise;
 use rf_5_contract::{PARAMETER_COUNT, Parameter, Settings, hardware::quantize_analog_pot};
-use rf_5_voice::{
-    Voice, VoiceModulation,
-    autotune::{AutoTune, Oscillator},
-    tuning,
-};
+use rf_5_voice::{Voice, VoiceModulation, autotune::AutoTune, tuning};
 
 pub const VOICE_COUNT: usize = 5;
 pub const STATE_BYTES: usize = PARAMETER_COUNT * 4;
@@ -98,12 +95,21 @@ pub struct Engine {
     glide_initialized: bool,
     controls: control::ControlScheduler,
     autotune: AutoTune,
+    cv: cv::CvDistributor,
 }
 
 impl Default for Engine {
     fn default() -> Self {
+        let settings = Settings::default();
+        let autotune = AutoTune::default();
+        let mut cv = cv::CvDistributor::default();
+        cv.prepare(cv::CvTargets::from_state(
+            settings,
+            [0; VOICE_COUNT],
+            autotune,
+        ));
         Self {
-            settings: Settings::default(),
+            settings,
             voices: [Voice::default(); VOICE_COUNT],
             sample_rate: 48_000.0,
             next_voice: 0,
@@ -117,7 +123,8 @@ impl Default for Engine {
             glide_target_note: 0.0,
             glide_initialized: false,
             controls: control::ControlScheduler::default(),
-            autotune: AutoTune::default(),
+            autotune,
+            cv,
         }
     }
 }
@@ -131,6 +138,7 @@ impl Engine {
         self.controls.prepare(self.settings, self.sample_rate);
         self.autotune = AutoTune::calibrated();
         self.reset_voices();
+        self.cv.prepare(self.cv_targets(self.settings));
         self.lfo.reset();
         self.noise.reset();
         self.mod_wheel = 0.0;
@@ -191,6 +199,7 @@ impl Engine {
                 index
             });
         self.voices[voice_index].start(channel, note, velocity, voice_index);
+        self.refresh_voice_cv(voice_index);
     }
 
     pub fn note_off(&mut self, channel: u8, note: u8) {
@@ -275,7 +284,13 @@ impl Engine {
     }
 
     pub fn next_sample(&mut self) -> f32 {
-        let applied_settings = self.controls.next(self.settings, self.sample_rate);
+        let control_tick = self.controls.next(self.settings, self.sample_rate);
+        let targets = self.cv_targets(control_tick.settings);
+        self.cv.age(self.sample_rate);
+        if let Some(destination) = control_tick.cv_strobe {
+            self.cv.strobe(destination, targets);
+        }
+        let applied_settings = self.cv.apply_common(control_tick.settings);
         let glide_offset = self.advance_glide(applied_settings);
         let performance_pitch = self.pitch_wheel * PITCH_WHEEL_RANGE_SEMITONES + glide_offset;
         let lfo_sample = self.lfo.next(
@@ -338,11 +353,15 @@ impl Engine {
             );
             let mut calibrated_modulation = modulation;
             calibrated_modulation.oscillator_a_semitones +=
-                self.autotune
-                    .residual_semitones(voice_index, Oscillator::A, tuning_a);
+                self.cv.oscillator_semitones(voice_index, false) - tuning_a;
             calibrated_modulation.oscillator_b_semitones +=
-                self.autotune
-                    .residual_semitones(voice_index, Oscillator::B, tuning_b);
+                self.cv.oscillator_semitones(voice_index, true) - tuning_b;
+            let filter_keyboard = cv::filter_keyboard_octaves(
+                note,
+                parameter_enabled(applied_settings, Parameter::FilterKeyboard),
+            );
+            calibrated_modulation.filter_octaves +=
+                self.cv.filter_keyboard_octaves(voice_index) - filter_keyboard;
             sample += voice.next(self.sample_rate, applied_settings, calibrated_modulation);
         }
         output::render(sample, applied_settings.get(Parameter::MasterVolume))
@@ -427,6 +446,7 @@ impl Engine {
         for (voice_index, voice) in self.voices.iter_mut().enumerate() {
             voice.start(channel, note, velocity, voice_index);
         }
+        self.refresh_all_voice_cvs();
     }
 
     fn retune_unison(&mut self, channel: u8, note: u8) {
@@ -434,6 +454,7 @@ impl Engine {
         for voice in &mut self.voices {
             voice.retune(channel, note);
         }
+        self.refresh_all_voice_cvs();
     }
 
     fn retarget_glide(&mut self, note: u8) {
@@ -484,6 +505,29 @@ impl Engine {
             .unwrap_or(self.next_voice);
         self.next_voice = (voice_index + 1) % VOICE_COUNT;
         self.voices[voice_index].start(channel, note, velocity, voice_index);
+        self.refresh_voice_cv(voice_index);
+    }
+
+    fn voice_notes(&self) -> [u8; VOICE_COUNT] {
+        core::array::from_fn(|index| self.voices[index].note())
+    }
+
+    fn cv_targets(&self, settings: Settings) -> cv::CvTargets {
+        cv::CvTargets::from_state(settings, self.voice_notes(), self.autotune)
+    }
+
+    fn refresh_voice_cv(&mut self, voice_index: usize) {
+        let settings = self.controls.current(self.settings);
+        let targets = self.cv_targets(settings);
+        self.cv.refresh_voice(voice_index, targets);
+    }
+
+    fn refresh_all_voice_cvs(&mut self) {
+        let settings = self.controls.current(self.settings);
+        let targets = self.cv_targets(settings);
+        for voice in 0..VOICE_COUNT {
+            self.cv.refresh_voice(voice, targets);
+        }
     }
 }
 
@@ -538,6 +582,42 @@ mod tests {
         assert!((0..128).all(|_| engine.next_sample() == 0.0));
         engine.note_on(0, 60, 100);
         assert!((0..4096).any(|_| engine.next_sample().abs() > 0.001));
+    }
+
+    #[test]
+    fn note_assignment_acquires_all_three_voice_sample_holds_before_audio() {
+        let mut engine = Engine::default();
+        assert!(engine.set_parameter(Parameter::FilterKeyboard as u32, 1.0));
+        assert!(engine.prepare(48_000.0));
+        engine.note_on(0, 60, 100);
+
+        let settings = engine.controls.current(engine.settings);
+        let ideal_a = tuning::oscillator_a_tuning_semitones(
+            60,
+            settings.get(Parameter::OscillatorAFrequency),
+        );
+        let ideal_b = tuning::oscillator_b_tuning_semitones(
+            60,
+            settings.get(Parameter::OscillatorBFrequency),
+            settings.get(Parameter::OscillatorBDetune),
+            parameter_enabled(settings, Parameter::OscillatorBKeyboard),
+            parameter_enabled(settings, Parameter::OscillatorBLowFrequency),
+        );
+        assert!((engine.cv.oscillator_semitones(0, false) - ideal_a).abs() < 0.03);
+        assert!((engine.cv.oscillator_semitones(0, true) - ideal_b).abs() < 0.03);
+        assert_eq!(engine.cv.filter_keyboard_octaves(0), 2.0);
+    }
+
+    #[test]
+    fn voice_reassignment_reacquires_pitch_without_waiting_for_full_control_cycle() {
+        let mut engine = Engine::default();
+        assert!(engine.prepare(48_000.0));
+        engine.note_on(0, 36, 100);
+        let low = engine.cv.oscillator_semitones(0, false);
+        engine.reset_voices();
+        engine.note_on(0, 84, 100);
+        let high = engine.cv.oscillator_semitones(0, false);
+        assert!(high - low > 47.9);
     }
 
     #[test]

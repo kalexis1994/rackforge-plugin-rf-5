@@ -29,7 +29,8 @@ relative to the ideal 83 mV semitone step.
 
 At render time, oscillator A and B each receive the residual error produced by
 their own calibrated table. Bias is linearly interpolated between adjacent
-octave points, then applied at DAC-code resolution. This keeps performance
+octave points, applied at DAC-code resolution and retained by the corresponding
+physical sample/hold cell. This keeps performance
 wheel and audio-rate modulation outside the digital tune table, matching their
 separate paths.
 
