@@ -45,8 +45,8 @@ measurement, fourteen-step successive approximation, 200-byte octave-bias
 table and per-semitone runtime interpolation. C3-C9 are measured directly and
 C0-C2 are extrapolated, as described by the technical manual.
 
-The detailed acceptance bounds and the remaining uncertainty around the exact
-low-octave extrapolation arithmetic are recorded in
+The detailed acceptance bounds and the remaining physical-population
+uncertainty are recorded in
 [`AUTOTUNE_MODEL.md`](AUTOTUNE_MODEL.md). Post-tune temperature motion and the
 new bounded meaning of `VintageSpread` are documented independently in
 [`VCO_DRIFT_MODEL.md`](VCO_DRIFT_MODEL.md).

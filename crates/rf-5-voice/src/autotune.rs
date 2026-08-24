@@ -6,13 +6,15 @@
 //! octave bias points. C0-C2 are extrapolated from the measured curve.
 
 use rf_5_contract::hardware::{
-    CONTROL_DAC_WRITABLE_BITS, DAC_FULL_SCALE_VOLTS, IDEAL_SEMITONE_CONTROL_VOLTS,
-    TUNE_CPU_CLOCK_HZ, TUNE_DIRECT_MEASUREMENT_FIRST_OCTAVE, TUNE_DIRECT_MEASUREMENT_LAST_OCTAVE,
-    TUNE_OCTAVE_BIAS_COUNT, TUNE_OSCILLATOR_COUNT,
+    CONTROL_DAC_WRITABLE_BITS, TUNE_CPU_CLOCK_HZ, TUNE_DIRECT_MEASUREMENT_FIRST_OCTAVE,
+    TUNE_DIRECT_MEASUREMENT_LAST_OCTAVE, TUNE_OCTAVE_BIAS_COUNT, TUNE_OSCILLATOR_COUNT,
 };
 
 const DAC_MAX_CODE: i32 = (1_i32 << CONTROL_DAC_WRITABLE_BITS) - 1;
-const DAC_LSB_VOLTS: f32 = DAC_FULL_SCALE_VOLTS / DAC_MAX_CODE as f32;
+// V8.1 adds 0x0100 to its sparse internal DAC word for every semitone. The
+// tune writer rotates the low byte and never sets internal bit zero, so that
+// interval is exactly 128 of the fourteen CPU-writable DAC positions.
+const DAC_CODES_PER_SEMITONE: f32 = 128.0;
 const C0_FREQUENCY_HZ: f32 = 16.351_599;
 
 // Deterministic component-tolerance fixtures. They exercise the documented
@@ -98,8 +100,8 @@ impl AutoTune {
             return 0.0;
         }
         let channel = channel_index(voice_index, oscillator);
-        let ideal_code = ideal_semitones * IDEAL_SEMITONE_CONTROL_VOLTS / DAC_LSB_VOLTS;
-        let bias = interpolated_bias(self.tables[channel].codes, ideal_semitones / 12.0);
+        let ideal_code = ideal_semitones * DAC_CODES_PER_SEMITONE;
+        let bias = interpolated_bias(self.tables[channel].codes, ideal_semitones);
         let applied_code = libm::roundf(ideal_code + bias);
         physical_semitones(channel, applied_code) - ideal_semitones
     }
@@ -115,15 +117,15 @@ const fn channel_index(voice_index: usize, oscillator: Oscillator) -> usize {
 }
 
 fn ideal_code_for_octave(octave: usize) -> i32 {
-    libm::roundf(octave as f32 * 12.0 * IDEAL_SEMITONE_CONTROL_VOLTS / DAC_LSB_VOLTS) as i32
+    octave as i32 * 12 * DAC_CODES_PER_SEMITONE as i32
 }
 
 fn physical_semitones(channel: usize, dac_code: f32) -> f32 {
-    let ideal = dac_code * DAC_LSB_VOLTS / IDEAL_SEMITONE_CONTROL_VOLTS;
+    let ideal = dac_code / DAC_CODES_PER_SEMITONE;
     let normalized = dac_code / DAC_MAX_CODE as f32;
     let centered = normalized - 0.5;
     ideal * (1.0 + SCALE_ERROR[channel])
-        + INITIAL_OFFSET_CODES[channel] * DAC_LSB_VOLTS / IDEAL_SEMITONE_CONTROL_VOLTS
+        + INITIAL_OFFSET_CODES[channel] / DAC_CODES_PER_SEMITONE
         + CURVATURE_SEMITONES[channel] * centered * centered
 }
 
@@ -172,12 +174,70 @@ fn extrapolate_lower_octaves(codes: &mut [i16; TUNE_OCTAVE_BIAS_COUNT]) {
     }
 }
 
-fn interpolated_bias(codes: [i16; TUNE_OCTAVE_BIAS_COUNT], octave: f32) -> f32 {
-    let octave = octave.clamp(0.0, (TUNE_OCTAVE_BIAS_COUNT - 1) as f32);
-    let lower = libm::floorf(octave) as usize;
+fn interpolated_bias(codes: [i16; TUNE_OCTAVE_BIAS_COUNT], semitone: f32) -> f32 {
+    // Operating-ROM offsets 0x03ee-0x0483 divide the integer pitch coordinate
+    // by twelve, select the surrounding octave words and multiply their bias
+    // difference by the remainder. The lookup multiply is deliberately kept
+    // discrete: the original does not blend continuously between keys.
+    let last_semitone = (TUNE_OCTAVE_BIAS_COUNT - 1) * 12;
+    let semitone = libm::floorf(semitone.clamp(0.0, last_semitone as f32)) as usize;
+    let lower = semitone / 12;
+    let remainder = (semitone % 12) as u8;
     let upper = (lower + 1).min(TUNE_OCTAVE_BIAS_COUNT - 1);
-    let fraction = octave - lower as f32;
-    f32::from(codes[lower]) * (1.0 - fraction) + f32::from(codes[upper]) * fraction
+    let delta = i32::from(codes[upper]) - i32::from(codes[lower]);
+    (i32::from(codes[lower]) + firmware_bias_fraction(delta, remainder)) as f32
+}
+
+fn firmware_bias_fraction(delta: i32, remainder: u8) -> i32 {
+    if delta == 0 || remainder == 0 {
+        return 0;
+    }
+
+    // The ROM halves its sparse sixteen-bit difference first. Because tune
+    // words always have bit zero clear, this leaves the dense fourteen-bit
+    // code used here. Only the resulting low byte addresses the two multiply
+    // tables, matching the Z80 register path rather than silently saturating.
+    let magnitude = (delta.unsigned_abs() as usize) & 0xff;
+    let coarse = magnitude >> 5;
+    let fine = magnitude & 0x1f;
+    let interpolated = coarse_product(coarse, remainder) + fine_product(fine, remainder);
+    if delta.is_negative() {
+        -(interpolated as i32)
+    } else {
+        interpolated as i32
+    }
+}
+
+fn rounded_twelfths(value: usize, remainder: u8) -> usize {
+    (value * usize::from(remainder) + 6) / 12
+}
+
+fn coarse_product(coarse: usize, remainder: u8) -> usize {
+    let nearest = rounded_twelfths(coarse << 5, remainder);
+    // Four entries in V8.1 choose the lower neighbor instead of the ordinary
+    // nearest result. Keeping the quirk as arithmetic avoids carrying either
+    // of the original firmware lookup tables in the plug-in.
+    if coarse == 2 && remainder % 3 == 2 {
+        nearest - 1
+    } else {
+        nearest
+    }
+}
+
+fn fine_product(fine: usize, remainder: u8) -> usize {
+    let nearest = rounded_twelfths(fine, remainder);
+    let downward_quirk = match remainder {
+        3 | 9 => matches!(fine, 2 | 10 | 14 | 22 | 26),
+        6 => fine < 27 && fine % 2 == 1 && fine % 6 != 3,
+        _ => false,
+    };
+    if downward_quirk {
+        nearest - 1
+    } else if remainder == 4 && fine == 1 {
+        nearest + 1
+    } else {
+        nearest
+    }
 }
 
 #[cfg(test)]
@@ -287,5 +347,49 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn firmware_semitone_scale_is_exact_in_writable_dac_codes() {
+        assert_eq!(ideal_code_for_octave(1), 12 * 128);
+        assert_eq!(ideal_code_for_octave(9), 9 * 12 * 128);
+    }
+
+    #[test]
+    fn runtime_interpolation_matches_emulated_v81_landmarks() {
+        let positive: [i32; 11] =
+            core::array::from_fn(|index| firmware_bias_fraction(50, index as u8 + 1));
+        assert_eq!(positive, [5, 8, 13, 17, 21, 25, 30, 33, 38, 42, 46]);
+        for remainder in 1..12 {
+            assert_eq!(
+                firmware_bias_fraction(-50, remainder),
+                -firmware_bias_fraction(50, remainder)
+            );
+        }
+        assert_eq!(firmware_bias_fraction(6, 1), 1);
+        assert_eq!(firmware_bias_fraction(6, 2), 1);
+        assert_eq!(firmware_bias_fraction(6, 11), 6);
+    }
+
+    #[test]
+    fn lookup_rounding_quirks_are_preserved_without_rom_tables() {
+        assert_eq!(coarse_product(2, 2), 10);
+        assert_eq!(coarse_product(2, 5), 26);
+        assert_eq!(fine_product(2, 3), 0);
+        assert_eq!(fine_product(6, 3), 2);
+        assert_eq!(fine_product(1, 4), 1);
+        assert_eq!(fine_product(1, 6), 0);
+        assert_eq!(fine_product(3, 6), 2);
+    }
+
+    #[test]
+    fn interpolation_uses_the_twelve_firmware_key_positions() {
+        let mut codes = [0; TUNE_OCTAVE_BIAS_COUNT];
+        codes[0] = 100;
+        codes[1] = 150;
+        assert_eq!(interpolated_bias(codes, 0.0), 100.0);
+        assert_eq!(interpolated_bias(codes, 1.99), 105.0);
+        assert_eq!(interpolated_bias(codes, 6.0), 125.0);
+        assert_eq!(interpolated_bias(codes, 12.0), 150.0);
     }
 }

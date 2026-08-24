@@ -34,8 +34,14 @@ its operating image `v81_2732.bin` has SHA-256
 Operating-image offsets `0x0101-0x0125` are admitted specifically for the
 signed C4-C3 difference repeatedly subtracted to create the C2-C0 automatic
 tune entries. This conclusion is independently tied to the technical manual's
-C3-C9 measurement and C0-C2 extrapolation description. No other binary region
-is admitted as behavioural truth without the same corroboration.
+C3-C9 measurement and C0-C2 extrapolation description. Offsets
+`0x03EE-0x0483`, the multiply data they address at `0x0A00-0x0BDF`, and the DAC
+write paths at `0x0155-0x01DB` and `0x0583-0x05C4` are admitted for the signed
+runtime interpolation, its lookup-rounding behavior and its 128-writable-code
+semitone scale. Those conclusions are independently corroborated by the
+manual's ten-octave bias-table, between-octave calculation, 14-bit writable-DAC
+and 83 mV/651 uV descriptions. No other binary region is admitted as
+behavioural truth without the same corroboration.
 
 Firmware may help establish scanning, allocation, calibration and program-memory
 behaviour, but it does not replace modelling the analog signal path. RF-5 will
