@@ -26,9 +26,10 @@ the engine exposes non-serialized retuning. Their saw, triangle and pulse
 outputs also retain the published voltage/symmetry ranges, populated-board
 resistor weighting and distinct audio versus Poly Mod polarity. A unified 6/11
 ms CPU cycle drives 38 independent sample-and-hold cells for common,
-oscillator and per-voice filter CVs. The five filter ICs now form a bounded
-CEM3320 population with individual control scales, resonance gain, clipping
-span and second-harmonic character. Its ten CEM3310 envelope generators now
+oscillator and per-voice filter CVs. The five filter ICs now form a serviced
+CEM3320 population with 440/880 Hz scale calibration, bounded warm-up motion,
+physical resonance gain, clipping span and second-harmonic character. Its ten
+CEM3310 envelope generators now
 also retain bounded device-specific peak, asymptote and RC timing curves. It
 remains a reverse-engineering
 candidate: measured component populations, overload/output levels and
@@ -36,9 +37,9 @@ original-instrument measurements still pass through the evidence gates in
 [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
 
 Until the graphical panel is added, the `RF-5 Audition` factory bank provides
-sixteen immediately playable listening programs for Wheel/Poly Mod, LFO range, Sync, filter
-drive, resonance, fast/slow envelope behaviour, CA3280 drive and common noise. They
-require no UI; see
+sixteen immediately playable listening programs for Wheel/Poly Mod, LFO range,
+Sync, filter drive, resonance, fast/slow envelope behaviour, CA3280 drive and
+common noise. They require no UI; see
 [`docs/AUDITION_PROGRAMS.md`](docs/AUDITION_PROGRAMS.md).
 
 ## Repository layout
@@ -69,7 +70,7 @@ bash tools/build-package.sh
 
 The package is written to `artifacts/rf-5-0.1.0.rfplugin`. GitHub Actions tests
 x86-64 and ARM64 before publishing the portable package as a workflow artifact.
-The audition command writes eighteen unnormalized listening files and their metrics
+The audition command writes nineteen unnormalized listening files and their metrics
 to `artifacts/auditions`; see
 [`docs/AUDITION_RENDERER.md`](docs/AUDITION_RENDERER.md).
 

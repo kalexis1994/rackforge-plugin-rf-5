@@ -18,7 +18,9 @@ procedure expects resonance to begin self-oscillating between panel positions
   resistor and therefore 0.999 nominal interstage passband gain.
 - Oscillators, audio mixer, audio-rate Poly Mod and all four filter cells run
   together at four times the host sample rate.
-- The panel sweep covers ten octaves above a 14 Hz candidate lower bound.
+- Service trim 4-20 replaces the former 14 Hz intercept: 2.000 V of panel CV
+  with keyboard tracking at A3/A4 must produce 440/880 Hz. Solving that anchor
+  places the ten-octave panel sweep above 16.3516 Hz.
 - Keyboard tracking is a physical on/off route and contributes exactly one
   octave of cutoff for every twelve semitones.
 - Filter Cutoff and Filter Resonance use the documented 0-10 V common-CV
@@ -33,9 +35,13 @@ procedure expects resonance to begin self-oscillating between panel positions
   pole-control sensitivity remains inside 57.5-62.5 mV/decade, resonance-cell
   transconductance inside 0.8-1.2 times nominal, and clipping span inside the
   published 10-14 Vpp range.
-- The five profiles meet at a 1 kHz calibration reference and diverge smoothly
-  above and below it according to their control sensitivity. This replaces the
-  former assumption that all five ICs share an exact exponential scale.
+- Each profile's documented 57.5-62.5 mV/decade sensitivity is compensated by
+  the populated per-voice scale trim. All five filters therefore meet at the
+  serviced 440/880 Hz pair instead of diverging from an invented 1 kHz point.
+- After calibration the five filters develop independent deterministic
+  warm-up motion at a 10 Hz control rate. `VintageSpread` expands its hard
+  magnitude boundary from the data-sheet typical 0.5% to the 1.5% maximum;
+  it no longer applies five permanent cutoff offsets.
 - Input and cell output limiting now use the profile's clipping span and a
   bounded even-order term. The latter preserves the data sheet's statement
   that passband distortion is predominantly second harmonic and remains in
@@ -48,9 +54,11 @@ The topology, populated pole network, exponential scale, electrical ranges and
 resonance current domain are source-backed. The five deterministic points
 inside those ranges are a validation population, not measurements of five
 chips from one instrument. The smooth Gm function is a replaceable fit through
-published graph/typical points rather than a transistor-level model. The 14 Hz
-intercept, circuit-volts-to-normalized-audio conversion, exact populated Gm
-curve and dynamic warm-up remain calibration hypotheses.
+published graph/typical points rather than a transistor-level model. The
+circuit-volts-to-normalized-audio conversion and exact populated Gm curve
+remain calibration hypotheses. Warm-up magnitude is source-bounded, while its
+210-390 second time constants, directions and correlation are explicit,
+replaceable hypotheses because no admitted source publishes those trajectories.
 
 ## Acceptance tests
 
@@ -65,7 +73,9 @@ curve and dynamic warm-up remain calibration hypotheses.
 - four 150 pF cells and their 100k/91k/1M network reproduce the populated
   near-unity interstage gain;
 - all five profiles remain inside every admitted data-sheet bound;
-- profile cutoff curves intersect at the explicit calibration reference;
+- all five cutoff curves reproduce the serviced 440/880 Hz calibration pair;
+- five minutes produces distinct warm-up offsets without exceeding the
+  published 0.5%/1.5% limits, independently of host sample rate;
 - strong signals retain finite profile-specific clipping and even-order
   asymmetry;
 - Poly Mod reaches the filter at the internal audio rate.

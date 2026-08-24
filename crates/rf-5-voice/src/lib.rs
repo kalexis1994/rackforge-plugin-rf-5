@@ -25,10 +25,15 @@ const POLY_MOD_PITCH_DEPTH_SEMITONES: f32 = 48.0;
 const POLY_MOD_PULSE_WIDTH_DEPTH: f32 = 0.48;
 const POLY_MOD_FILTER_DEPTH_OCTAVES: f32 = 4.5;
 const FILTER_ENVELOPE_DEPTH_OCTAVES: f32 = 6.5;
-const FILTER_MINIMUM_HZ: f32 = 14.0;
+const FILTER_MINIMUM_HZ: f32 = 16.351_599;
 const FILTER_PANEL_OCTAVES: f32 = 10.0;
 const FILTER_KEYBOARD_BASE_NOTE: f32 = 36.0;
-const FILTER_SPREAD_OCTAVES: [f32; 5] = [-0.018, -0.008, 0.0, 0.009, 0.019];
+#[cfg(test)]
+const FILTER_SERVICE_CV_PANEL_POSITION: f32 = 0.2;
+#[cfg(test)]
+const FILTER_SERVICE_REFERENCE_NOTE: u8 = 69;
+#[cfg(test)]
+const FILTER_SERVICE_REFERENCE_HZ: f32 = 440.0;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct VoiceModulation {
@@ -192,12 +197,9 @@ impl Voice {
             quantize_analog_pot(settings.get(Parameter::FilterEnvelopeAmount)),
             self.voice_index,
         ) * FILTER_ENVELOPE_DEPTH_OCTAVES;
-        let filter_spread =
-            FILTER_SPREAD_OCTAVES[self.voice_index] * settings.get(Parameter::VintageSpread);
         let filter_cutoff = quantize_analog_pot(settings.get(Parameter::FilterCutoff));
         let filter_keyboard = parameter_enabled(settings, Parameter::FilterKeyboard);
-        let common_filter_octaves =
-            direct_filter_envelope + modulation.filter_octaves + filter_spread;
+        let common_filter_octaves = direct_filter_envelope + modulation.filter_octaves;
 
         for _ in 0..OSCILLATOR_OVERSAMPLING {
             let sample_b =
@@ -254,9 +256,13 @@ impl Voice {
                 self.voice_index,
                 vca::MixerChannel::OscillatorB,
             ) + modulation.noise;
-            let filtered = self
-                .filter
-                .next(mixer, cutoff_hz, filter_resonance, internal_rate);
+            let filtered = self.filter.next_with_character(
+                mixer,
+                cutoff_hz,
+                filter_resonance,
+                internal_rate,
+                settings.get(Parameter::VintageSpread),
+            );
             output += vca::final_voice(filtered, amplifier_envelope, self.voice_index);
         }
 
@@ -312,6 +318,24 @@ mod tests {
         let bottom = filter_cutoff_hz(0.0, 36, false, 0.0);
         let top = filter_cutoff_hz(1.0, 36, false, 0.0);
         assert!((top / bottom - 1_024.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn filter_service_voltage_anchor_produces_440_and_880_hz() {
+        let a3 = filter_cutoff_hz(
+            FILTER_SERVICE_CV_PANEL_POSITION,
+            FILTER_SERVICE_REFERENCE_NOTE,
+            true,
+            0.0,
+        );
+        let a4 = filter_cutoff_hz(
+            FILTER_SERVICE_CV_PANEL_POSITION,
+            FILTER_SERVICE_REFERENCE_NOTE + 12,
+            true,
+            0.0,
+        );
+        assert!((a3 - FILTER_SERVICE_REFERENCE_HZ).abs() < 0.001);
+        assert!((a4 - FILTER_SERVICE_REFERENCE_HZ * 2.0).abs() < 0.001);
     }
 
     #[test]

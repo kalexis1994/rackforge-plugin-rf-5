@@ -10,7 +10,12 @@ const STAGE_COUNT: usize = 4;
 const MAXIMUM_NORMALIZED_CUTOFF: f32 = 0.45;
 const THERMAL_NOISE_LEVEL: f32 = 2.0e-7;
 const NOMINAL_POLE_SENSITIVITY_MV_PER_DECADE: f32 = 60.0;
-const CUTOFF_PROFILE_REFERENCE_HZ: f32 = 1_000.0;
+const SERVICE_FILTER_REFERENCE_HZ: f32 = 440.0;
+const FILTER_WARMUP_UPDATE_RATE_HZ: f32 = 10.0;
+const TYPICAL_FILTER_WARMUP_DRIFT_RATIO: f32 = 0.005;
+const MAXIMUM_FILTER_WARMUP_DRIFT_RATIO: f32 = 0.015;
+const FILTER_WARMUP_TARGETS: [f32; 5] = [-0.82, 0.47, -0.31, 0.73, -0.58];
+const FILTER_WARMUP_TIME_CONSTANT_SECONDS: [f32; 5] = [210.0, 330.0, 270.0, 390.0, 240.0];
 
 // SD431 populates all four pole capacitors with 150 pF polystyrene parts. The
 // 100 kohm feedback resistor sees the CEM3320 buffer's nominal 1 megohm output
@@ -109,6 +114,8 @@ pub struct Cem3320Filter {
     stages: [TptStage; STAGE_COUNT],
     noise_state: u32,
     profile_index: usize,
+    warmup_position: f32,
+    warmup_sample_phase: f64,
 }
 
 impl Default for Cem3320Filter {
@@ -117,6 +124,8 @@ impl Default for Cem3320Filter {
             stages: [TptStage::default(); STAGE_COUNT],
             noise_state: 0x51f1_5e5d,
             profile_index: 2,
+            warmup_position: 0.0,
+            warmup_sample_phase: 0.0,
         }
     }
 }
@@ -131,10 +140,23 @@ impl Cem3320Filter {
     }
 
     pub fn next(&mut self, input: f32, cutoff_hz: f32, resonance: f32, sample_rate: f32) -> f32 {
+        self.next_with_character(input, cutoff_hz, resonance, sample_rate, 0.0)
+    }
+
+    pub fn next_with_character(
+        &mut self,
+        input: f32,
+        cutoff_hz: f32,
+        resonance: f32,
+        sample_rate: f32,
+        character: f32,
+    ) -> f32 {
         let sample_rate = sample_rate.max(1.0);
         let profile = FILTER_PROFILES[self.profile_index];
-        let cutoff_hz = profiled_cutoff_hz(cutoff_hz, profile)
-            .clamp(1.0, sample_rate * MAXIMUM_NORMALIZED_CUTOFF);
+        self.advance_warmup(sample_rate);
+        let cutoff_hz = (service_trimmed_cutoff_hz(cutoff_hz, profile)
+            * self.warmup_frequency_ratio(character))
+        .clamp(1.0, sample_rate * MAXIMUM_NORMALIZED_CUTOFF);
         let g = libm::tanf(core::f32::consts::PI * cutoff_hz / sample_rate);
         let coefficient = g / (1.0 + g);
         let feedback = resonance_feedback(resonance, profile);
@@ -155,6 +177,29 @@ impl Cem3320Filter {
             self.stages = [TptStage::default(); STAGE_COUNT];
             0.0
         }
+    }
+
+    fn advance_warmup(&mut self, sample_rate: f32) {
+        self.warmup_sample_phase += f64::from(FILTER_WARMUP_UPDATE_RATE_HZ);
+        while self.warmup_sample_phase >= f64::from(sample_rate) {
+            self.warmup_sample_phase -= f64::from(sample_rate);
+            self.step_warmup();
+        }
+    }
+
+    fn step_warmup(&mut self) {
+        let time_constant = FILTER_WARMUP_TIME_CONSTANT_SECONDS[self.profile_index];
+        let alpha = 1.0 - libm::expf(-1.0 / (FILTER_WARMUP_UPDATE_RATE_HZ * time_constant));
+        self.warmup_position +=
+            (FILTER_WARMUP_TARGETS[self.profile_index] - self.warmup_position) * alpha;
+        self.warmup_position = self.warmup_position.clamp(-1.0, 1.0);
+    }
+
+    fn warmup_frequency_ratio(&self, character: f32) -> f32 {
+        let limit = TYPICAL_FILTER_WARMUP_DRIFT_RATIO
+            + character.clamp(0.0, 1.0)
+                * (MAXIMUM_FILTER_WARMUP_DRIFT_RATIO - TYPICAL_FILTER_WARMUP_DRIFT_RATIO);
+        1.0 + self.warmup_position * limit
     }
 
     fn next_thermal_noise(&mut self) -> f32 {
@@ -204,13 +249,13 @@ fn interstage_passband_gain() -> f32 {
     equivalent_feedback_ohms() / INTERSTAGE_COUPLING_OHMS
 }
 
-fn profiled_cutoff_hz(cutoff_hz: f32, profile: FilterProfile) -> f32 {
-    let ratio = cutoff_hz.max(1.0) / CUTOFF_PROFILE_REFERENCE_HZ;
-    CUTOFF_PROFILE_REFERENCE_HZ
-        * libm::powf(
-            ratio,
-            NOMINAL_POLE_SENSITIVITY_MV_PER_DECADE / profile.pole_sensitivity_mv_per_decade,
-        )
+fn service_trimmed_cutoff_hz(cutoff_hz: f32, profile: FilterProfile) -> f32 {
+    let ratio = cutoff_hz.max(1.0) / SERVICE_FILTER_REFERENCE_HZ;
+    let untrimmed_exponent =
+        NOMINAL_POLE_SENSITIVITY_MV_PER_DECADE / profile.pole_sensitivity_mv_per_decade;
+    let populated_scale_trim =
+        profile.pole_sensitivity_mv_per_decade / NOMINAL_POLE_SENSITIVITY_MV_PER_DECADE;
+    SERVICE_FILTER_REFERENCE_HZ * libm::powf(ratio, untrimmed_exponent * populated_scale_trim)
 }
 
 fn cell_output(value: f32, profile: FilterProfile) -> f32 {
@@ -301,14 +346,51 @@ mod tests {
     }
 
     #[test]
-    fn pole_scale_population_meets_at_the_calibration_reference() {
+    fn service_scale_trim_makes_all_five_filters_meet_at_440_and_880_hz() {
         for profile in FILTER_PROFILES {
-            assert_eq!(profiled_cutoff_hz(1_000.0, profile), 1_000.0);
-            let low = profiled_cutoff_hz(100.0, profile);
-            let high = profiled_cutoff_hz(10_000.0, profile);
-            assert!((85.0..=110.0).contains(&low));
-            assert!((9_000.0..=11_800.0).contains(&high));
+            assert!((service_trimmed_cutoff_hz(440.0, profile) - 440.0).abs() < 0.001);
+            assert!((service_trimmed_cutoff_hz(880.0, profile) - 880.0).abs() < 0.001);
+            let trim =
+                profile.pole_sensitivity_mv_per_decade / NOMINAL_POLE_SENSITIVITY_MV_PER_DECADE;
+            assert!((0.95..=1.05).contains(&trim));
         }
+    }
+
+    #[test]
+    fn five_minute_warmup_motion_is_distinct_and_inside_published_limits() {
+        let mut typical = [0.0; 5];
+        let mut maximum = [0.0; 5];
+        for profile in 0..5 {
+            let mut filter = Cem3320Filter::with_profile(profile);
+            for _ in 0..(300 * FILTER_WARMUP_UPDATE_RATE_HZ as usize) {
+                filter.step_warmup();
+            }
+            typical[profile] = filter.warmup_frequency_ratio(0.0);
+            maximum[profile] = filter.warmup_frequency_ratio(1.0);
+            assert!((typical[profile] - 1.0).abs() <= TYPICAL_FILTER_WARMUP_DRIFT_RATIO);
+            assert!((maximum[profile] - 1.0).abs() <= MAXIMUM_FILTER_WARMUP_DRIFT_RATIO);
+            assert!((maximum[profile] - 1.0).abs() > (typical[profile] - 1.0).abs());
+        }
+        for index in 0..5 {
+            assert!(
+                typical[..index]
+                    .iter()
+                    .all(|previous| (previous - typical[index]).abs() > 1.0e-6)
+            );
+        }
+    }
+
+    #[test]
+    fn warmup_elapsed_time_is_independent_of_audio_rate() {
+        let mut low_rate = Cem3320Filter::with_profile(3);
+        let mut high_rate = Cem3320Filter::with_profile(3);
+        for _ in 0..441_000 {
+            low_rate.advance_warmup(44_100.0);
+        }
+        for _ in 0..960_000 {
+            high_rate.advance_warmup(96_000.0);
+        }
+        assert_eq!(low_rate.warmup_position, high_rate.warmup_position);
     }
 
     #[test]
