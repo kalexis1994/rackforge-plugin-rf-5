@@ -34,6 +34,14 @@ use all 14 writable bits so automatic tuning can correct much finer than one
 semitone. Full scale is approximately 10.67 V, while software normally limits
 most CVs to 10 V.
 
+The active circuit boundary no longer forces one voltage span onto every
+common destination. Filter Cutoff is fixed by service trim 4-14 at 10 V for
+panel maximum; Filter Resonance shares that DAC domain and reaches its
+populated 200 kohm current-input resistor. Glide retains its separately
+admitted 0-5 V control span. Other destinations remain isolated behind the
+existing candidate mapping until an equally specific electrical anchor is
+available.
+
 CV distribution is sequential. The DAC services 38 sample-and-hold
 destinations: 23 common/patch destinations on the computer board and 15
 individual oscillator/filter destinations on the voice board. A normal control
@@ -55,6 +63,8 @@ the original program data is not part of the product.
 
 - Public controls can remain normalized, but their hardware quantization and
   mapping must be explicit at the circuit boundary.
+- Per-destination S/H spans must remain explicit; a single global normalized
+  voltage is not a valid hardware model.
 - Oscillator pitch cannot share the coarse seven-bit path used by general CVs.
 - Control-rate stepping and sample/hold behaviour now live in a dedicated
   scheduler, separate from audio-rate modulation. One 6 ms unchanged or 11 ms

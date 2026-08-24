@@ -5,7 +5,7 @@
 //! current away from the OTA bias input, so panel position controls slew rate
 //! through a bounded transistor law instead of an arbitrary exponential map.
 
-use crate::cv::COMMON_CV_SPAN_VOLTS;
+use crate::cv::GLIDE_CV_SPAN_VOLTS;
 
 const GLIDE_CV_SERIES_OHMS: f32 = 100_000.0;
 const GLIDE_CV_SHUNT_OHMS: f32 = 2_700.0;
@@ -38,7 +38,7 @@ fn matched_pair_bias_fraction(amount: f32) -> f32 {
 }
 
 fn glide_cv_node_span_volts() -> f32 {
-    COMMON_CV_SPAN_VOLTS * GLIDE_CV_SHUNT_OHMS / (GLIDE_CV_SERIES_OHMS + GLIDE_CV_SHUNT_OHMS)
+    GLIDE_CV_SPAN_VOLTS * GLIDE_CV_SHUNT_OHMS / (GLIDE_CV_SERIES_OHMS + GLIDE_CV_SHUNT_OHMS)
 }
 
 #[cfg(test)]

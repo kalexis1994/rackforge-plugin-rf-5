@@ -6,7 +6,8 @@ events and writes nineteen unnormalized 48 kHz mono PCM WAV files:
 
 1. baseline polyphonic chords;
 2. strong dual-VCO filter drive;
-3. the five filter profiles near resonance calibration;
+3. the five filter profiles through the populated modified-linear resonance
+   circuit near calibration;
 4. Wheel Mod vibrato;
 5. Wheel Mod pulse-width modulation;
 6. Wheel Mod filter modulation.

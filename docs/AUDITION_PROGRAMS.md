@@ -13,7 +13,8 @@ program in RackForge's program browser and play normally:
 - `Audition - Filter Drive` drives all four CEM3320 cells with both VCOs and
   their high-level waveform combinations;
 - `Audition - Filter Resonance` places the five physical filter profiles near
-  the documented self-oscillation calibration region.
+  the documented self-oscillation calibration region through the populated
+  0-10 V/200 kohm CEM3320 resonance-control path.
 - `Audition - Envelope Punch` uses short filter/amplifier decays so repeated
   notes expose the ten CEM3310 profiles;
 - `Audition - Envelope Slow` holds a pad while the independent filter and

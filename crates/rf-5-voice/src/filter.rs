@@ -8,10 +8,35 @@
 
 const STAGE_COUNT: usize = 4;
 const MAXIMUM_NORMALIZED_CUTOFF: f32 = 0.45;
-const MAXIMUM_RESONANCE_FEEDBACK: f32 = 4.4;
 const THERMAL_NOISE_LEVEL: f32 = 2.0e-7;
 const NOMINAL_POLE_SENSITIVITY_MV_PER_DECADE: f32 = 60.0;
 const CUTOFF_PROFILE_REFERENCE_HZ: f32 = 1_000.0;
+
+// SD431 populates all four pole capacitors with 150 pF polystyrene parts. The
+// 100 kohm feedback resistor sees the CEM3320 buffer's nominal 1 megohm output
+// impedance in parallel, producing 90.909 kohm: effectively unity against the
+// populated 91 kohm interstage coupling resistors.
+#[cfg(test)]
+const POLE_CAPACITANCE_FARADS: f32 = 150.0e-12;
+const CELL_FEEDBACK_OHMS: f32 = 100_000.0;
+const BUFFER_OUTPUT_IMPEDANCE_OHMS: f32 = 1_000_000.0;
+const INTERSTAGE_COUPLING_OHMS: f32 = 91_000.0;
+
+// Filter Resonance is a 0-10 V common S/H destination and reaches the CEM3320
+// current input through R4144's 200 kohm. The data-sheet graph is represented
+// by a saturating exponential fixed by its 1 mmho-at-100 uA typical point and
+// 2.2 mmho maximum-Gm line. This preserves the published modified-linear bend
+// without inventing a near-linear panel law.
+const FILTER_RESONANCE_CV_SPAN_VOLTS: f32 = 10.0;
+const RESONANCE_CONTROL_RESISTOR_OHMS: f32 = 200_000.0;
+#[cfg(test)]
+const RESONANCE_GM_REFERENCE_AMPS: f32 = 100.0e-6;
+#[cfg(test)]
+const RESONANCE_GM_AT_REFERENCE_MHOS: f32 = 1.0e-3;
+const RESONANCE_GM_LIMIT_MHOS: f32 = 2.2e-3;
+const RESONANCE_GM_CURRENT_SCALE_AMPS: f32 = 164.979_53e-6;
+const SERVICE_NOMINAL_OSCILLATION_PANEL: f32 = 0.8;
+const FOUR_POLE_OSCILLATION_FEEDBACK: f32 = 4.0;
 
 // The normalized signal path is not yet calibrated to circuit volts. Two
 // circuit volts per internal unit places the data-sheet 10-14 Vpp output swing
@@ -112,13 +137,16 @@ impl Cem3320Filter {
             .clamp(1.0, sample_rate * MAXIMUM_NORMALIZED_CUTOFF);
         let g = libm::tanf(core::f32::consts::PI * cutoff_hz / sample_rate);
         let coefficient = g / (1.0 + g);
-        let feedback = resonance_feedback(resonance) * profile.resonance_gm_ratio;
+        let feedback = resonance_feedback(resonance, profile);
         let thermal_noise = self.next_thermal_noise();
         let mut signal = cell_output(
             input + thermal_noise - self.stages[3].state * feedback,
             profile,
         );
-        for stage in &mut self.stages {
+        for (index, stage) in self.stages.iter_mut().enumerate() {
+            if index > 0 {
+                signal *= interstage_passband_gain();
+            }
             signal = stage.next(signal, coefficient, profile);
         }
         if signal.is_finite() {
@@ -145,14 +173,35 @@ impl Cem3320Filter {
     }
 }
 
-fn resonance_feedback(value: f32) -> f32 {
-    let value = value.clamp(0.0, 1.0);
-    // The CEM3320 resonance cell is described as modified-linear and its
-    // transconductance curve flattens near maximum current. This gentle bend
-    // retains a near-linear panel response while placing oscillation inside
-    // the 7-9.5 service-manual dial window.
-    let modified_linear = value * (1.08 - 0.08 * value);
-    modified_linear * MAXIMUM_RESONANCE_FEEDBACK
+fn resonance_feedback(value: f32, profile: FilterProfile) -> f32 {
+    let calibration_gm = nominal_resonance_gm(SERVICE_NOMINAL_OSCILLATION_PANEL);
+    FOUR_POLE_OSCILLATION_FEEDBACK * resonance_gm(value, profile) / calibration_gm
+}
+
+fn resonance_gm(value: f32, profile: FilterProfile) -> f32 {
+    nominal_resonance_gm(value) * profile.resonance_gm_ratio
+}
+
+fn nominal_resonance_gm(value: f32) -> f32 {
+    resonance_gm_from_current(resonance_control_current_amps(value))
+}
+
+fn resonance_gm_from_current(current: f32) -> f32 {
+    RESONANCE_GM_LIMIT_MHOS
+        * (1.0 - libm::expf(-current.max(0.0) / RESONANCE_GM_CURRENT_SCALE_AMPS))
+}
+
+fn resonance_control_current_amps(value: f32) -> f32 {
+    value.clamp(0.0, 1.0) * FILTER_RESONANCE_CV_SPAN_VOLTS / RESONANCE_CONTROL_RESISTOR_OHMS
+}
+
+fn equivalent_feedback_ohms() -> f32 {
+    CELL_FEEDBACK_OHMS * BUFFER_OUTPUT_IMPEDANCE_OHMS
+        / (CELL_FEEDBACK_OHMS + BUFFER_OUTPUT_IMPEDANCE_OHMS)
+}
+
+fn interstage_passband_gain() -> f32 {
+    equivalent_feedback_ohms() / INTERSTAGE_COUPLING_OHMS
 }
 
 fn profiled_cutoff_hz(cutoff_hz: f32, profile: FilterProfile) -> f32 {
@@ -213,6 +262,42 @@ mod tests {
             assert!((10.0..=14.0).contains(&profile.output_clip_vpp));
             assert!((0.001..=0.003).contains(&profile.passband_second_harmonic));
         }
+    }
+
+    #[test]
+    fn populated_pole_network_is_four_matched_150_pf_unity_cells() {
+        assert_eq!(STAGE_COUNT, 4);
+        assert_eq!(POLE_CAPACITANCE_FARADS, 150.0e-12);
+        assert!((equivalent_feedback_ohms() - 90_909.09).abs() < 0.01);
+        assert!((0.999..=1.0).contains(&interstage_passband_gain()));
+    }
+
+    #[test]
+    fn populated_resonance_control_reaches_fifty_microamps() {
+        assert_eq!(resonance_control_current_amps(0.0), 0.0);
+        assert!((resonance_control_current_amps(1.0) - 50.0e-6).abs() < 1.0e-10);
+    }
+
+    #[test]
+    fn modified_linear_resonance_cell_matches_published_anchor_and_flattens() {
+        let gm_at_reference = resonance_gm_from_current(RESONANCE_GM_REFERENCE_AMPS);
+        assert!((gm_at_reference - RESONANCE_GM_AT_REFERENCE_MHOS).abs() < 1.0e-8);
+
+        let first_25_ua = nominal_resonance_gm(0.5) - nominal_resonance_gm(0.0);
+        let second_25_ua = nominal_resonance_gm(1.0) - nominal_resonance_gm(0.5);
+        assert!(second_25_ua < first_25_ua);
+        assert!(nominal_resonance_gm(1.0) < RESONANCE_GM_LIMIT_MHOS);
+    }
+
+    #[test]
+    fn resonance_loop_crosses_four_inside_the_service_window() {
+        let nominal = FILTER_PROFILES[2];
+        assert!(resonance_feedback(0.65, nominal) < FOUR_POLE_OSCILLATION_FEEDBACK);
+        assert_eq!(
+            resonance_feedback(SERVICE_NOMINAL_OSCILLATION_PANEL, nominal),
+            FOUR_POLE_OSCILLATION_FEEDBACK
+        );
+        assert!(resonance_feedback(0.95, nominal) > FOUR_POLE_OSCILLATION_FEEDBACK);
     }
 
     #[test]

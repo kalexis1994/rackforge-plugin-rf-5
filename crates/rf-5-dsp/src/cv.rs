@@ -12,7 +12,9 @@ use rf_5_voice::{
     tuning,
 };
 
-pub(crate) const COMMON_CV_SPAN_VOLTS: f32 = 5.0;
+pub(crate) const GLIDE_CV_SPAN_VOLTS: f32 = 5.0;
+const DEFAULT_COMMON_CV_SPAN_VOLTS: f32 = 5.0;
+const FILTER_CONTROL_CV_SPAN_VOLTS: f32 = 10.0;
 const SEMITONES_PER_CONTROL_VOLT: f32 = 12.0;
 
 #[derive(Clone, Copy, Debug)]
@@ -64,7 +66,7 @@ impl CvTargets {
             let destination = ControlVoltageDestination::try_from(index as u8)
                 .expect("valid common CV destination");
             if let Some(parameter) = common_parameter(destination) {
-                *value = settings.get(parameter) * COMMON_CV_SPAN_VOLTS;
+                *value = settings.get(parameter) * common_cv_span_volts(destination);
             }
         }
 
@@ -159,7 +161,8 @@ impl CvDistributor {
             let destination = ControlVoltageDestination::try_from(index as u8)
                 .expect("valid common CV destination");
             if let Some(parameter) = common_parameter(destination) {
-                let normalized = (self.cells[index].volts() / COMMON_CV_SPAN_VOLTS).clamp(0.0, 1.0);
+                let normalized =
+                    (self.cells[index].volts() / common_cv_span_volts(destination)).clamp(0.0, 1.0);
                 let copied = output.set(parameter as u32, f64::from(normalized));
                 debug_assert!(copied);
             }
@@ -179,6 +182,18 @@ impl CvDistributor {
         ControlVoltageDestination::filter(voice)
             .map(|destination| self.cells[destination as usize].volts())
             .unwrap_or(0.0)
+    }
+}
+
+fn common_cv_span_volts(destination: ControlVoltageDestination) -> f32 {
+    match destination {
+        // Service trim 4-14 measures the Filter Cutoff S/H at approximately
+        // 10 V for panel maximum. Filter Resonance shares the same common DAC
+        // and reaches the populated 200 kohm current-input resistor on SD431.
+        ControlVoltageDestination::FilterCutoff | ControlVoltageDestination::FilterResonance => {
+            FILTER_CONTROL_CV_SPAN_VOLTS
+        }
+        _ => DEFAULT_COMMON_CV_SPAN_VOLTS,
     }
 }
 
@@ -248,6 +263,28 @@ mod tests {
         ] {
             assert!((applied.get(parameter) - settings.get(parameter)).abs() < 1.0e-6);
         }
+    }
+
+    #[test]
+    fn service_calibrated_filter_controls_use_the_ten_volt_domain() {
+        let mut settings = Settings::default();
+        assert!(settings.set(Parameter::FilterCutoff as u32, 1.0));
+        assert!(settings.set(Parameter::FilterResonance as u32, 1.0));
+        assert!(settings.set(Parameter::Glide as u32, 1.0));
+        let targets = CvTargets::from_state(settings, [60; VOICE_COUNT], AutoTune::calibrated());
+
+        assert_eq!(
+            targets.get(ControlVoltageDestination::FilterCutoff as usize),
+            FILTER_CONTROL_CV_SPAN_VOLTS
+        );
+        assert_eq!(
+            targets.get(ControlVoltageDestination::FilterResonance as usize),
+            FILTER_CONTROL_CV_SPAN_VOLTS
+        );
+        assert_eq!(
+            targets.get(ControlVoltageDestination::Glide as usize),
+            GLIDE_CV_SPAN_VOLTS
+        );
     }
 
     #[test]
