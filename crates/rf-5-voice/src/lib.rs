@@ -5,6 +5,7 @@
 
 use rf_5_contract::{Parameter, Settings, hardware::quantize_analog_pot};
 
+pub mod autotune;
 pub mod envelope;
 pub mod filter;
 pub mod tuning;
@@ -55,6 +56,10 @@ pub struct Voice {
 }
 
 impl Voice {
+    pub fn note(self) -> u8 {
+        self.note
+    }
+
     pub fn is_active(self) -> bool {
         self.active
     }

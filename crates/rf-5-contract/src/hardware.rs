@@ -22,6 +22,15 @@ pub const OSCILLATOR_CONTROL_VOLTAGE_BITS: u8 = 14;
 pub const DAC_FULL_SCALE_VOLTS: f32 = 10.67;
 pub const SOFTWARE_CONTROL_VOLTAGE_LIMIT_VOLTS: f32 = 10.0;
 
+pub const TUNE_CPU_CLOCK_HZ: u32 = 2_500_000;
+pub const TUNE_OSCILLATOR_COUNT: usize = AUDIO_OSCILLATOR_COUNT;
+pub const TUNE_OCTAVE_BIAS_COUNT: usize = 10;
+pub const TUNE_DIRECT_MEASUREMENT_FIRST_OCTAVE: usize = 3;
+pub const TUNE_DIRECT_MEASUREMENT_LAST_OCTAVE: usize = 9;
+pub const TUNE_BIAS_BYTES: usize =
+    TUNE_OSCILLATOR_COUNT * TUNE_OCTAVE_BIAS_COUNT * size_of::<i16>();
+pub const IDEAL_SEMITONE_CONTROL_VOLTS: f32 = 0.083;
+
 pub const CONTROL_VOLTAGE_DESTINATION_COUNT: usize = 38;
 pub const COMMON_AND_PATCH_SAMPLE_HOLD_COUNT: usize = 23;
 pub const INDIVIDUAL_OSCILLATOR_AND_FILTER_SAMPLE_HOLD_COUNT: usize = 15;
@@ -200,6 +209,15 @@ mod tests {
             COMMON_AND_PATCH_SAMPLE_HOLD_COUNT + INDIVIDUAL_OSCILLATOR_AND_FILTER_SAMPLE_HOLD_COUNT,
             CONTROL_VOLTAGE_DESTINATION_COUNT
         );
+    }
+
+    #[test]
+    fn automatic_tune_table_matches_scratchpad_layout() {
+        assert_eq!(TUNE_OSCILLATOR_COUNT, 10);
+        assert_eq!(TUNE_OCTAVE_BIAS_COUNT, 10);
+        assert_eq!(TUNE_BIAS_BYTES, 200);
+        assert_eq!(TUNE_DIRECT_MEASUREMENT_FIRST_OCTAVE, 3);
+        assert_eq!(TUNE_DIRECT_MEASUREMENT_LAST_OCTAVE, 9);
     }
 
     #[test]

@@ -13,8 +13,8 @@ oscillator boundary:
 - oscillator B can hard-synchronize oscillator A;
 - selected waveforms are additive, not mutually exclusive.
 
-The automatic tune system and low-frequency/keyboard modes are documented but
-are not part of this candidate yet.
+The automatic tune system and low-frequency/keyboard modes are active parts of
+this candidate.
 
 ## Active numerical model
 
@@ -57,12 +57,15 @@ items are:
 - pulse-width transfer limits and behavior at both extremes;
 - exact hard-sync edge, reset phase and transient shape;
 - final calibration of the frequency-knob and B fine-control laws;
-- 14-bit tune-bias interpolation, temperature drift and per-oscillator scale;
+- measured component populations, temperature drift and exact low-octave tune
+  extrapolation arithmetic;
 - band-limiting of triangle corners and sync discontinuities under extreme
 modulation.
 
 The active CV-to-frequency mapping and its explicit hypotheses are maintained
 separately in [`TUNING_MODEL.md`](TUNING_MODEL.md).
+The ten-channel calibration pipeline is documented in
+[`AUTOTUNE_MODEL.md`](AUTOTUNE_MODEL.md).
 
 The candidate becomes accepted only after spectral sweeps at 44.1, 48, 96 and
 192 kHz pass the alias threshold and legally usable hardware measurements bound

@@ -18,8 +18,10 @@ separate CEM3310-class RC envelopes, five-voice Unison, Glide and both
 performance wheels. Separate CA3280 mixer, final-voice and master-volume
 transfers now feed the documented five-input summer and output buffer, while a
 source-backed control scheduler recreates the held 6/11 ms panel cycle. It
-remains a reverse-engineering candidate: exact analog calibration, measured
-overload/output levels and original-instrument measurements still pass through the evidence gates in
+also reconstructs the ten-VCO automatic-tune path with a 2.5 MHz period
+counter, fourteen-bit successive approximation and per-semitone bias
+interpolation. It remains a reverse-engineering candidate: measured component
+populations, overload/output levels and original-instrument measurements still pass through the evidence gates in
 [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
 
 ## Repository layout

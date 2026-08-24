@@ -73,6 +73,8 @@ analog path to the master CA3280, and program changes preserve its value.
 
 The physical machine refreshes 38 DAC destinations, including individual
 oscillator and filter sample-and-holds. The active candidate schedules the 24
-source controls and latches the resulting switch state at cycle completion; a
-later tuning block may subdivide oscillator correction and per-voice filter CV
-without changing this public boundary.
+source controls and latches the resulting switch state at cycle completion.
+The ten individual oscillator destinations now receive their own automatic
+tune correction at fourteen-bit resolution. Exact interleaving of those writes
+with the other 28 destinations and the five per-voice filter correction values
+remains a lower-level timing refinement.

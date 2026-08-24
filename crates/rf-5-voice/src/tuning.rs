@@ -19,6 +19,11 @@ pub fn oscillator_a_frequency(note: u8, coarse: f32) -> f32 {
     tracked_frequency(note, coarse_octaves(coarse), 0.0)
 }
 
+/// Ideal oscillator-A CV position expressed in semitones above C0.
+pub fn oscillator_a_tuning_semitones(note: u8, coarse: f32) -> f32 {
+    f32::from(note) - 12.0 + coarse_octaves(coarse) * SEMITONES_PER_OCTAVE
+}
+
 pub fn oscillator_b_frequency(
     note: u8,
     coarse: f32,
@@ -37,6 +42,27 @@ pub fn oscillator_b_frequency(
         coarse_octaves(coarse)
     };
     tracked_frequency(note, coarse, fine_octaves(fine))
+}
+
+/// Ideal oscillator-B CV position expressed in semitones above C0.
+pub fn oscillator_b_tuning_semitones(
+    note: u8,
+    coarse: f32,
+    fine: f32,
+    keyboard_enabled: bool,
+    low_frequency: bool,
+) -> f32 {
+    let note = if keyboard_enabled {
+        note
+    } else {
+        LOWEST_KEY_MIDI_NOTE
+    };
+    let coarse = if low_frequency {
+        low_frequency_octaves(coarse)
+    } else {
+        coarse_octaves(coarse)
+    };
+    f32::from(note) - 12.0 + (coarse + fine_octaves(fine)) * SEMITONES_PER_OCTAVE
 }
 
 fn tracked_frequency(note: u8, coarse_octaves: f32, fine_octaves: f32) -> f32 {
@@ -77,6 +103,14 @@ mod tests {
         let b = oscillator_b_frequency(60, 0.5, 0.5, true, false);
         assert!((a - b).abs() < 0.001);
         assert!((oscillator_a_frequency(72, 0.5) / a - 2.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn tune_coordinates_share_the_frequency_control_law() {
+        let a_coordinate = oscillator_a_tuning_semitones(60, 0.5);
+        let b_coordinate = oscillator_b_tuning_semitones(60, 0.5, 0.5, true, false);
+        assert!((a_coordinate - b_coordinate).abs() < 1.0e-6);
+        assert!((a_coordinate - 48.0).abs() < 0.1);
     }
 
     #[test]

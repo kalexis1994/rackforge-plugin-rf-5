@@ -8,7 +8,11 @@ mod output;
 use lfo::{Lfo, LfoWaveSelection};
 use noise::PinkNoise;
 use rf_5_contract::{PARAMETER_COUNT, Parameter, Settings, hardware::quantize_analog_pot};
-use rf_5_voice::{Voice, VoiceModulation};
+use rf_5_voice::{
+    Voice, VoiceModulation,
+    autotune::{AutoTune, Oscillator},
+    tuning,
+};
 
 pub const VOICE_COUNT: usize = 5;
 pub const STATE_BYTES: usize = PARAMETER_COUNT * 4;
@@ -93,6 +97,7 @@ pub struct Engine {
     glide_target_note: f32,
     glide_initialized: bool,
     controls: control::ControlScheduler,
+    autotune: AutoTune,
 }
 
 impl Default for Engine {
@@ -112,6 +117,7 @@ impl Default for Engine {
             glide_target_note: 0.0,
             glide_initialized: false,
             controls: control::ControlScheduler::default(),
+            autotune: AutoTune::default(),
         }
     }
 }
@@ -123,6 +129,7 @@ impl Engine {
         }
         self.sample_rate = sample_rate as f32;
         self.controls.prepare(self.settings, self.sample_rate);
+        self.autotune = AutoTune::calibrated();
         self.reset_voices();
         self.lfo.reset();
         self.noise.reset();
@@ -316,8 +323,27 @@ impl Engine {
             noise_level: quantize_analog_pot(applied_settings.get(Parameter::NoiseLevel)),
         };
         let mut sample = 0.0;
-        for voice in &mut self.voices {
-            sample += voice.next(self.sample_rate, applied_settings, modulation);
+        for (voice_index, voice) in self.voices.iter_mut().enumerate() {
+            let note = voice.note();
+            let tuning_a = tuning::oscillator_a_tuning_semitones(
+                note,
+                applied_settings.get(Parameter::OscillatorAFrequency),
+            );
+            let tuning_b = tuning::oscillator_b_tuning_semitones(
+                note,
+                applied_settings.get(Parameter::OscillatorBFrequency),
+                applied_settings.get(Parameter::OscillatorBDetune),
+                parameter_enabled(applied_settings, Parameter::OscillatorBKeyboard),
+                parameter_enabled(applied_settings, Parameter::OscillatorBLowFrequency),
+            );
+            let mut calibrated_modulation = modulation;
+            calibrated_modulation.oscillator_a_semitones +=
+                self.autotune
+                    .residual_semitones(voice_index, Oscillator::A, tuning_a);
+            calibrated_modulation.oscillator_b_semitones +=
+                self.autotune
+                    .residual_semitones(voice_index, Oscillator::B, tuning_b);
+            sample += voice.next(self.sample_rate, applied_settings, calibrated_modulation);
         }
         output::render(sample, applied_settings.get(Parameter::MasterVolume))
     }

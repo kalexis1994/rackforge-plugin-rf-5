@@ -38,10 +38,15 @@ Three values cannot yet be proven from the admitted documents alone:
 These are isolated in `tuning.rs` and covered by tests, so later measurements
 can replace them without changing oscillator topology or host parameter IDs.
 
-## Automatic tune still open
+## Automatic tune
 
-The original tune routine measures all ten VCOs at octave points, stores a
-200-byte bias table and interpolates a 14-bit correction while playing. RF-5
-does not yet reproduce that routine. The current deterministic voice spread is
-therefore a temporary residual-error model, not a reconstruction of the tune
-table.
+RF-5 now reconstructs the ten-channel tune multiplexer, 2.5 MHz period
+measurement, fourteen-step successive approximation, 200-byte octave-bias
+table and per-semitone runtime interpolation. C3-C9 are measured directly and
+C0-C2 are extrapolated, as described by the technical manual.
+
+The detailed acceptance bounds and the remaining uncertainty around the exact
+low-octave extrapolation arithmetic are recorded in
+[`AUTOTUNE_MODEL.md`](AUTOTUNE_MODEL.md). `VintageSpread` remains an explicit
+RF-5 extension layered after calibration; it is not presented as failed or
+disabled automatic tuning.

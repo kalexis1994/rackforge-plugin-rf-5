@@ -15,5 +15,6 @@
 | VCA/output | Linearized CA3280 per voice at 4x, equal five-input summer, master CA3280 and smooth host output boundary | SD430/SD431 topology and CA3280 transfer modes accepted; gain staging and THD unmeasured | Candidate |
 | Unison/glide | Five-voice last-note Unison with held-note fallback and Unison-only linear CV Glide | Rev 3 routing and service limits accepted; priority and panel taper unmeasured | Candidate |
 | Control scanning/CV | Ordered 24-pot scheduler, 128 positions, sequential held values, 6 ms idle/11 ms changed cycles and end-cycle switch latches | Pot order, 7/14-bit resolution, loop timing and 38 S/H destinations accepted; exact per-destination DAC timing simplified | Candidate |
+| Automatic tune | Ten-VCO tune mux, 2.5 MHz period counter, 14-bit successive approximation, 200-byte C0-C9 bias table and runtime interpolation | C3-C9 measurement and C0-C2 extrapolation accepted; exact ROM extrapolation arithmetic and measured component population unavailable | Candidate |
 | Performance controls | Note on/off, all notes off, CC1, CC64 sustain and 14-bit pitch bend; velocity correctly ignored | MIDI contract plus original service behaviour | Candidate |
 | Factory programs | Four original baseline programs | Internal | Expand |
