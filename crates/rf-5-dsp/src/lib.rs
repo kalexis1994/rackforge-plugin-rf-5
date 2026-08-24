@@ -65,14 +65,7 @@ impl Engine {
                 self.next_voice = (self.next_voice + 1) % VOICE_COUNT;
                 index
             });
-        self.voices[voice_index].start(
-            channel,
-            note,
-            velocity,
-            voice_index,
-            self.sample_rate,
-            self.settings,
-        );
+        self.voices[voice_index].start(channel, note, velocity, voice_index);
     }
 
     pub fn note_off(&mut self, channel: u8, note: u8) {
@@ -112,10 +105,22 @@ impl Engine {
 
     pub fn load_baseline_program(&mut self, id: &str) -> bool {
         let values = match id {
-            "baseline-init" => [0.72, 0.5, 0.54, 0.72, 0.08, 0.01, 0.20, 0.82, 0.28, 0.18],
-            "baseline-warm" => [0.76, 0.43, 0.58, 0.46, 0.12, 0.01, 0.28, 0.72, 0.34, 0.36],
-            "baseline-pad" => [0.68, 0.50, 0.62, 0.38, 0.04, 0.54, 0.52, 0.78, 0.70, 0.42],
-            "baseline-lead" => [0.64, 0.36, 0.72, 0.82, 0.18, 0.01, 0.12, 0.90, 0.24, 0.26],
+            "baseline-init" => [
+                0.72, 0.72, 0.54, 0.72, 0.08, 0.01, 0.20, 0.82, 0.28, 0.18, 0.64, 1.0, 0.0, 0.50,
+                1.0, 0.0, 0.0, 0.50, 0.0, 0.50, 0.50, 0.0, 1.0,
+            ],
+            "baseline-warm" => [
+                0.76, 0.76, 0.58, 0.46, 0.12, 0.01, 0.28, 0.72, 0.34, 0.36, 0.54, 1.0, 1.0, 0.44,
+                1.0, 0.0, 0.0, 0.56, 0.0, 0.50, 0.50, 0.0, 1.0,
+            ],
+            "baseline-pad" => [
+                0.68, 0.62, 0.62, 0.38, 0.04, 0.54, 0.52, 0.78, 0.70, 0.42, 0.62, 0.0, 1.0, 0.37,
+                0.0, 1.0, 1.0, 0.63, 0.0, 0.50, 0.50, 0.0, 1.0,
+            ],
+            "baseline-lead" => [
+                0.64, 0.72, 0.67, 0.82, 0.18, 0.01, 0.12, 0.90, 0.24, 0.26, 0.52, 1.0, 0.0, 0.50,
+                1.0, 0.0, 0.0, 0.50, 1.0, 0.72, 0.50, 0.0, 1.0,
+            ],
             _ => return false,
         };
         self.settings = Settings::from_array(values).expect("baseline program values are valid");
@@ -193,5 +198,23 @@ mod tests {
         assert!(engine.load_baseline_program("baseline-lead"));
         assert!(engine.load_state(&state));
         assert_eq!(engine.settings(), expected);
+    }
+
+    #[test]
+    fn oscillator_candidate_is_finite_across_supported_sample_rates() {
+        for sample_rate in [44_100.0, 48_000.0, 96_000.0, 192_000.0] {
+            let mut engine = Engine::default();
+            assert!(engine.prepare(sample_rate));
+            assert!(engine.load_baseline_program("baseline-lead"));
+            engine.note_on(0, 93, 127);
+            let mut peak = 0.0_f32;
+            for _ in 0..16_384 {
+                let sample = engine.next_sample();
+                assert!(sample.is_finite());
+                peak = peak.max(sample.abs());
+            }
+            assert!(peak > 0.001, "silent render at {sample_rate} Hz");
+            assert!(peak <= 1.0);
+        }
     }
 }

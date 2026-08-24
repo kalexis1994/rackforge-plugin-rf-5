@@ -41,3 +41,7 @@ model and acceptance test are recorded.
 The frozen hardware boundary and first control-system contract are documented
 in [`fidelity/REFERENCE_HARDWARE.md`](fidelity/REFERENCE_HARDWARE.md) and
 [`fidelity/CONTROL_SCANNING_AND_CV.md`](fidelity/CONTROL_SCANNING_AND_CV.md).
+The active oscillator candidate and its remaining uncertainty are recorded in
+[`fidelity/VCO_MODEL.md`](fidelity/VCO_MODEL.md).
+Its control-voltage law and calibration hypotheses are isolated in
+[`fidelity/TUNING_MODEL.md`](fidelity/TUNING_MODEL.md).

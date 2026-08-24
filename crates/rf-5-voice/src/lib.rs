@@ -1,13 +1,20 @@
 #![no_std]
 
-//! Milestone 0 per-voice baseline. The oscillator, envelope and filter are
-//! deliberately simple and are tracked as replacement gaps in the fidelity
-//! matrix. They exist to exercise allocation, automation and packaging.
+//! Per-voice synthesis path. The VCO A/B core is source-backed and
+//! band-limited; envelope, filter and gain staging remain replacement gaps.
 
-use rf_5_contract::{Parameter, Settings};
+use rf_5_contract::{Parameter, Settings, hardware::quantize_analog_pot};
 
-const SEMITONE_RATIO: f32 = 1.059_463_1;
+pub mod tuning;
+pub mod vco;
+
+pub use tuning::note_frequency;
+use vco::{Vco, WaveSelection};
+
 const VOICE_SPREAD: [f32; 5] = [-0.0030, -0.0014, 0.0, 0.0016, 0.0031];
+const INITIAL_PHASE_A: [f32; 5] = [0.07, 0.31, 0.58, 0.83, 0.19];
+const INITIAL_PHASE_B: [f32; 5] = [0.67, 0.11, 0.42, 0.74, 0.93];
+const OSCILLATOR_OVERSAMPLING: usize = 4;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum EnvelopeStage {
@@ -24,10 +31,10 @@ pub struct Voice {
     channel: u8,
     velocity: f32,
     active: bool,
-    phase_a: f32,
-    phase_b: f32,
-    increment_a: f32,
-    increment_b: f32,
+    oscillator_a: Vco,
+    oscillator_b: Vco,
+    oscillators_initialized: bool,
+    voice_index: usize,
     envelope: f32,
     release_step: f32,
     stage: EnvelopeStage,
@@ -41,10 +48,10 @@ impl Default for Voice {
             channel: 0,
             velocity: 0.0,
             active: false,
-            phase_a: 0.0,
-            phase_b: 0.0,
-            increment_a: 0.0,
-            increment_b: 0.0,
+            oscillator_a: Vco::default(),
+            oscillator_b: Vco::default(),
+            oscillators_initialized: false,
+            voice_index: 0,
             envelope: 0.0,
             release_step: 0.0,
             stage: EnvelopeStage::Idle,
@@ -62,27 +69,18 @@ impl Voice {
         self.active && self.channel == channel && self.note == note
     }
 
-    pub fn start(
-        &mut self,
-        channel: u8,
-        note: u8,
-        velocity: u8,
-        voice_index: usize,
-        sample_rate: f32,
-        settings: Settings,
-    ) {
-        let base = note_frequency(note);
-        let spread =
-            VOICE_SPREAD[voice_index % VOICE_SPREAD.len()] * settings.get(Parameter::VintageSpread);
-        let oscillator_b_detune = (settings.get(Parameter::OscillatorBDetune) - 0.5) * 0.04;
+    pub fn start(&mut self, channel: u8, note: u8, velocity: u8, voice_index: usize) {
         self.note = note;
         self.channel = channel;
+        self.voice_index = voice_index % VOICE_SPREAD.len();
         self.velocity = f32::from(velocity) / 127.0;
         self.active = true;
-        self.phase_a = 0.0;
-        self.phase_b = 0.0;
-        self.increment_a = base * (1.0 + spread) / sample_rate.max(1.0);
-        self.increment_b = base * (1.0 - spread + oscillator_b_detune) / sample_rate.max(1.0);
+        if !self.oscillators_initialized {
+            let index = self.voice_index;
+            self.oscillator_a = Vco::with_phase(INITIAL_PHASE_A[index]);
+            self.oscillator_b = Vco::with_phase(INITIAL_PHASE_B[index]);
+            self.oscillators_initialized = true;
+        }
         self.envelope = 0.0;
         self.release_step = 0.0;
         self.stage = EnvelopeStage::Attack;
@@ -99,17 +97,12 @@ impl Voice {
     }
 
     pub fn next(&mut self, sample_rate: f32, settings: Settings) -> f32 {
+        let raw = self.next_oscillators(sample_rate, settings);
         if !self.active {
             return 0.0;
         }
 
         self.advance_envelope(sample_rate, settings);
-        self.phase_a = wrap_phase(self.phase_a + self.increment_a);
-        self.phase_b = wrap_phase(self.phase_b + self.increment_b);
-        let saw_a = self.phase_a * 2.0 - 1.0;
-        let saw_b = self.phase_b * 2.0 - 1.0;
-        let mix = settings.get(Parameter::OscillatorMix);
-        let raw = saw_a * (1.0 - mix) + saw_b * mix;
 
         let cutoff = settings.get(Parameter::FilterCutoff);
         let sample_rate_scale = 48_000.0 / sample_rate.max(1.0);
@@ -117,6 +110,53 @@ impl Voice {
         let feedback = settings.get(Parameter::FilterResonance) * 0.82;
         self.filter += coefficient * ((raw - self.filter * feedback) - self.filter);
         self.filter * self.envelope * self.velocity
+    }
+
+    fn next_oscillators(&mut self, sample_rate: f32, settings: Settings) -> f32 {
+        let waves_a = WaveSelection {
+            saw: parameter_enabled(settings, Parameter::OscillatorASaw),
+            triangle: false,
+            pulse: parameter_enabled(settings, Parameter::OscillatorAPulse),
+        };
+        let waves_b = WaveSelection {
+            saw: parameter_enabled(settings, Parameter::OscillatorBSaw),
+            triangle: parameter_enabled(settings, Parameter::OscillatorBTriangle),
+            pulse: parameter_enabled(settings, Parameter::OscillatorBPulse),
+        };
+        let pulse_width_a = quantize_analog_pot(settings.get(Parameter::OscillatorAPulseWidth));
+        let pulse_width_b = quantize_analog_pot(settings.get(Parameter::OscillatorBPulseWidth));
+        let level_a = quantize_analog_pot(settings.get(Parameter::OscillatorALevel));
+        let level_b = quantize_analog_pot(settings.get(Parameter::OscillatorBLevel));
+        let sync = parameter_enabled(settings, Parameter::OscillatorSync);
+        let spread = VOICE_SPREAD[self.voice_index] * settings.get(Parameter::VintageSpread);
+        let frequency_a = tuning::oscillator_a_frequency(
+            self.note,
+            settings.get(Parameter::OscillatorAFrequency),
+        ) * (1.0 + spread);
+        let frequency_b = tuning::oscillator_b_frequency(
+            self.note,
+            settings.get(Parameter::OscillatorBFrequency),
+            settings.get(Parameter::OscillatorBDetune),
+            parameter_enabled(settings, Parameter::OscillatorBKeyboard),
+            parameter_enabled(settings, Parameter::OscillatorBLowFrequency),
+        ) * (1.0 - spread);
+        let internal_rate = sample_rate.max(1.0) * OSCILLATOR_OVERSAMPLING as f32;
+        let mut output = 0.0;
+
+        for _ in 0..OSCILLATOR_OVERSAMPLING {
+            let sample_a =
+                self.oscillator_a
+                    .next(frequency_a, internal_rate, pulse_width_a, waves_a);
+            let sample_b =
+                self.oscillator_b
+                    .next(frequency_b, internal_rate, pulse_width_b, waves_b);
+            output += sample_a.value * level_a + sample_b.value * level_b;
+            if sync && sample_b.wrapped {
+                self.oscillator_a.hard_sync();
+            }
+        }
+
+        output / OSCILLATOR_OVERSAMPLING as f32
     }
 
     fn advance_envelope(&mut self, sample_rate: f32, settings: Settings) {
@@ -158,22 +198,8 @@ fn envelope_seconds(value: f32, minimum: f32, span: f32) -> f32 {
     minimum + value * value * span
 }
 
-fn wrap_phase(phase: f32) -> f32 {
-    if phase >= 1.0 { phase - 1.0 } else { phase }
-}
-
-pub fn note_frequency(note: u8) -> f32 {
-    let mut frequency = 440.0;
-    let mut distance = i32::from(note) - 69;
-    while distance > 0 {
-        frequency *= SEMITONE_RATIO;
-        distance -= 1;
-    }
-    while distance < 0 {
-        frequency /= SEMITONE_RATIO;
-        distance += 1;
-    }
-    frequency
+fn parameter_enabled(settings: Settings, parameter: Parameter) -> bool {
+    settings.get(parameter) >= 0.5
 }
 
 #[cfg(test)]
@@ -191,7 +217,7 @@ mod tests {
     fn note_starts_sounds_and_releases() {
         let settings = Settings::default();
         let mut voice = Voice::default();
-        voice.start(0, 69, 127, 0, 48_000.0, settings);
+        voice.start(0, 69, 127, 0);
         assert!((0..4096).any(|_| voice.next(48_000.0, settings).abs() > 0.001));
         voice.release(48_000.0, settings);
         for _ in 0..500_000 {
@@ -201,5 +227,52 @@ mod tests {
             }
         }
         assert!(!voice.is_active());
+    }
+
+    #[test]
+    fn note_retrigger_does_not_reset_free_running_oscillators() {
+        let settings = Settings::default();
+        let mut voice = Voice::default();
+        voice.start(0, 60, 100, 2);
+        for _ in 0..137 {
+            let _ = voice.next(48_000.0, settings);
+        }
+        let phase_a = voice.oscillator_a.phase();
+        let phase_b = voice.oscillator_b.phase();
+        voice.start(0, 67, 100, 2);
+        assert_eq!(voice.oscillator_a.phase(), phase_a);
+        assert_eq!(voice.oscillator_b.phase(), phase_b);
+    }
+
+    #[test]
+    fn inactive_voice_oscillators_continue_running() {
+        let settings = Settings::default();
+        let mut voice = Voice::default();
+        voice.start(0, 60, 100, 1);
+        voice.active = false;
+        let phase_before = voice.oscillator_a.phase();
+        for _ in 0..64 {
+            assert_eq!(voice.next(48_000.0, settings), 0.0);
+        }
+        assert_ne!(voice.oscillator_a.phase(), phase_before);
+    }
+
+    #[test]
+    fn hard_sync_changes_the_render_when_b_is_detuned() {
+        let mut free_settings = Settings::default();
+        assert!(free_settings.set(Parameter::OscillatorBDetune as u32, 0.9));
+        let mut sync_settings = free_settings;
+        assert!(sync_settings.set(Parameter::OscillatorSync as u32, 1.0));
+        let mut free_voice = Voice::default();
+        let mut sync_voice = Voice::default();
+        free_voice.start(0, 57, 127, 0);
+        sync_voice.start(0, 57, 127, 0);
+        let mut difference = 0.0;
+        for _ in 0..8_192 {
+            difference += (free_voice.next(48_000.0, free_settings)
+                - sync_voice.next(48_000.0, sync_settings))
+            .abs();
+        }
+        assert!(difference > 1.0);
     }
 }

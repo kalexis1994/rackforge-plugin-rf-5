@@ -8,3 +8,4 @@ repository.workspace = true
 
 [dependencies]
 rf-5-contract.workspace = true
+libm = "0.2"

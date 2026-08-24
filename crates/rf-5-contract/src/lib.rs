@@ -7,13 +7,13 @@
 
 pub mod hardware;
 
-pub const PARAMETER_COUNT: usize = 10;
+pub const PARAMETER_COUNT: usize = 23;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]
 pub enum Parameter {
     MasterVolume = 0,
-    OscillatorMix = 1,
+    OscillatorALevel = 1,
     OscillatorBDetune = 2,
     FilterCutoff = 3,
     FilterResonance = 4,
@@ -22,6 +22,19 @@ pub enum Parameter {
     AmpSustain = 7,
     AmpRelease = 8,
     VintageSpread = 9,
+    OscillatorBLevel = 10,
+    OscillatorASaw = 11,
+    OscillatorAPulse = 12,
+    OscillatorAPulseWidth = 13,
+    OscillatorBSaw = 14,
+    OscillatorBTriangle = 15,
+    OscillatorBPulse = 16,
+    OscillatorBPulseWidth = 17,
+    OscillatorSync = 18,
+    OscillatorAFrequency = 19,
+    OscillatorBFrequency = 20,
+    OscillatorBLowFrequency = 21,
+    OscillatorBKeyboard = 22,
 }
 
 impl TryFrom<u32> for Parameter {
@@ -30,7 +43,7 @@ impl TryFrom<u32> for Parameter {
     fn try_from(index: u32) -> Result<Self, Self::Error> {
         match index {
             0 => Ok(Self::MasterVolume),
-            1 => Ok(Self::OscillatorMix),
+            1 => Ok(Self::OscillatorALevel),
             2 => Ok(Self::OscillatorBDetune),
             3 => Ok(Self::FilterCutoff),
             4 => Ok(Self::FilterResonance),
@@ -39,6 +52,19 @@ impl TryFrom<u32> for Parameter {
             7 => Ok(Self::AmpSustain),
             8 => Ok(Self::AmpRelease),
             9 => Ok(Self::VintageSpread),
+            10 => Ok(Self::OscillatorBLevel),
+            11 => Ok(Self::OscillatorASaw),
+            12 => Ok(Self::OscillatorAPulse),
+            13 => Ok(Self::OscillatorAPulseWidth),
+            14 => Ok(Self::OscillatorBSaw),
+            15 => Ok(Self::OscillatorBTriangle),
+            16 => Ok(Self::OscillatorBPulse),
+            17 => Ok(Self::OscillatorBPulseWidth),
+            18 => Ok(Self::OscillatorSync),
+            19 => Ok(Self::OscillatorAFrequency),
+            20 => Ok(Self::OscillatorBFrequency),
+            21 => Ok(Self::OscillatorBLowFrequency),
+            22 => Ok(Self::OscillatorBKeyboard),
             _ => Err(()),
         }
     }
@@ -52,7 +78,10 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            values: [0.72, 0.5, 0.54, 0.72, 0.08, 0.01, 0.2, 0.82, 0.28, 0.18],
+            values: [
+                0.72, 0.72, 0.54, 0.72, 0.08, 0.01, 0.2, 0.82, 0.28, 0.18, 0.64, 1.0, 0.0, 0.5,
+                1.0, 0.0, 0.0, 0.5, 0.0, 0.5, 0.5, 0.0, 1.0,
+            ],
         }
     }
 }

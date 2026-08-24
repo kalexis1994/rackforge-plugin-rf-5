@@ -30,6 +30,17 @@ pub const SAMPLE_HOLD_SERVICE_DROOP_LIMIT_VOLTS_PER_7_MS: f32 = 0.0005;
 pub const PROGRAM_COUNT: usize = 40;
 pub const PROGRAM_BYTES: usize = 24;
 
+/// Quantize a normalized host value to the 128 positions stored by a panel pot.
+pub fn quantize_analog_pot(value: f32) -> f32 {
+    let value = if value.is_finite() {
+        value.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let step = (value * (ANALOG_POT_STEPS - 1) as f32 + 0.5) as u16;
+    step as f32 / (ANALOG_POT_STEPS - 1) as f32
+}
+
 /// Hardware multiplexer order used when the CPU scans the 24 analog controls.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
@@ -151,6 +162,18 @@ mod tests {
             let rebuilt = ProgramByte::from_parts(byte.pot_value(), byte.switch_on())
                 .expect("seven-bit pot value");
             assert_eq!(rebuilt.raw(), raw);
+        }
+    }
+
+    #[test]
+    fn analog_pot_quantizer_has_128_reachable_positions() {
+        assert_eq!(quantize_analog_pot(-1.0), 0.0);
+        assert_eq!(quantize_analog_pot(2.0), 1.0);
+        assert_eq!(quantize_analog_pot(f32::NAN), 0.0);
+        for step in 0..ANALOG_POT_STEPS {
+            let normalized = step as f32 / (ANALOG_POT_STEPS - 1) as f32;
+            let quantized = quantize_analog_pot(normalized);
+            assert!((quantized - normalized).abs() < 1.0e-6);
         }
     }
 }
