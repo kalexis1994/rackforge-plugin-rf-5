@@ -10,6 +10,14 @@ use rf_5_contract::hardware::quantize_analog_pot;
 const CANDIDATE_MINIMUM_HZ: f32 = 0.08;
 const CANDIDATE_MAXIMUM_HZ: f32 = 20.0;
 
+// The SD334 Wheel Mod board sends the CEM3340 saw and shifted triangle through
+// 160 kohm paths and pulse through 200 kohm. Combining those resistors with
+// the accepted nominal 10 V saw, 5 V triangle and 14.7 V clamped pulse spans
+// gives these relative current-domain excursions at the source summing node.
+const SAW_GAIN: f32 = 1.0;
+const TRIANGLE_GAIN: f32 = 0.5;
+const PULSE_GAIN: f32 = 1.176;
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct LfoWaveSelection {
     pub saw: bool,
@@ -34,9 +42,9 @@ impl Lfo {
         waves: LfoWaveSelection,
     ) -> f32 {
         let phase = self.phase;
-        let saw = phase * 2.0 - 1.0;
-        let triangle = 1.0 - 4.0 * (phase - 0.5).abs();
-        let square = if phase < 0.5 { 1.0 } else { -1.0 };
+        let saw = (phase * 2.0 - 1.0) * SAW_GAIN;
+        let triangle = (1.0 - 4.0 * (phase - 0.5).abs()) * TRIANGLE_GAIN;
+        let square = if phase < 0.5 { PULSE_GAIN } else { -PULSE_GAIN };
         let mut output = 0.0;
         if waves.saw {
             output += saw;
@@ -110,6 +118,47 @@ mod tests {
             triangle: true,
             square: true,
         };
-        assert!((lfo.next(48_000.0, 0.5, all) + 1.0).abs() < 1.0e-6);
+        let expected = -SAW_GAIN - TRIANGLE_GAIN + PULSE_GAIN;
+        assert!((lfo.next(48_000.0, 0.5, all) - expected).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn board_weighting_preserves_cem3340_output_relationships() {
+        let mut saw = Lfo::default();
+        let mut triangle = Lfo::default();
+        let mut pulse = Lfo::default();
+        assert_eq!(
+            saw.next(
+                48_000.0,
+                0.5,
+                LfoWaveSelection {
+                    saw: true,
+                    ..LfoWaveSelection::default()
+                }
+            ),
+            -SAW_GAIN
+        );
+        assert_eq!(
+            triangle.next(
+                48_000.0,
+                0.5,
+                LfoWaveSelection {
+                    triangle: true,
+                    ..LfoWaveSelection::default()
+                }
+            ),
+            -TRIANGLE_GAIN
+        );
+        assert_eq!(
+            pulse.next(
+                48_000.0,
+                0.5,
+                LfoWaveSelection {
+                    square: true,
+                    ..LfoWaveSelection::default()
+                }
+            ),
+            PULSE_GAIN
+        );
     }
 }

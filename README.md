@@ -31,6 +31,11 @@ candidate: measured component populations, overload/output levels and
 original-instrument measurements still pass through the evidence gates in
 [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
 
+Until the graphical panel is added, the `RF-5 Audition` factory bank provides
+three immediately playable listening programs for Wheel Mod vibrato, PWM and
+filter modulation. They require no UI or external modulation wheel; see
+[`docs/AUDITION_PROGRAMS.md`](docs/AUDITION_PROGRAMS.md).
+
 ## Repository layout
 
 ```text

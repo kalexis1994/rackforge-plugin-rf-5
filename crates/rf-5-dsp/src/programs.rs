@@ -1,0 +1,149 @@
+//! Factory programs owned by the DSP engine.
+//!
+//! The audition programs deliberately set a temporary performance-wheel
+//! position. This lets a listener verify Wheel Mod without a front panel or a
+//! physical modulation wheel. The override is machine state, never patch
+//! state, and the first incoming CC1 immediately replaces it.
+
+use rf_5_contract::{PARAMETER_COUNT, Parameter};
+
+const BASELINE_INIT: [f32; PARAMETER_COUNT] = [
+    0.72, 0.72, 0.54, 0.72, 0.08, 0.01, 0.20, 0.82, 0.28, 0.18, 0.64, 1.0, 0.0, 0.50, 1.0, 0.0,
+    0.0, 0.50, 0.0, 0.50, 0.50, 0.0, 1.0, 0.35, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    0.01, 0.20, 0.20, 0.28, 0.35, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+];
+
+const BASELINE_WARM: [f32; PARAMETER_COUNT] = [
+    0.76, 0.76, 0.58, 0.46, 0.12, 0.01, 0.28, 0.72, 0.34, 0.36, 0.54, 1.0, 1.0, 0.44, 1.0, 0.0,
+    0.0, 0.56, 0.0, 0.50, 0.50, 0.0, 1.0, 0.28, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.06, 0.0,
+    0.01, 0.32, 0.25, 0.34, 0.45, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+];
+
+const BASELINE_PAD: [f32; PARAMETER_COUNT] = [
+    0.68, 0.62, 0.62, 0.38, 0.04, 0.54, 0.52, 0.78, 0.70, 0.42, 0.62, 0.0, 1.0, 0.37, 0.0, 1.0,
+    1.0, 0.63, 0.0, 0.50, 0.50, 0.0, 1.0, 0.18, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.12, 0.15,
+    0.48, 0.55, 0.65, 0.70, 0.50, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+];
+
+const BASELINE_LEAD: [f32; PARAMETER_COUNT] = [
+    0.64, 0.72, 0.67, 0.82, 0.18, 0.01, 0.12, 0.90, 0.24, 0.26, 0.52, 1.0, 0.0, 0.50, 1.0, 0.0,
+    0.0, 0.50, 1.0, 0.72, 0.50, 0.0, 1.0, 0.50, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    0.01, 0.12, 0.30, 0.20, 0.25, 0.0, 0.18, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+];
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Program {
+    pub values: [f32; PARAMETER_COUNT],
+    pub audition_mod_wheel: Option<f32>,
+}
+
+impl Program {
+    const fn normal(values: [f32; PARAMETER_COUNT]) -> Self {
+        Self {
+            values,
+            audition_mod_wheel: None,
+        }
+    }
+
+    fn audition(mut values: [f32; PARAMETER_COUNT], route: AuditionRoute) -> Self {
+        // Common LFO audition setup: triangle only, no noise in the Wheel Mod
+        // source crossfade. Destination switches are set below per route.
+        values[Parameter::LfoFrequency as usize] = match route {
+            AuditionRoute::Vibrato => 0.42,
+            AuditionRoute::PulseWidth => 0.34,
+            AuditionRoute::Filter => 0.28,
+        };
+        values[Parameter::LfoSaw as usize] = 0.0;
+        values[Parameter::LfoTriangle as usize] = 1.0;
+        values[Parameter::LfoSquare as usize] = 0.0;
+        values[Parameter::WheelModSourceMix as usize] = 0.0;
+        for destination in [
+            Parameter::WheelModOscillatorAFrequency,
+            Parameter::WheelModOscillatorBFrequency,
+            Parameter::WheelModOscillatorAPulseWidth,
+            Parameter::WheelModOscillatorBPulseWidth,
+            Parameter::WheelModFilter,
+        ] {
+            values[destination as usize] = 0.0;
+        }
+
+        match route {
+            AuditionRoute::Vibrato => {
+                values[Parameter::WheelModOscillatorAFrequency as usize] = 1.0;
+                values[Parameter::WheelModOscillatorBFrequency as usize] = 1.0;
+            }
+            AuditionRoute::PulseWidth => {
+                values[Parameter::OscillatorASaw as usize] = 0.0;
+                values[Parameter::OscillatorAPulse as usize] = 1.0;
+                values[Parameter::OscillatorBSaw as usize] = 0.0;
+                values[Parameter::OscillatorBTriangle as usize] = 0.0;
+                values[Parameter::OscillatorBPulse as usize] = 1.0;
+                values[Parameter::OscillatorAPulseWidth as usize] = 0.42;
+                values[Parameter::OscillatorBPulseWidth as usize] = 0.58;
+                values[Parameter::WheelModOscillatorAPulseWidth as usize] = 1.0;
+                values[Parameter::WheelModOscillatorBPulseWidth as usize] = 1.0;
+            }
+            AuditionRoute::Filter => {
+                values[Parameter::FilterCutoff as usize] = 0.34;
+                values[Parameter::FilterResonance as usize] = 0.30;
+                values[Parameter::FilterEnvelopeAmount as usize] = 0.18;
+                values[Parameter::WheelModFilter as usize] = 1.0;
+            }
+        }
+
+        Self {
+            values,
+            audition_mod_wheel: Some(match route {
+                AuditionRoute::Vibrato => 0.42,
+                AuditionRoute::PulseWidth => 0.72,
+                AuditionRoute::Filter => 0.58,
+            }),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum AuditionRoute {
+    Vibrato,
+    PulseWidth,
+    Filter,
+}
+
+pub(crate) fn find(id: &str) -> Option<Program> {
+    Some(match id {
+        "baseline-init" => Program::normal(BASELINE_INIT),
+        "baseline-warm" => Program::normal(BASELINE_WARM),
+        "baseline-pad" => Program::normal(BASELINE_PAD),
+        "baseline-lead" => Program::normal(BASELINE_LEAD),
+        "audition-wheel-vibrato" => Program::audition(BASELINE_LEAD, AuditionRoute::Vibrato),
+        "audition-wheel-pwm" => Program::audition(BASELINE_INIT, AuditionRoute::PulseWidth),
+        "audition-wheel-filter" => Program::audition(BASELINE_WARM, AuditionRoute::Filter),
+        _ => return None,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_public_program_is_valid_contract_state() {
+        for id in [
+            "baseline-init",
+            "baseline-warm",
+            "baseline-pad",
+            "baseline-lead",
+            "audition-wheel-vibrato",
+            "audition-wheel-pwm",
+            "audition-wheel-filter",
+        ] {
+            let program = find(id).expect("catalog program exists");
+            assert!(rf_5_contract::Settings::from_array(program.values).is_some());
+        }
+    }
+
+    #[test]
+    fn unknown_program_is_rejected() {
+        assert!(find("not-a-program").is_none());
+    }
+}

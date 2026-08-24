@@ -5,6 +5,7 @@ mod cv;
 mod lfo;
 mod noise;
 mod output;
+mod programs;
 
 use lfo::{Lfo, LfoWaveSelection};
 use noise::PinkNoise;
@@ -92,6 +93,7 @@ pub struct Engine {
     lfo: Lfo,
     noise: PinkNoise,
     mod_wheel: f32,
+    audition_mod_wheel: Option<f32>,
     pitch_wheel: f32,
     sustain_pedal: bool,
     held_notes: HeldNoteStack,
@@ -122,6 +124,7 @@ impl Default for Engine {
             lfo: Lfo::default(),
             noise: PinkNoise::default(),
             mod_wheel: 0.0,
+            audition_mod_wheel: None,
             pitch_wheel: 0.0,
             sustain_pedal: false,
             held_notes: HeldNoteStack::default(),
@@ -285,7 +288,10 @@ impl Engine {
             0x90 => self.note_on(channel, data[1] & 0x7f, data[2] & 0x7f),
             0x80 => self.note_off(channel, data[1] & 0x7f),
             0xb0 if data[1] == 120 || data[1] == 123 => self.all_notes_off(),
-            0xb0 if data[1] == 1 => self.mod_wheel = f32::from(data[2] & 0x7f) / 127.0,
+            0xb0 if data[1] == 1 => {
+                self.mod_wheel = f32::from(data[2] & 0x7f) / 127.0;
+                self.audition_mod_wheel = None;
+            }
             0xb0 if data[1] == 64 => {
                 let was_down = self.sustain_pedal;
                 self.sustain_pedal = data[2] >= 64;
@@ -325,7 +331,8 @@ impl Engine {
         let noise_sample = self.noise.next(self.sample_rate);
         let source_mix = quantize_analog_pot(applied_settings.get(Parameter::WheelModSourceMix));
         let wheel_source = lfo_sample * (1.0 - source_mix) + noise_sample * source_mix;
-        let wheel_bus = wheel_source * self.mod_wheel;
+        let effective_mod_wheel = self.audition_mod_wheel.unwrap_or(self.mod_wheel);
+        let wheel_bus = wheel_source * effective_mod_wheel;
         let modulation = VoiceModulation {
             oscillator_a_semitones: performance_pitch
                 + destination_value(
@@ -397,36 +404,14 @@ impl Engine {
         output::render(sample, applied_settings.get(Parameter::MasterVolume))
     }
 
-    pub fn load_baseline_program(&mut self, id: &str) -> bool {
-        let values = match id {
-            "baseline-init" => [
-                0.72, 0.72, 0.54, 0.72, 0.08, 0.01, 0.20, 0.82, 0.28, 0.18, 0.64, 1.0, 0.0, 0.50,
-                1.0, 0.0, 0.0, 0.50, 0.0, 0.50, 0.50, 0.0, 1.0, 0.35, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0,
-                0.0, 0.0, 0.0, 0.0, 0.01, 0.20, 0.20, 0.28, 0.35, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                0.0, 0.0,
-            ],
-            "baseline-warm" => [
-                0.76, 0.76, 0.58, 0.46, 0.12, 0.01, 0.28, 0.72, 0.34, 0.36, 0.54, 1.0, 1.0, 0.44,
-                1.0, 0.0, 0.0, 0.56, 0.0, 0.50, 0.50, 0.0, 1.0, 0.28, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0,
-                0.0, 0.0, 0.06, 0.0, 0.01, 0.32, 0.25, 0.34, 0.45, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                0.0, 0.0,
-            ],
-            "baseline-pad" => [
-                0.68, 0.62, 0.62, 0.38, 0.04, 0.54, 0.52, 0.78, 0.70, 0.42, 0.62, 0.0, 1.0, 0.37,
-                0.0, 1.0, 1.0, 0.63, 0.0, 0.50, 0.50, 0.0, 1.0, 0.18, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0,
-                1.0, 1.0, 0.12, 0.15, 0.48, 0.55, 0.65, 0.70, 0.50, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-                0.0, 0.0,
-            ],
-            "baseline-lead" => [
-                0.64, 0.72, 0.67, 0.82, 0.18, 0.01, 0.12, 0.90, 0.24, 0.26, 0.52, 1.0, 0.0, 0.50,
-                1.0, 0.0, 0.0, 0.50, 1.0, 0.72, 0.50, 0.0, 1.0, 0.50, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0,
-                0.0, 0.0, 0.0, 0.0, 0.01, 0.12, 0.30, 0.20, 0.25, 0.0, 0.18, 1.0, 0.0, 0.0, 1.0,
-                0.0, 0.0,
-            ],
-            _ => return false,
+    pub fn load_program(&mut self, id: &str) -> bool {
+        let Some(program) = programs::find(id) else {
+            return false;
         };
         let master_volume = self.settings.get(Parameter::MasterVolume);
-        self.settings = Settings::from_array(values).expect("baseline program values are valid");
+        self.settings =
+            Settings::from_array(program.values).expect("factory program values are valid");
+        self.audition_mod_wheel = program.audition_mod_wheel;
         let restored = self
             .settings
             .set(Parameter::MasterVolume as u32, f64::from(master_volume));
@@ -462,6 +447,7 @@ impl Engine {
             return false;
         };
         self.settings = settings;
+        self.audition_mod_wheel = None;
         self.controls.notify_change(self.sample_rate);
         self.rebuild_allocation_for_mode();
         true
@@ -743,20 +729,84 @@ mod tests {
     #[test]
     fn state_and_programs_round_trip() {
         let mut engine = Engine::default();
-        assert!(engine.load_baseline_program("baseline-pad"));
+        assert!(engine.load_program("baseline-pad"));
         let expected = engine.settings();
         let mut state = [0_u8; STATE_BYTES];
         assert_eq!(engine.save_state(&mut state), Some(STATE_BYTES));
-        assert!(engine.load_baseline_program("baseline-lead"));
+        assert!(engine.load_program("baseline-lead"));
         assert!(engine.load_state(&state));
         assert_eq!(engine.settings(), expected);
+    }
+
+    #[test]
+    fn audition_wheel_is_temporary_machine_state() {
+        let mut engine = Engine::default();
+        assert!(engine.prepare(48_000.0));
+        assert!(engine.load_program("audition-wheel-vibrato"));
+        assert_eq!(engine.audition_mod_wheel, Some(0.42));
+
+        // Hosts may restore a preset before (re)starting the audio device.
+        assert!(engine.prepare(96_000.0));
+        assert_eq!(engine.audition_mod_wheel, Some(0.42));
+
+        let mut state = [0_u8; STATE_BYTES];
+        assert_eq!(engine.save_state(&mut state), Some(STATE_BYTES));
+        assert!(engine.load_state(&state));
+        assert_eq!(engine.audition_mod_wheel, None);
+
+        assert!(engine.load_program("audition-wheel-filter"));
+        assert!(engine.audition_mod_wheel.is_some());
+        assert!(engine.load_program("baseline-warm"));
+        assert_eq!(engine.audition_mod_wheel, None);
+    }
+
+    #[test]
+    fn real_mod_wheel_immediately_replaces_audition_override() {
+        let mut engine = Engine::default();
+        assert!(engine.prepare(48_000.0));
+        assert!(engine.load_program("audition-wheel-pwm"));
+        assert!(engine.audition_mod_wheel.is_some());
+
+        engine.handle_midi([0xb0, 1, 96]);
+
+        assert_eq!(engine.audition_mod_wheel, None);
+        assert_eq!(engine.mod_wheel, 96.0 / 127.0);
+    }
+
+    #[test]
+    fn audition_programs_are_audible_finite_and_distinct() {
+        let mut signatures = [0.0_f32; 3];
+        for (signature, id) in signatures.iter_mut().zip([
+            "audition-wheel-vibrato",
+            "audition-wheel-pwm",
+            "audition-wheel-filter",
+        ]) {
+            let mut engine = Engine::default();
+            assert!(engine.prepare(48_000.0));
+            assert!(engine.load_program(id));
+            engine.note_on(0, 60, 127);
+            let mut peak = 0.0_f32;
+            for index in 0..48_000 {
+                let sample = engine.next_sample();
+                assert!(sample.is_finite(), "non-finite sample in {id}");
+                peak = peak.max(sample.abs());
+                if index > 4_800 {
+                    *signature += sample.abs() * (1.0 + (index % 97) as f32 / 97.0);
+                }
+            }
+            assert!(peak > 0.01, "silent audition program {id}");
+            assert!(peak <= 1.0, "unbounded audition program {id}");
+        }
+        assert!((signatures[0] - signatures[1]).abs() > 1.0);
+        assert!((signatures[1] - signatures[2]).abs() > 1.0);
+        assert!((signatures[0] - signatures[2]).abs() > 1.0);
     }
 
     #[test]
     fn oscillator_tune_reconditions_machine_state_without_changing_the_patch() {
         let mut engine = Engine::default();
         assert!(engine.prepare(48_000.0));
-        assert!(engine.load_baseline_program("baseline-pad"));
+        assert!(engine.load_program("baseline-pad"));
         let expected_settings = engine.settings();
         for _ in 0..480_000 {
             let _ = engine.next_sample();
@@ -783,7 +833,7 @@ mod tests {
     fn loading_a_program_preserves_the_physical_master_volume() {
         let mut engine = Engine::default();
         assert!(engine.set_parameter(Parameter::MasterVolume as u32, 0.31));
-        assert!(engine.load_baseline_program("baseline-pad"));
+        assert!(engine.load_program("baseline-pad"));
         assert_eq!(
             engine.parameter(Parameter::MasterVolume as u32),
             Some(0.31_f32 as f64)
@@ -795,7 +845,7 @@ mod tests {
         for sample_rate in [44_100.0, 48_000.0, 96_000.0, 192_000.0] {
             let mut engine = Engine::default();
             assert!(engine.prepare(sample_rate));
-            assert!(engine.load_baseline_program("baseline-lead"));
+            assert!(engine.load_program("baseline-lead"));
             engine.note_on(0, 93, 127);
             let mut peak = 0.0_f32;
             for _ in 0..16_384 {
@@ -812,7 +862,7 @@ mod tests {
     fn single_voice_render_has_usable_level_and_headroom() {
         let mut engine = Engine::default();
         assert!(engine.prepare(48_000.0));
-        assert!(engine.load_baseline_program("baseline-warm"));
+        assert!(engine.load_program("baseline-warm"));
         engine.note_on(0, 60, 127);
         let mut peak = 0.0_f32;
         let mut energy = 0.0_f32;
@@ -849,8 +899,8 @@ mod tests {
         let mut modulated = Engine::default();
         assert!(dry.prepare(48_000.0));
         assert!(modulated.prepare(48_000.0));
-        assert!(dry.load_baseline_program("baseline-lead"));
-        assert!(modulated.load_baseline_program("baseline-lead"));
+        assert!(dry.load_program("baseline-lead"));
+        assert!(modulated.load_program("baseline-lead"));
         dry.note_on(0, 69, 127);
         modulated.note_on(0, 69, 127);
         modulated.handle_midi([0xb0, 1, 127]);

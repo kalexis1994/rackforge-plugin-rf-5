@@ -37,7 +37,7 @@ impl Processor for Rf5Processor {
     }
 
     fn load_preset(&mut self, id: &str) -> bool {
-        self.engine.load_baseline_program(id)
+        self.engine.load_program(id)
     }
 
     fn save_state(&self, destination: &mut [u8]) -> Option<usize> {
