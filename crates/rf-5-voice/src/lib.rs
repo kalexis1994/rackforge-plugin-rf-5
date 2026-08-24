@@ -175,8 +175,11 @@ impl Voice {
         ) * semitone_ratio(modulation.oscillator_b_semitones);
         let internal_rate = sample_rate.max(1.0) * OSCILLATOR_OVERSAMPLING as f32;
         let mut output = 0.0;
-        let poly_filter_envelope = -filter_envelope
-            * quantize_analog_pot(settings.get(Parameter::PolyModFilterEnvelopeAmount));
+        let poly_filter_envelope = -vca::poly_mod_filter_envelope(
+            filter_envelope,
+            quantize_analog_pot(settings.get(Parameter::PolyModFilterEnvelopeAmount)),
+            self.voice_index,
+        );
         let poly_oscillator_b_amount =
             quantize_analog_pot(settings.get(Parameter::PolyModOscillatorBAmount));
         let poly_frequency_a = parameter_enabled(settings, Parameter::PolyModOscillatorAFrequency);
@@ -184,9 +187,11 @@ impl Voice {
             parameter_enabled(settings, Parameter::PolyModOscillatorAPulseWidth);
         let poly_filter = parameter_enabled(settings, Parameter::PolyModFilter);
         let filter_resonance = quantize_analog_pot(settings.get(Parameter::FilterResonance));
-        let direct_filter_envelope = filter_envelope
-            * quantize_analog_pot(settings.get(Parameter::FilterEnvelopeAmount))
-            * FILTER_ENVELOPE_DEPTH_OCTAVES;
+        let direct_filter_envelope = vca::filter_envelope_amount(
+            filter_envelope,
+            quantize_analog_pot(settings.get(Parameter::FilterEnvelopeAmount)),
+            self.voice_index,
+        ) * FILTER_ENVELOPE_DEPTH_OCTAVES;
         let filter_spread =
             FILTER_SPREAD_OCTAVES[self.voice_index] * settings.get(Parameter::VintageSpread);
         let filter_cutoff = quantize_analog_pot(settings.get(Parameter::FilterCutoff));
@@ -201,7 +206,12 @@ impl Voice {
             if sync && sample_b.wrapped {
                 self.oscillator_a.hard_sync();
             }
-            let poly_bus = poly_filter_envelope + sample_b.modulation * poly_oscillator_b_amount;
+            let poly_bus = poly_filter_envelope
+                + vca::poly_mod_oscillator_b(
+                    sample_b.modulation,
+                    poly_oscillator_b_amount,
+                    self.voice_index,
+                );
             let poly_pitch = if poly_frequency_a {
                 poly_bus * POLY_MOD_PITCH_DEPTH_SEMITONES
             } else {

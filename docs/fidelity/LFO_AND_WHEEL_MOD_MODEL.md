@@ -23,7 +23,12 @@ wheel in RF-5.
   saw is the 1.0 reference, triangle is 0.5 and pulse is approximately 1.176.
   The last figure combines the accepted 14.7 V clamped pulse excursion with
   its 200 kohm path versus the saw's nominal 10 V and 160 kohm path.
-- Wheel Mod amount is a live performance value and is not stored in a program.
+- The LFO and noise sources pass through the two profiled, unlinearized halves
+  of common CA3280 U378. One 7-bit source-mix CV moves their bias currents in
+  opposite directions; the service balance trims are represented as zero
+  feed-through at zero input.
+- Wheel Mod amount is the passive/live performance level after that dual-OTA
+  source and is not stored in a program.
 - Enabled frequency destinations currently span a candidate maximum of one
   octave at full wheel and unit waveform amplitude.
 - Enabled pulse-width destinations span a candidate normalized depth of 0.48.
@@ -41,8 +46,9 @@ the LFO module rather than treating it as measured hardware fact. The three
 Wheel Mod depth constants are similarly isolated calibration hypotheses.
 
 The original Wheel Mod source-mix control now crossfades the LFO with the
-shared MM5837-class noise candidate. Its circuit, spectral assumptions and
-remaining gain uncertainty are documented separately in
+shared MM5837-class noise candidate through its physical CA3280 rather than a
+generic arithmetic blend. Populated-device matching and normalized overload
+remain candidates. The noise circuit and spectral assumptions are documented separately in
 `NOISE_AND_MIXER_MODEL.md`.
 
 ## Acceptance tests
@@ -52,6 +58,8 @@ remaining gain uncertainty are documented separately in
 - simultaneously selected waveforms sum on one shared bus;
 - source amplitudes follow the accepted CEM3340 voltage and SD334 resistor
   ratios instead of ideal equal-amplitude shapes;
+- source-mix endpoints completely isolate the opposite OTA half, intermediate
+  settings remain complementary and zero input has no balance offset;
 - silence and note events do not stop or retrigger the LFO;
 - CC1 changes the render when a documented destination is enabled;
 - audition wheel state is cleared by CC1, normal program loads and state loads;

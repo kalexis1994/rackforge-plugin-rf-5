@@ -330,7 +330,7 @@ impl Engine {
         );
         let noise_sample = self.noise.next(self.sample_rate);
         let source_mix = quantize_analog_pot(applied_settings.get(Parameter::WheelModSourceMix));
-        let wheel_source = lfo_sample * (1.0 - source_mix) + noise_sample * source_mix;
+        let wheel_source = vca::wheel_mod_source(lfo_sample, noise_sample, source_mix);
         let effective_mod_wheel = self.audition_mod_wheel.unwrap_or(self.mod_wheel);
         let wheel_bus = wheel_source * effective_mod_wheel;
         let modulation = VoiceModulation {

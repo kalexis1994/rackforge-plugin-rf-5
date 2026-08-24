@@ -18,11 +18,15 @@ waveforms contribute to the source bus. Hard sync is a separate route.
 - Every voice owns independent amplifier and filter ADSR state.
 - Filter attack, decay, sustain, release and direct cutoff amount use the
   original 128-position panel quantization boundary.
-- The Poly Mod filter-envelope source is explicitly inverted before summing.
+- The two physical halves of U422 are modeled together on each voice: one
+  linearized transfer controls direct filter-envelope amount and the other
+  controls the Poly Mod envelope source. The latter is explicitly inverted at
+  the summing node.
 - Oscillator B is evaluated first during each 4x internal substep. Its selected
-  waveform sum feeds Poly Mod before the audio mixer level. Saw and pulse
-  retain their board-level positive bias, while the dedicated DC level-shifter
-  makes triangle bipolar about ground.
+  waveform sum passes through one profiled unlinearized CA3280 amount VCA per
+  voice before the audio mixer level. Saw and pulse retain their board-level
+  positive bias, while the dedicated DC level-shifter makes triangle bipolar
+  about ground.
 - Oscillator-A frequency and pulse-width destinations are evaluated at that
   internal rate, preserving audio-rate modulation.
 - The filter destination enters the four-pole CEM3320 candidate independently
@@ -31,9 +35,11 @@ waveforms contribute to the source bus. Hard sync is a separate route.
 
 ## Bounded uncertainty
 
-The circuit and service procedure establish routing and polarity, but not the
-complete RCA/CA3280 gain, overload or feed-through curves. Candidate maximum
-depths are therefore isolated constants: 48 semitones for oscillator-A
+The circuit and service procedure establish routing, polarity, active versus
+cut-off linearizing terminals and balance trims. The CA3280 population is
+bounded by its data-sheet output-current ratios, but populated-device gain and
+overload remain unmeasured. Candidate maximum depths are therefore isolated
+constants: 48 semitones for oscillator-A
 frequency, 0.48 normalized units for pulse width and 4.5 octaves for filter
 cutoff. They are hypotheses to calibrate, not measured specifications.
 
@@ -45,6 +51,9 @@ envelopes now use the CEM3310 true-RC candidate documented in
 
 - full filter-envelope Poly Mod makes oscillator A descend rather than ascend;
 - oscillator-B Poly Mod remains audible with oscillator-B mixer level at zero;
+- paired direct/Poly Mod envelope halves remain close but non-identical;
+- Poly Mod amount rises monotonically and its two CA3280 modes retain their
+  distinct strong-signal ranges;
 - frequency and filter destinations produce distinct renders;
 - both envelopes trigger and release independently;
 - the expanded parameter state round-trips exactly;

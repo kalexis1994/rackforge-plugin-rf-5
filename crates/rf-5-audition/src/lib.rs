@@ -283,6 +283,35 @@ fn scenes() -> Vec<Scene> {
                 (3.30, 5.05, &[36, 43, 48, 52, 55]),
             ]),
         },
+        Scene {
+            id: "11_poly_mod_oscillator_b",
+            program: "audition-poly-mod-oscillator-b",
+            description: "Audio-rate oscillator-B triangle through five unlinearized Poly Mod amount VCAs",
+            events: monophonic_sequence(&[
+                (0.20, 43),
+                (1.20, 48),
+                (2.20, 52),
+                (3.20, 55),
+                (4.20, 60),
+            ]),
+        },
+        Scene {
+            id: "12_poly_mod_filter_envelope",
+            program: "audition-poly-mod-filter-envelope",
+            description: "Descending resonant sweeps through five linearized Poly Mod envelope VCAs",
+            events: chord_sequence(&[
+                (0.20, 1.35, &[36]),
+                (1.60, 2.75, &[43]),
+                (3.00, 4.15, &[48]),
+                (4.40, 5.35, &[36, 43, 48]),
+            ]),
+        },
+        Scene {
+            id: "13_wheel_noise_filter",
+            program: "audition-wheel-noise-filter",
+            description: "Noise half of the complementary Wheel Mod source OTA routed to filter cutoff",
+            events: chord_sequence(&[(0.20, 5.20, &[48, 55, 60])]),
+        },
     ]
 }
 

@@ -196,6 +196,51 @@ impl Program {
         values[Parameter::AmpRelease as usize] = 0.18;
         Self::normal(values)
     }
+
+    fn poly_mod_oscillator_b() -> Self {
+        let mut values = BASELINE_LEAD;
+        values[Parameter::OscillatorBLevel as usize] = 0.0;
+        values[Parameter::OscillatorBSaw as usize] = 0.0;
+        values[Parameter::OscillatorBTriangle as usize] = 1.0;
+        values[Parameter::OscillatorBPulse as usize] = 0.0;
+        values[Parameter::PolyModFilterEnvelopeAmount as usize] = 0.0;
+        values[Parameter::PolyModOscillatorBAmount as usize] = 0.68;
+        values[Parameter::PolyModOscillatorAFrequency as usize] = 1.0;
+        values[Parameter::PolyModOscillatorAPulseWidth as usize] = 0.0;
+        values[Parameter::PolyModFilter as usize] = 0.0;
+        values[Parameter::FilterCutoff as usize] = 0.58;
+        values[Parameter::FilterResonance as usize] = 0.20;
+        Self::normal(values)
+    }
+
+    fn poly_mod_filter_envelope() -> Self {
+        let mut values = BASELINE_INIT;
+        values[Parameter::OscillatorALevel as usize] = 0.54;
+        values[Parameter::OscillatorBLevel as usize] = 0.0;
+        values[Parameter::FilterCutoff as usize] = 0.48;
+        values[Parameter::FilterResonance as usize] = 0.84;
+        values[Parameter::FilterEnvelopeAmount as usize] = 0.0;
+        values[Parameter::FilterAttack as usize] = 0.0;
+        values[Parameter::FilterDecay as usize] = 0.38;
+        values[Parameter::FilterSustain as usize] = 0.12;
+        values[Parameter::FilterRelease as usize] = 0.28;
+        values[Parameter::PolyModFilterEnvelopeAmount as usize] = 0.62;
+        values[Parameter::PolyModOscillatorBAmount as usize] = 0.0;
+        values[Parameter::PolyModOscillatorAFrequency as usize] = 0.0;
+        values[Parameter::PolyModOscillatorAPulseWidth as usize] = 0.0;
+        values[Parameter::PolyModFilter as usize] = 1.0;
+        Self::normal(values)
+    }
+
+    fn wheel_noise_filter() -> Self {
+        let mut program = Self::audition(BASELINE_WARM, AuditionRoute::Filter);
+        program.values[Parameter::WheelModSourceMix as usize] = 1.0;
+        program.values[Parameter::FilterCutoff as usize] = 0.44;
+        program.values[Parameter::FilterResonance as usize] = 0.46;
+        program.values[Parameter::FilterEnvelopeAmount as usize] = 0.10;
+        program.audition_mod_wheel = Some(0.64);
+        program
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -220,6 +265,9 @@ pub(crate) fn find(id: &str) -> Option<Program> {
         "audition-envelope-slow" => Program::envelope_slow(),
         "audition-ca3280-drive" => Program::ca3280_drive(),
         "audition-common-noise-vca" => Program::common_noise_vca(),
+        "audition-poly-mod-oscillator-b" => Program::poly_mod_oscillator_b(),
+        "audition-poly-mod-filter-envelope" => Program::poly_mod_filter_envelope(),
+        "audition-wheel-noise-filter" => Program::wheel_noise_filter(),
         _ => return None,
     })
 }
@@ -244,6 +292,9 @@ mod tests {
             "audition-envelope-slow",
             "audition-ca3280-drive",
             "audition-common-noise-vca",
+            "audition-poly-mod-oscillator-b",
+            "audition-poly-mod-filter-envelope",
+            "audition-wheel-noise-filter",
         ] {
             let program = find(id).expect("catalog program exists");
             assert!(rf_5_contract::Settings::from_array(program.values).is_some());

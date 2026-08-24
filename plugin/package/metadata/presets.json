@@ -16,7 +16,10 @@
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-envelope-punch", "name": "Audition - Envelope Punch", "order": 5, "tags": ["rf5", "audition", "envelope", "percussive"] },
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-envelope-slow", "name": "Audition - Envelope Slow", "order": 6, "tags": ["rf5", "audition", "envelope", "pad"] },
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-ca3280-drive", "name": "Audition - CA3280 Drive", "order": 7, "tags": ["rf5", "audition", "vca", "ca3280", "drive"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-common-noise-vca", "name": "Audition - Common Noise VCA", "order": 8, "tags": ["rf5", "audition", "noise", "vca", "ca3280"] }
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-common-noise-vca", "name": "Audition - Common Noise VCA", "order": 8, "tags": ["rf5", "audition", "noise", "vca", "ca3280"] },
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-poly-mod-oscillator-b", "name": "Audition - Poly Mod Oscillator B", "order": 9, "tags": ["rf5", "audition", "poly-mod", "oscillator-b", "fm"] },
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-poly-mod-filter-envelope", "name": "Audition - Poly Mod Filter Envelope", "order": 10, "tags": ["rf5", "audition", "poly-mod", "filter", "envelope"] },
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-wheel-noise-filter", "name": "Audition - Wheel Noise Filter", "order": 11, "tags": ["rf5", "audition", "wheel-mod", "noise", "filter"] }
   ],
   "schema_version": 1
 }

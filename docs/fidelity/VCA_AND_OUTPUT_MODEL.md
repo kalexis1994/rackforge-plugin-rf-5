@@ -15,6 +15,10 @@ NE5534 buffer and the back-panel output network. Balance trimmers remove OTA
 DC offset and the service procedure separately calibrates final-VCA balance
 and per-voice volume.
 
+The same OTA family also controls modulation. U378 crossfades common LFO and
+noise in opposite directions, while each voice has a linearized dual-envelope
+amount device and an unlinearized oscillator-B Poly Mod amount device.
+
 ## Active candidate
 
 - Each voice has one deterministic dual-OTA mixer profile. Its oscillator A
@@ -30,6 +34,9 @@ and per-voice volume.
 - The five post-VCA voice signals are summed with equal gain.
 - The master CA3280 is distinct from the per-voice VCAs and follows the
   physical master-volume control.
+- Five paired envelope-amount profiles, five oscillator-B Poly Mod profiles
+  and the common dual Wheel Mod source profile preserve the modulation-side
+  CA3280 boundaries and documented diode modes.
 - The NE5534/output network is treated as linear inside its headroom. A smooth
   host full-scale boundary replaces the previous hard digital clamp.
 - Master volume is direct, is not delayed by the CPU control scheduler and is

@@ -32,6 +32,12 @@ struct MixerProfile {
     oscillator_b: OtaHalfProfile,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct EnvelopeAmountProfile {
+    direct_filter: OtaHalfProfile,
+    poly_mod: OtaHalfProfile,
+}
+
 // One dual OTA per voice card. The conservative deterministic spread stays
 // well inside the data-sheet 0.70-1.30 peak-output-current ratio. Both halves
 // of a package remain close, while no two physical packages collapse to the
@@ -70,6 +76,47 @@ const FINAL_VCA_PROFILES: [OtaHalfProfile; 5] = [
     OtaHalfProfile::new(1.0, 1.009),
 ];
 
+// Both halves of U422 on each voice card: direct filter-envelope amount and
+// the inverted filter-envelope contribution to Poly Mod. The service trims
+// cancel offsets, not the small remaining transconductance spread.
+const ENVELOPE_AMOUNT_PROFILES: [EnvelopeAmountProfile; 5] = [
+    EnvelopeAmountProfile {
+        direct_filter: OtaHalfProfile::new(0.984, 1.018),
+        poly_mod: OtaHalfProfile::new(0.997, 0.991),
+    },
+    EnvelopeAmountProfile {
+        direct_filter: OtaHalfProfile::new(1.012, 0.973),
+        poly_mod: OtaHalfProfile::new(0.989, 1.027),
+    },
+    EnvelopeAmountProfile {
+        direct_filter: OtaHalfProfile::new(0.995, 1.009),
+        poly_mod: OtaHalfProfile::new(1.015, 0.982),
+    },
+    EnvelopeAmountProfile {
+        direct_filter: OtaHalfProfile::new(1.021, 0.956),
+        poly_mod: OtaHalfProfile::new(1.008, 0.967),
+    },
+    EnvelopeAmountProfile {
+        direct_filter: OtaHalfProfile::new(0.991, 1.033),
+        poly_mod: OtaHalfProfile::new(1.018, 1.009),
+    },
+];
+
+// One unlinearized oscillator-B Poly Mod amount OTA per voice card.
+const POLY_MOD_OSCILLATOR_B_PROFILES: [OtaHalfProfile; 5] = [
+    OtaHalfProfile::new(0.976, 1.040),
+    OtaHalfProfile::new(1.019, 0.970),
+    OtaHalfProfile::new(0.991, 1.010),
+    OtaHalfProfile::new(1.028, 0.950),
+    OtaHalfProfile::new(1.004, 1.020),
+];
+
+// U378 is the common dual OTA whose two halves move in opposite directions
+// under the Wheel Mod source-mix CV. Its balance trimmers remove zero-input
+// offset while retaining the two real transfer paths.
+const WHEEL_MOD_LFO_PROFILE: OtaHalfProfile = OtaHalfProfile::new(0.993, 1.018);
+const WHEEL_MOD_NOISE_PROFILE: OtaHalfProfile = OtaHalfProfile::new(1.007, 0.982);
+
 const COMMON_NOISE_PROFILE: OtaHalfProfile = OtaHalfProfile::new(0.987, 1.036);
 const MASTER_VCA_PROFILE: OtaHalfProfile = OtaHalfProfile::new(1.0, 0.991);
 
@@ -104,6 +151,56 @@ pub fn common_noise(input: f32, control: f32) -> f32 {
         control,
         UNLINEARIZED_INPUT_DRIVE,
         COMMON_NOISE_PROFILE,
+    )
+}
+
+/// The common dual-OTA crossfade feeding the physical modulation wheel.
+pub fn wheel_mod_source(lfo: f32, noise: f32, source_mix: f32) -> f32 {
+    if !source_mix.is_finite() {
+        return 0.0;
+    }
+    let noise_control = source_mix.clamp(0.0, 1.0);
+    let lfo_control = 1.0 - noise_control;
+    ota_transfer(
+        lfo,
+        lfo_control,
+        UNLINEARIZED_INPUT_DRIVE,
+        WHEEL_MOD_LFO_PROFILE,
+    ) + ota_transfer(
+        noise,
+        noise_control,
+        UNLINEARIZED_INPUT_DRIVE,
+        WHEEL_MOD_NOISE_PROFILE,
+    )
+}
+
+/// The direct filter-envelope amount half of U422 on one voice card.
+pub fn filter_envelope_amount(input: f32, control: f32, voice_index: usize) -> f32 {
+    ota_transfer(
+        input,
+        control,
+        LINEARIZED_INPUT_DRIVE,
+        ENVELOPE_AMOUNT_PROFILES[voice_index % ENVELOPE_AMOUNT_PROFILES.len()].direct_filter,
+    )
+}
+
+/// The second, inverted-at-the-summing-node U422 envelope amount path.
+pub fn poly_mod_filter_envelope(input: f32, control: f32, voice_index: usize) -> f32 {
+    ota_transfer(
+        input,
+        control,
+        LINEARIZED_INPUT_DRIVE,
+        ENVELOPE_AMOUNT_PROFILES[voice_index % ENVELOPE_AMOUNT_PROFILES.len()].poly_mod,
+    )
+}
+
+/// The unlinearized oscillator-B waveform amount OTA in one Poly Mod path.
+pub fn poly_mod_oscillator_b(input: f32, control: f32, voice_index: usize) -> f32 {
+    ota_transfer(
+        input,
+        control,
+        UNLINEARIZED_INPUT_DRIVE,
+        POLY_MOD_OSCILLATOR_B_PROFILES[voice_index % POLY_MOD_OSCILLATOR_B_PROFILES.len()],
     )
 }
 
@@ -148,6 +245,9 @@ mod tests {
                     0.0
                 );
                 assert_eq!(final_voice(input, 0.0, voice), 0.0);
+                assert_eq!(filter_envelope_amount(input, 0.0, voice), 0.0);
+                assert_eq!(poly_mod_filter_envelope(input, 0.0, voice), 0.0);
+                assert_eq!(poly_mod_oscillator_b(input, 0.0, voice), 0.0);
             }
             assert_eq!(common_noise(input, 0.0), 0.0);
             assert_eq!(master_output(input, 0.0), 0.0);
@@ -178,19 +278,34 @@ mod tests {
 
     #[test]
     fn device_population_stays_inside_published_output_bounds() {
+        fn assert_inside_bounds(profile: OtaHalfProfile) {
+            assert!(
+                (DATASHEET_MINIMUM_PEAK_CURRENT_RATIO..=DATASHEET_MAXIMUM_PEAK_CURRENT_RATIO)
+                    .contains(&profile.transconductance_ratio)
+            );
+            assert!((0.90..=1.10).contains(&profile.input_drive_ratio));
+        }
+
         for profile in MIXER_PROFILES {
             for half in [profile.oscillator_a, profile.oscillator_b] {
-                assert!(
-                    (DATASHEET_MINIMUM_PEAK_CURRENT_RATIO..=DATASHEET_MAXIMUM_PEAK_CURRENT_RATIO)
-                        .contains(&half.transconductance_ratio)
-                );
-                assert!((0.90..=1.10).contains(&half.input_drive_ratio));
+                assert_inside_bounds(half);
             }
         }
         for profile in FINAL_VCA_PROFILES {
             assert_eq!(profile.transconductance_ratio, 1.0);
-            assert!((0.90..=1.10).contains(&profile.input_drive_ratio));
+            assert_inside_bounds(profile);
         }
+        for profile in ENVELOPE_AMOUNT_PROFILES {
+            assert_inside_bounds(profile.direct_filter);
+            assert_inside_bounds(profile.poly_mod);
+        }
+        for profile in POLY_MOD_OSCILLATOR_B_PROFILES {
+            assert_inside_bounds(profile);
+        }
+        assert_inside_bounds(WHEEL_MOD_LFO_PROFILE);
+        assert_inside_bounds(WHEEL_MOD_NOISE_PROFILE);
+        assert_inside_bounds(COMMON_NOISE_PROFILE);
+        assert_inside_bounds(MASTER_VCA_PROFILE);
     }
 
     #[test]
@@ -206,6 +321,52 @@ mod tests {
                 profile.oscillator_a.transconductance_ratio,
                 profile.oscillator_b.transconductance_ratio
             );
+        }
+    }
+
+    #[test]
+    fn paired_envelope_amount_halves_remain_close_but_not_identical() {
+        for profile in ENVELOPE_AMOUNT_PROFILES {
+            assert!(
+                (profile.direct_filter.transconductance_ratio
+                    - profile.poly_mod.transconductance_ratio)
+                    .abs()
+                    < 0.03
+            );
+            assert_ne!(
+                profile.direct_filter.transconductance_ratio,
+                profile.poly_mod.transconductance_ratio
+            );
+        }
+    }
+
+    #[test]
+    fn wheel_mod_dual_ota_is_complementary_and_balanced() {
+        let lfo_only = wheel_mod_source(0.75, -8.0, 0.0);
+        assert_eq!(lfo_only, wheel_mod_source(0.75, 8.0, 0.0));
+        let noise_only = wheel_mod_source(-8.0, 0.75, 1.0);
+        assert_eq!(noise_only, wheel_mod_source(8.0, 0.75, 1.0));
+        let middle = wheel_mod_source(0.75, 0.75, 0.5);
+        assert!(middle > lfo_only.min(noise_only));
+        assert!(middle < lfo_only.max(noise_only) * 1.02);
+        for mix in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            assert_eq!(wheel_mod_source(0.0, 0.0, mix), 0.0);
+        }
+    }
+
+    #[test]
+    fn poly_mod_amount_vcas_are_monotonic_and_mode_correct() {
+        for voice in 0..5 {
+            let low = poly_mod_oscillator_b(0.7, 0.25, voice).abs();
+            let high = poly_mod_oscillator_b(0.7, 0.75, voice).abs();
+            assert!(low < high);
+
+            let linearized = poly_mod_filter_envelope(3.0, 1.0, voice);
+            let unlinearized = poly_mod_oscillator_b(3.0, 1.0, voice);
+            let linearized_small = poly_mod_filter_envelope(0.001, 1.0, voice) / 0.001;
+            let unlinearized_small = poly_mod_oscillator_b(0.001, 1.0, voice) / 0.001;
+            assert!(linearized / (3.0 * linearized_small) > 0.99);
+            assert!(unlinearized / (3.0 * unlinearized_small) < 0.65);
         }
     }
 
