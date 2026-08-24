@@ -68,15 +68,17 @@ hypothesis. The following remain open:
 
 - exact pulse clamp voltage, rise/fall asymmetry and loading through the 4016;
 - high-frequency rounding and output-buffer impedance at the populated board;
-- static DC propagation through the mixer, filter and final output chain;
+- static DC propagation through the mixer and filter before the now-modeled
+  final 4.34 Hz output coupling network;
 - correlations between amplitude, symmetry, scale error and temperature;
 - waveform captures from a calibrated Revision 3 instrument.
 
-The audio representation removes each waveform's static midpoint because the
-current host boundary cannot safely carry an unknown board DC rail. The
-modulation representation retains the source polarity where it changes musical
-behaviour. This split is explicit and replaceable when full-path measurements
-become available.
+The audio representation removes each waveform's static midpoint because its
+propagation through the intervening mixer and filter remains unknown. The
+modeled final coupling network now independently rejects any residual steady
+DC before the host boundary. The modulation representation retains the source
+polarity where it changes musical behaviour. This split is explicit and
+replaceable when full-path measurements become available.
 
 ## Acceptance tests
 

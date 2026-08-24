@@ -34,23 +34,28 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
 - The five post-VCA voice signals are summed with equal gain.
 - The master CA3280 is distinct from the per-voice VCAs and follows the
   physical master-volume control.
+- The master-VCA output is AC-coupled by the populated 2.2 uF C4189 into the
+  parallel 20 kohm/100 kohm load formed by R4562 and R4541. The resulting
+  first-order high-pass corner is approximately 4.34 Hz.
 - Five paired envelope-amount profiles, five oscillator-B Poly Mod profiles
   and the common dual Wheel Mod source profile preserve the modulation-side
   CA3280 boundaries and documented diode modes.
-- The NE5534/output network is treated as linear inside its headroom. A smooth
-  host full-scale boundary replaces the previous hard digital clamp.
+- The NE5534 and its 1 kohm shunt/560 ohm output-isolation network are treated
+  as linear inside their headroom. The 560 ohm resistor is not modeled as a
+  fixed divider because the external load is unspecified. A smooth host
+  full-scale boundary replaces the previous hard digital clamp.
 - Master volume is direct, is not delayed by the CPU control scheduler and is
   preserved when programs change.
 
 ## Bounded uncertainty
 
-The device modes, routing, equal-resistor summer, linear gain-versus-bias law
-and output topology are source-backed. The deterministic population is bounded
-by the published 0.70-1.30 peak-output-current ratio and kept deliberately
-narrower. Normalized voltage scale, overload-knee spread, populated-device
-matching and circuit-volts-to-host-full-scale conversion remain hypotheses.
-Exact THD and overload require recorded sweeps from a serviced reference
-instrument.
+The device modes, routing, equal-resistor summer, linear gain-versus-bias law,
+AC-coupling values and output topology are source-backed. The deterministic
+population is bounded by the published 0.70-1.30 peak-output-current ratio and
+kept deliberately narrower. Normalized voltage scale, overload-knee spread,
+populated-device matching, external output load and
+circuit-volts-to-host-full-scale conversion remain hypotheses. Exact THD and
+overload require recorded sweeps from a serviced reference instrument.
 
 ## Acceptance tests
 
@@ -61,6 +66,8 @@ instrument.
   close but distinct, and serviced final-voice small-signal gains match;
 - all transfers are finite and odd-symmetric and reject non-finite input;
 - the master stage remains bounded while retaining multi-voice headroom;
+- the 4.34 Hz coupling network rejects steady DC at every supported sample
+  rate while retaining the expected approximately 97.7% amplitude at 20 Hz;
 - program changes preserve the physical master volume.
 
 Primary evidence: TM1000D.2 sections 2-5 and 2-8, schematics SD431-SD435 and

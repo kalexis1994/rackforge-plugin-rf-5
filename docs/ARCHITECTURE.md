@@ -20,7 +20,7 @@ allocator  MIDI   state   common LFO  pink noise  auto-tune  38-cell CV S/H
  five independent rf-5-voice instances
        |
        v
- voice mix -> output calibration -> stereo host output
+ voice mix -> master VCA -> 4.34 Hz AC coupling -> stereo host output
 ```
 
 The active per-voice routing is:

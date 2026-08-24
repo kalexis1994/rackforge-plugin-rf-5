@@ -110,6 +110,7 @@ pub struct Engine {
     autotune: AutoTune,
     vco_drift: VcoDriftBank,
     cv: cv::CvDistributor,
+    output: output::OutputStage,
 }
 
 impl Default for Engine {
@@ -141,6 +142,7 @@ impl Default for Engine {
             autotune,
             vco_drift: VcoDriftBank::default(),
             cv,
+            output: output::OutputStage::default(),
         }
     }
 }
@@ -159,6 +161,7 @@ impl Engine {
         self.cv.prepare(self.cv_targets(self.settings));
         self.lfo.reset();
         self.noise.reset();
+        self.output.reset();
         self.mod_wheel = 0.0;
         self.pitch_wheel = 0.0;
         self.sustain_pedal = false;
@@ -412,7 +415,11 @@ impl Engine {
                 self.cv.filter_keyboard_octaves(voice_index) - filter_keyboard;
             sample += voice.next(self.sample_rate, applied_settings, calibrated_modulation);
         }
-        output::render(sample, applied_settings.get(Parameter::MasterVolume))
+        self.output.next(
+            sample,
+            applied_settings.get(Parameter::MasterVolume),
+            self.sample_rate,
+        )
     }
 
     pub fn load_program(&mut self, id: &str) -> bool {
