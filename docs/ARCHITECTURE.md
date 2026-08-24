@@ -37,3 +37,7 @@ filter envelope -----+
 The first audible implementation is deliberately named a baseline. Individual
 blocks are replaced only after their source, parameter mapping, numerical
 model and acceptance test are recorded.
+
+The frozen hardware boundary and first control-system contract are documented
+in [`fidelity/REFERENCE_HARDWARE.md`](fidelity/REFERENCE_HARDWARE.md) and
+[`fidelity/CONTROL_SCANNING_AND_CV.md`](fidelity/CONTROL_SCANNING_AND_CV.md).

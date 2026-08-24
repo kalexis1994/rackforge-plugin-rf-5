@@ -5,6 +5,8 @@
 //! audible baseline implements. Circuit blocks add parameters after their
 //! mappings pass the fidelity gates.
 
+pub mod hardware;
+
 pub const PARAMETER_COUNT: usize = 10;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
