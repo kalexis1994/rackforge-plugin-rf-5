@@ -23,6 +23,7 @@ pub struct VoiceModulation {
     pub oscillator_a_pulse_width: f32,
     pub oscillator_b_pulse_width: f32,
     pub filter_cutoff: f32,
+    pub noise: f32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -111,7 +112,7 @@ impl Voice {
         settings: Settings,
         modulation: VoiceModulation,
     ) -> f32 {
-        let raw = self.next_oscillators(sample_rate, settings, modulation);
+        let raw = self.next_oscillators(sample_rate, settings, modulation) + modulation.noise;
         if !self.active {
             return 0.0;
         }

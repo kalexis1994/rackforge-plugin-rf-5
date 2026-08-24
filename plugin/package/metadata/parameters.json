@@ -3,10 +3,11 @@
   "pages": [
     { "id": "output", "name": "Output", "order": 0, "header": "RF-5" },
     { "id": "oscillators", "name": "Oscillators", "order": 1, "header": "RF-5" },
-    { "id": "modulation", "name": "Modulation", "order": 2, "header": "RF-5" },
-    { "id": "filter", "name": "Filter", "order": 3, "header": "RF-5" },
-    { "id": "amplifier", "name": "Amplifier", "order": 4, "header": "RF-5" },
-    { "id": "voice", "name": "Voice", "order": 5, "header": "RF-5" }
+    { "id": "mixer", "name": "Mixer", "order": 2, "header": "RF-5" },
+    { "id": "modulation", "name": "Modulation", "order": 3, "header": "RF-5" },
+    { "id": "filter", "name": "Filter", "order": 4, "header": "RF-5" },
+    { "id": "amplifier", "name": "Amplifier", "order": 5, "header": "RF-5" },
+    { "id": "voice", "name": "Voice", "order": 6, "header": "RF-5" }
   ],
   "parameters": [
     {
@@ -168,6 +169,16 @@
       "index": 31, "id": "wheel-mod-filter", "name": "Wheel Mod Filter", "page": "modulation", "order": 8,
       "kind": { "type": "boolean", "default": false },
       "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+    },
+    {
+      "index": 32, "id": "noise-level", "name": "Noise", "page": "mixer", "order": 0,
+      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.0, "step": 0.007874015748031496 },
+      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+    },
+    {
+      "index": 33, "id": "wheel-mod-source-mix", "name": "Wheel Mod Source Mix", "page": "modulation", "order": 9,
+      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.0, "step": 0.007874015748031496 },
+      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
     }
   ]
 }

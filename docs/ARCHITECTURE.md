@@ -12,10 +12,10 @@ RackForge MIDI + automation
             |
             v
       rf-5-dsp engine
-     /      |       |       \
-allocator  MIDI   state   common LFO
-     |                       |
-     +-----------+-----------+
+     /      |       |       |          \
+allocator  MIDI   state   common LFO  pink noise
+     |                       |          |
+     +-----------+-----------+----------+
                  v
  five independent rf-5-voice instances
        |
@@ -49,3 +49,6 @@ Its control-voltage law and calibration hypotheses are isolated in
 The shared modulation topology, implemented Wheel Mod routes and remaining
 depth/range uncertainty are recorded in
 [`fidelity/LFO_AND_WHEEL_MOD_MODEL.md`](fidelity/LFO_AND_WHEEL_MOD_MODEL.md).
+The shared MM5837-class source, its SD334 pinking stage and the current mixer
+boundary are recorded in
+[`fidelity/NOISE_AND_MIXER_MODEL.md`](fidelity/NOISE_AND_MIXER_MODEL.md).

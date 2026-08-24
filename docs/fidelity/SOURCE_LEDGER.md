@@ -7,6 +7,7 @@
 | SRC-003 | Original program patch sheets published by Sequential | Historical control positions | Manufacturer document | Reference only; programs will not be redistributed |
 | SRC-004 | Sequential Circuits, *Prophet-5 Synthesizer Technical Manual*, TM1000D.2, Oct. 1981 ([archival scan](https://www.synfo.nl/servicemanuals/Sequential/SEQUENTIAL_PROPHET-5-REV3_SERVICE_MANUAL.pdf)) | Rev 3.0-3.2 topology, schematics, calibration, control scanning and selected IC data sheets | Manufacturer technical manual | Accepted; SHA-256 `6B8701C4F526AB415CBA8BE2CA5538BDE14B228A0948151EBA964DA06A97BD25` |
 | SRC-005 | Bob Grieb, *Instructions for using the Prophet 5 Diagnostic Firmware* | Pot scan order, DAC exercise, oscillator tune counters and PCB 3 sample/hold diagnostics | Private diagnostic documentation | Accepted for factual control-system evidence only; not redistributable; SHA-256 `C3DD214FD60D9475C80F6BF74F81203F851D47DEB331170BFD032366219A3FEC` |
+| SRC-006 | National Semiconductor, *MM5837 Digital Noise Source* ([archival scan](https://radio-hobby.org/uploads/datasheet/39/mm58/mm5837.pdf)) | 17-bit feedback topology, self-clocked operation, cycle time and half-power range | Manufacturer data sheet | Accepted; SHA-256 `C8E8D2D8E7B03D3F5C8E9E5AF653BF750FBFA27E6757660BD48ED2022A708793` |
 
 ## Private local evidence inventory
 

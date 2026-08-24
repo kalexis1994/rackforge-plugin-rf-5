@@ -7,7 +7,7 @@
 
 pub mod hardware;
 
-pub const PARAMETER_COUNT: usize = 32;
+pub const PARAMETER_COUNT: usize = 34;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]
@@ -44,6 +44,8 @@ pub enum Parameter {
     WheelModOscillatorAPulseWidth = 29,
     WheelModOscillatorBPulseWidth = 30,
     WheelModFilter = 31,
+    NoiseLevel = 32,
+    WheelModSourceMix = 33,
 }
 
 impl TryFrom<u32> for Parameter {
@@ -83,6 +85,8 @@ impl TryFrom<u32> for Parameter {
             29 => Ok(Self::WheelModOscillatorAPulseWidth),
             30 => Ok(Self::WheelModOscillatorBPulseWidth),
             31 => Ok(Self::WheelModFilter),
+            32 => Ok(Self::NoiseLevel),
+            33 => Ok(Self::WheelModSourceMix),
             _ => Err(()),
         }
     }
@@ -99,7 +103,7 @@ impl Default for Settings {
             values: [
                 0.72, 0.72, 0.54, 0.72, 0.08, 0.01, 0.2, 0.82, 0.28, 0.18, 0.64, 1.0, 0.0, 0.5,
                 1.0, 0.0, 0.0, 0.5, 0.0, 0.5, 0.5, 0.0, 1.0, 0.35, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0,
-                0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0,
             ],
         }
     }

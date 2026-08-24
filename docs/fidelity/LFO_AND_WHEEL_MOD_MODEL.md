@@ -33,10 +33,10 @@ frequency endpoints. RF-5 therefore isolates a 0.08-20 Hz candidate range in
 the LFO module rather than treating it as measured hardware fact. The three
 Wheel Mod depth constants are similarly isolated calibration hypotheses.
 
-The original Wheel Mod source-mix control blends LFO and noise. This block
-implements the documented LFO side only. Source mix remains unavailable until
-the shared analog noise generator and its spectrum are modeled; selecting a
-placeholder digital-noise source would create false fidelity.
+The original Wheel Mod source-mix control now crossfades the LFO with the
+shared MM5837-class noise candidate. Its circuit, spectral assumptions and
+remaining gain uncertainty are documented separately in
+`NOISE_AND_MIXER_MODEL.md`.
 
 ## Acceptance tests
 

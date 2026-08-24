@@ -1,9 +1,11 @@
 #![no_std]
 
 mod lfo;
+mod noise;
 
 use lfo::{Lfo, LfoWaveSelection};
-use rf_5_contract::{PARAMETER_COUNT, Parameter, Settings};
+use noise::PinkNoise;
+use rf_5_contract::{PARAMETER_COUNT, Parameter, Settings, hardware::quantize_analog_pot};
 use rf_5_voice::{Voice, VoiceModulation};
 
 pub const VOICE_COUNT: usize = 5;
@@ -15,6 +17,7 @@ pub struct Engine {
     sample_rate: f32,
     next_voice: usize,
     lfo: Lfo,
+    noise: PinkNoise,
     mod_wheel: f32,
 }
 
@@ -26,6 +29,7 @@ impl Default for Engine {
             sample_rate: 48_000.0,
             next_voice: 0,
             lfo: Lfo::default(),
+            noise: PinkNoise::default(),
             mod_wheel: 0.0,
         }
     }
@@ -39,6 +43,7 @@ impl Engine {
         self.sample_rate = sample_rate as f32;
         self.reset_voices();
         self.lfo.reset();
+        self.noise.reset();
         self.mod_wheel = 0.0;
         true
     }
@@ -114,7 +119,10 @@ impl Engine {
                 square: parameter_enabled(self.settings, Parameter::LfoSquare),
             },
         );
-        let wheel_bus = lfo_sample * self.mod_wheel;
+        let noise_sample = self.noise.next(self.sample_rate);
+        let source_mix = quantize_analog_pot(self.settings.get(Parameter::WheelModSourceMix));
+        let wheel_source = lfo_sample * (1.0 - source_mix) + noise_sample * source_mix;
+        let wheel_bus = wheel_source * self.mod_wheel;
         let modulation = VoiceModulation {
             oscillator_a_semitones: destination_value(
                 self.settings,
@@ -141,6 +149,7 @@ impl Engine {
                 Parameter::WheelModFilter,
                 wheel_bus * 0.45,
             ),
+            noise: noise_sample * quantize_analog_pot(self.settings.get(Parameter::NoiseLevel)),
         };
         let mut sample = 0.0;
         for voice in &mut self.voices {
@@ -155,22 +164,22 @@ impl Engine {
             "baseline-init" => [
                 0.72, 0.72, 0.54, 0.72, 0.08, 0.01, 0.20, 0.82, 0.28, 0.18, 0.64, 1.0, 0.0, 0.50,
                 1.0, 0.0, 0.0, 0.50, 0.0, 0.50, 0.50, 0.0, 1.0, 0.35, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0,
-                0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0,
             ],
             "baseline-warm" => [
                 0.76, 0.76, 0.58, 0.46, 0.12, 0.01, 0.28, 0.72, 0.34, 0.36, 0.54, 1.0, 1.0, 0.44,
                 1.0, 0.0, 0.0, 0.56, 0.0, 0.50, 0.50, 0.0, 1.0, 0.28, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0,
-                0.0, 0.0,
+                0.0, 0.0, 0.06, 0.0,
             ],
             "baseline-pad" => [
                 0.68, 0.62, 0.62, 0.38, 0.04, 0.54, 0.52, 0.78, 0.70, 0.42, 0.62, 0.0, 1.0, 0.37,
                 0.0, 1.0, 1.0, 0.63, 0.0, 0.50, 0.50, 0.0, 1.0, 0.18, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0,
-                1.0, 1.0,
+                1.0, 1.0, 0.12, 0.15,
             ],
             "baseline-lead" => [
                 0.64, 0.72, 0.67, 0.82, 0.18, 0.01, 0.12, 0.90, 0.24, 0.26, 0.52, 1.0, 0.0, 0.50,
                 1.0, 0.0, 0.0, 0.50, 1.0, 0.72, 0.50, 0.0, 1.0, 0.50, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0,
-                0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0,
             ],
             _ => return false,
         };
@@ -312,6 +321,55 @@ mod tests {
             difference += (dry.next_sample() - modulated.next_sample()).abs();
         }
         assert_eq!(modulated.mod_wheel, 1.0);
+        assert!(difference > 1.0);
+    }
+
+    #[test]
+    fn shared_noise_free_runs_and_note_events_do_not_reset_it() {
+        let mut engine = Engine::default();
+        assert!(engine.prepare(48_000.0));
+        let initial_state = engine.noise.state();
+        for _ in 0..257 {
+            assert_eq!(engine.next_sample(), 0.0);
+        }
+        let free_running_state = engine.noise.state();
+        assert_ne!(free_running_state, initial_state);
+        engine.note_on(0, 60, 100);
+        assert_eq!(engine.noise.state(), free_running_state);
+    }
+
+    #[test]
+    fn common_noise_level_reaches_each_voice_mixer() {
+        let mut engine = Engine::default();
+        assert!(engine.prepare(48_000.0));
+        assert!(engine.set_parameter(Parameter::OscillatorALevel as u32, 0.0));
+        assert!(engine.set_parameter(Parameter::OscillatorBLevel as u32, 0.0));
+        assert!(engine.set_parameter(Parameter::NoiseLevel as u32, 1.0));
+        assert!(engine.set_parameter(Parameter::FilterCutoff as u32, 1.0));
+        engine.note_on(0, 60, 127);
+        assert!((0..16_384).any(|_| engine.next_sample().abs() > 0.001));
+    }
+
+    #[test]
+    fn wheel_source_mix_crossfades_from_lfo_to_noise() {
+        let mut lfo_side = Engine::default();
+        let mut noise_side = Engine::default();
+        assert!(lfo_side.prepare(48_000.0));
+        assert!(noise_side.prepare(48_000.0));
+        for engine in [&mut lfo_side, &mut noise_side] {
+            assert!(engine.set_parameter(Parameter::LfoSaw as u32, 0.0));
+            assert!(engine.set_parameter(Parameter::LfoTriangle as u32, 0.0));
+            assert!(engine.set_parameter(Parameter::LfoSquare as u32, 0.0));
+            assert!(engine.set_parameter(Parameter::WheelModOscillatorAFrequency as u32, 1.0,));
+            engine.handle_midi([0xb0, 1, 127]);
+            engine.note_on(0, 69, 127);
+        }
+        assert!(noise_side.set_parameter(Parameter::WheelModSourceMix as u32, 1.0));
+
+        let mut difference = 0.0;
+        for _ in 0..16_384 {
+            difference += (lfo_side.next_sample() - noise_side.next_sample()).abs();
+        }
         assert!(difference > 1.0);
     }
 }
