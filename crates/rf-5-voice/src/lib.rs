@@ -38,7 +38,6 @@ pub struct VoiceModulation {
     pub oscillator_b_pulse_width: f32,
     pub filter_octaves: f32,
     pub noise: f32,
-    pub noise_level: f32,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -230,13 +229,21 @@ impl Voice {
                 filter_keyboard,
                 common_filter_octaves + poly_filter_octaves,
             );
-            let mixer = vca::unlinearized(sample_a.audio, level_a)
-                + vca::unlinearized(sample_b.audio, level_b)
-                + vca::unlinearized(modulation.noise, modulation.noise_level);
+            let mixer = vca::oscillator_mixer(
+                sample_a.audio,
+                level_a,
+                self.voice_index,
+                vca::MixerChannel::OscillatorA,
+            ) + vca::oscillator_mixer(
+                sample_b.audio,
+                level_b,
+                self.voice_index,
+                vca::MixerChannel::OscillatorB,
+            ) + modulation.noise;
             let filtered = self
                 .filter
                 .next(mixer, cutoff_hz, filter_resonance, internal_rate);
-            output += vca::linearized(filtered, amplifier_envelope);
+            output += vca::final_voice(filtered, amplifier_envelope, self.voice_index);
         }
 
         output / OSCILLATOR_OVERSAMPLING as f32

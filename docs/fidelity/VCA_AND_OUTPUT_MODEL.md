@@ -17,11 +17,16 @@ and per-voice volume.
 
 ## Active candidate
 
-- Unlinearized mixer VCAs use an odd-symmetric differential-pair transfer and
-  linear control-current gain. Oscillator A, oscillator B and common noise are
-  shaped independently before summing into each filter.
-- The final VCA uses a substantially wider linearized transfer and is evaluated
-  inside the same four-times-oversampled loop as the filter.
+- Each voice has one deterministic dual-OTA mixer profile. Its oscillator A
+  and B halves retain close but non-identical transconductance and overload
+  knees inside the CA3280 data-sheet output-current bounds.
+- One separate unlinearized CA3280 sets common noise level before the result is
+  distributed to the five CEM3320 noise inputs; noise does not pass through a
+  fictitious third mixer OTA on every voice card.
+- The five final VCAs use substantially wider diode-linearized transfers and
+  are evaluated inside the same four-times-oversampled loop as the filters.
+  Their small-signal gain is equal after the documented per-voice service
+  adjustment, while their strong-signal knees remain distinct.
 - The five post-VCA voice signals are summed with equal gain.
 - The master CA3280 is distinct from the per-voice VCAs and follows the
   physical master-volume control.
@@ -32,18 +37,22 @@ and per-voice volume.
 
 ## Bounded uncertainty
 
-The device modes, routing, equal-resistor summer and output topology are
-source-backed. Normalized voltage scale, OTA drive constants, control-current
-taper, resistor/capacitor tolerances, calibrated per-voice level and the
-circuit-volts-to-host-full-scale conversion are hypotheses. Exact THD and
-overload require recorded sweeps from a serviced reference instrument.
+The device modes, routing, equal-resistor summer, linear gain-versus-bias law
+and output topology are source-backed. The deterministic population is bounded
+by the published 0.70-1.30 peak-output-current ratio and kept deliberately
+narrower. Normalized voltage scale, overload-knee spread, populated-device
+matching and circuit-volts-to-host-full-scale conversion remain hypotheses.
+Exact THD and overload require recorded sweeps from a serviced reference
+instrument.
 
 ## Acceptance tests
 
-- zero bias current closes both VCA candidates exactly;
+- zero bias current closes every physical VCA boundary exactly;
 - gain rises monotonically with control current;
 - the linearized transfer retains more strong-signal range than the mixer VCA;
-- all transfers are finite and odd-symmetric;
+- all mixer profiles remain inside published output bounds, paired halves stay
+  close but distinct, and serviced final-voice small-signal gains match;
+- all transfers are finite and odd-symmetric and reject non-finite input;
 - the master stage remains bounded while retaining multi-voice headroom;
 - program changes preserve the physical master volume.
 

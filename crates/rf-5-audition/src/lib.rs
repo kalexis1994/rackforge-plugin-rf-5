@@ -263,6 +263,26 @@ fn scenes() -> Vec<Scene> {
             description: "Slow chord exposes independent filter and amplifier RC trajectories",
             events: chord_sequence(&[(0.10, 4.70, &[48, 55, 60])]),
         },
+        Scene {
+            id: "09_ca3280_drive",
+            program: "audition-ca3280-drive",
+            description: "Strong five-voice chords traverse all mixer, final and master CA3280 stages",
+            events: chord_sequence(&[
+                (0.20, 1.75, &[36, 43, 48, 52, 55]),
+                (2.05, 3.60, &[41, 48, 53, 57, 60]),
+                (3.90, 5.25, &[43, 50, 55, 59, 62]),
+            ]),
+        },
+        Scene {
+            id: "10_common_noise_vca",
+            program: "audition-common-noise-vca",
+            description: "Common noise-level CA3280 feeding the five filter noise inputs",
+            events: chord_sequence(&[
+                (0.20, 1.45, &[36]),
+                (1.75, 3.00, &[43, 48]),
+                (3.30, 5.05, &[36, 43, 48, 52, 55]),
+            ]),
+        },
     ]
 }
 

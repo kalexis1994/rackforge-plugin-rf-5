@@ -14,7 +14,7 @@ use rf_5_voice::{
     Voice, VoiceModulation,
     autotune::{AutoTune, Oscillator},
     drift::VcoDriftBank,
-    tuning,
+    tuning, vca,
 };
 
 pub const VOICE_COUNT: usize = 5;
@@ -361,8 +361,10 @@ impl Engine {
                 Parameter::WheelModFilter,
                 wheel_bus * 4.5,
             ),
-            noise: noise_sample,
-            noise_level: quantize_analog_pot(applied_settings.get(Parameter::NoiseLevel)),
+            noise: vca::common_noise(
+                noise_sample,
+                quantize_analog_pot(applied_settings.get(Parameter::NoiseLevel)),
+            ),
         };
         let mut sample = 0.0;
         for (voice_index, voice) in self.voices.iter_mut().enumerate() {
@@ -956,7 +958,7 @@ mod tests {
     }
 
     #[test]
-    fn common_noise_level_reaches_each_voice_mixer() {
+    fn common_noise_level_reaches_each_voice_filter_input() {
         let mut engine = Engine::default();
         assert!(engine.prepare(48_000.0));
         assert!(engine.set_parameter(Parameter::OscillatorALevel as u32, 0.0));

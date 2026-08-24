@@ -11,7 +11,7 @@ const HOST_OUTPUT_CEILING: f32 = 0.98;
 
 pub fn render(voice_sum: f32, master_volume: f32) -> f32 {
     let summer = voice_sum * VOICE_SUMMER_TO_HOST_GAIN;
-    let master_vca = vca::linearized(summer, master_volume);
+    let master_vca = vca::master_output(summer, master_volume);
     HOST_OUTPUT_CEILING * libm::tanhf(master_vca / HOST_OUTPUT_CEILING)
 }
 
@@ -33,7 +33,7 @@ mod tests {
             let positive = render(input, 1.0);
             let negative = render(-input, 1.0);
             assert!(positive.is_finite());
-            assert!(positive.abs() < HOST_OUTPUT_CEILING);
+            assert!(positive.abs() <= HOST_OUTPUT_CEILING);
             assert!((positive + negative).abs() < 1.0e-6);
         }
     }

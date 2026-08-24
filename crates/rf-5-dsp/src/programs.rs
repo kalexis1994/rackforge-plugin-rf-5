@@ -161,6 +161,41 @@ impl Program {
         values[Parameter::FilterEnvelopeAmount as usize] = 0.44;
         Self::normal(values)
     }
+
+    fn ca3280_drive() -> Self {
+        let mut values = BASELINE_WARM;
+        values[Parameter::OscillatorALevel as usize] = 1.0;
+        values[Parameter::OscillatorBLevel as usize] = 1.0;
+        values[Parameter::OscillatorASaw as usize] = 1.0;
+        values[Parameter::OscillatorAPulse as usize] = 1.0;
+        values[Parameter::OscillatorBSaw as usize] = 1.0;
+        values[Parameter::OscillatorBTriangle as usize] = 1.0;
+        values[Parameter::OscillatorBPulse as usize] = 1.0;
+        values[Parameter::NoiseLevel as usize] = 0.0;
+        values[Parameter::FilterCutoff as usize] = 1.0;
+        values[Parameter::FilterResonance as usize] = 0.0;
+        values[Parameter::FilterEnvelopeAmount as usize] = 0.0;
+        values[Parameter::AmpAttack as usize] = 0.0;
+        values[Parameter::AmpDecay as usize] = 0.20;
+        values[Parameter::AmpSustain as usize] = 1.0;
+        values[Parameter::AmpRelease as usize] = 0.12;
+        Self::normal(values)
+    }
+
+    fn common_noise_vca() -> Self {
+        let mut values = BASELINE_INIT;
+        values[Parameter::OscillatorALevel as usize] = 0.0;
+        values[Parameter::OscillatorBLevel as usize] = 0.0;
+        values[Parameter::NoiseLevel as usize] = 0.82;
+        values[Parameter::FilterCutoff as usize] = 0.52;
+        values[Parameter::FilterResonance as usize] = 0.24;
+        values[Parameter::FilterEnvelopeAmount as usize] = 0.28;
+        values[Parameter::AmpAttack as usize] = 0.0;
+        values[Parameter::AmpDecay as usize] = 0.24;
+        values[Parameter::AmpSustain as usize] = 0.78;
+        values[Parameter::AmpRelease as usize] = 0.18;
+        Self::normal(values)
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -183,6 +218,8 @@ pub(crate) fn find(id: &str) -> Option<Program> {
         "audition-filter-resonance" => Program::filter_resonance(),
         "audition-envelope-punch" => Program::envelope_punch(),
         "audition-envelope-slow" => Program::envelope_slow(),
+        "audition-ca3280-drive" => Program::ca3280_drive(),
+        "audition-common-noise-vca" => Program::common_noise_vca(),
         _ => return None,
     })
 }
@@ -205,6 +242,8 @@ mod tests {
             "audition-filter-resonance",
             "audition-envelope-punch",
             "audition-envelope-slow",
+            "audition-ca3280-drive",
+            "audition-common-noise-vca",
         ] {
             let program = find(id).expect("catalog program exists");
             assert!(rf_5_contract::Settings::from_array(program.values).is_some());

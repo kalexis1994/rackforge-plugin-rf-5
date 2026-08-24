@@ -18,6 +18,10 @@ program in RackForge's program browser and play normally:
   notes expose the ten CEM3310 profiles;
 - `Audition - Envelope Slow` holds a pad while the independent filter and
   amplifier RC trajectories evolve.
+- `Audition - CA3280 Drive` sends high-level five-note chords through all ten
+  oscillator mixer halves, five final VCAs, the voice summer and master VCA;
+- `Audition - Common Noise VCA` mutes both oscillators and exposes the one
+  shared noise-level OTA feeding all five filter noise inputs.
 
 These are diagnostic listening conditions rather than emulated factory
 patches. Each one temporarily places the modulation wheel at a documented
@@ -27,7 +31,7 @@ or alter the serialized patch format, is cleared by loading a normal program
 or state, survives audio-device preparation order, and is replaced by the
 first physical MIDI CC1 message.
 
-The Wheel Mod and filter patches are covered by full-second render tests for
-finite output, usable level and distinct audio signatures. All catalog
-programs are also contract-validated, and the filter population is swept at
-every supported sample rate.
+All nine audition programs are covered by deterministic render probes for
+finite output, usable level and bounded headroom. All catalog programs are
+also contract-validated, and the filter population is swept at every supported
+sample rate.

@@ -14,7 +14,9 @@
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-filter-drive", "name": "Audition - Filter Drive", "order": 3, "tags": ["rf5", "audition", "filter", "drive"] },
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-filter-resonance", "name": "Audition - Filter Resonance", "order": 4, "tags": ["rf5", "audition", "filter", "resonance"] },
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-envelope-punch", "name": "Audition - Envelope Punch", "order": 5, "tags": ["rf5", "audition", "envelope", "percussive"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-envelope-slow", "name": "Audition - Envelope Slow", "order": 6, "tags": ["rf5", "audition", "envelope", "pad"] }
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-envelope-slow", "name": "Audition - Envelope Slow", "order": 6, "tags": ["rf5", "audition", "envelope", "pad"] },
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-ca3280-drive", "name": "Audition - CA3280 Drive", "order": 7, "tags": ["rf5", "audition", "vca", "ca3280", "drive"] },
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-common-noise-vca", "name": "Audition - Common Noise VCA", "order": 8, "tags": ["rf5", "audition", "noise", "vca", "ca3280"] }
   ],
   "schema_version": 1
 }

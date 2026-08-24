@@ -36,8 +36,9 @@ original-instrument measurements still pass through the evidence gates in
 [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
 
 Until the graphical panel is added, the `RF-5 Audition` factory bank provides
-seven immediately playable listening programs for Wheel Mod, filter drive,
-resonance and fast/slow envelope behaviour. They require no UI; see
+nine immediately playable listening programs for Wheel Mod, filter drive,
+resonance, fast/slow envelope behaviour, CA3280 drive and common noise. They
+require no UI; see
 [`docs/AUDITION_PROGRAMS.md`](docs/AUDITION_PROGRAMS.md).
 
 ## Repository layout
@@ -68,7 +69,7 @@ bash tools/build-package.sh
 
 The package is written to `artifacts/rf-5-0.1.0.rfplugin`. GitHub Actions tests
 x86-64 and ARM64 before publishing the portable package as a workflow artifact.
-The audition command writes eight unnormalized listening files and their metrics
+The audition command writes ten unnormalized listening files and their metrics
 to `artifacts/auditions`; see
 [`docs/AUDITION_RENDERER.md`](docs/AUDITION_RENDERER.md).
 

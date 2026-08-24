@@ -27,12 +27,12 @@ The active per-voice routing is:
 
 ```text
 VCO A ----\
-           mixer -> four-pole VCF -> VCA -> voice output
-VCO B ----/          ^                ^
-  |                  |                |
-  +-- sync ----------+        amplifier envelope
-  +-- Poly Mod bus --+
-filter envelope -----+---> Poly Mod bus (inverted)
+           dual OTA mixer --\
+VCO B ----/                    four-pole VCF -> final VCA -> voice output
+common noise OTA ------------/       ^               ^
+  |                                  |               |
+  +-- sync / Poly Mod ---------------+       amplifier envelope
+filter envelope ---------------------+---> Poly Mod bus (inverted)
 ```
 
 The first audible implementation is deliberately named a baseline. Individual
