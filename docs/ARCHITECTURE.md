@@ -61,3 +61,5 @@ The active four-pole filter and true-RC envelope candidates are documented in
 Unison, Glide, pitch wheel and the explicit absence of velocity response are
 documented in
 [`fidelity/PERFORMANCE_MODEL.md`](fidelity/PERFORMANCE_MODEL.md).
+The distinct mixer, per-voice, master and output stages are documented in
+[`fidelity/VCA_AND_OUTPUT_MODEL.md`](fidelity/VCA_AND_OUTPUT_MODEL.md).

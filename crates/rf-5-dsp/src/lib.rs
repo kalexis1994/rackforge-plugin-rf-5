@@ -1,7 +1,9 @@
 #![no_std]
 
+mod control;
 mod lfo;
 mod noise;
+mod output;
 
 use lfo::{Lfo, LfoWaveSelection};
 use noise::PinkNoise;
@@ -90,6 +92,7 @@ pub struct Engine {
     glide_current_note: f32,
     glide_target_note: f32,
     glide_initialized: bool,
+    controls: control::ControlScheduler,
 }
 
 impl Default for Engine {
@@ -108,6 +111,7 @@ impl Default for Engine {
             glide_current_note: 0.0,
             glide_target_note: 0.0,
             glide_initialized: false,
+            controls: control::ControlScheduler::default(),
         }
     }
 }
@@ -118,6 +122,7 @@ impl Engine {
             return false;
         }
         self.sample_rate = sample_rate as f32;
+        self.controls.prepare(self.settings, self.sample_rate);
         self.reset_voices();
         self.lfo.reset();
         self.noise.reset();
@@ -142,6 +147,12 @@ impl Engine {
         let was_unison = self.unison_enabled();
         if !self.settings.set(index, value) {
             return false;
+        }
+        if !matches!(
+            Parameter::try_from(index),
+            Ok(Parameter::MasterVolume | Parameter::VintageSpread)
+        ) {
+            self.controls.notify_change(self.sample_rate);
         }
         if index == Parameter::Unison as u32 && was_unison != self.unison_enabled() {
             self.rebuild_allocation_for_mode();
@@ -257,57 +268,58 @@ impl Engine {
     }
 
     pub fn next_sample(&mut self) -> f32 {
-        let glide_offset = self.advance_glide();
+        let applied_settings = self.controls.next(self.settings, self.sample_rate);
+        let glide_offset = self.advance_glide(applied_settings);
         let performance_pitch = self.pitch_wheel * PITCH_WHEEL_RANGE_SEMITONES + glide_offset;
         let lfo_sample = self.lfo.next(
             self.sample_rate,
-            self.settings.get(Parameter::LfoFrequency),
+            applied_settings.get(Parameter::LfoFrequency),
             LfoWaveSelection {
-                saw: parameter_enabled(self.settings, Parameter::LfoSaw),
-                triangle: parameter_enabled(self.settings, Parameter::LfoTriangle),
-                square: parameter_enabled(self.settings, Parameter::LfoSquare),
+                saw: parameter_enabled(applied_settings, Parameter::LfoSaw),
+                triangle: parameter_enabled(applied_settings, Parameter::LfoTriangle),
+                square: parameter_enabled(applied_settings, Parameter::LfoSquare),
             },
         );
         let noise_sample = self.noise.next(self.sample_rate);
-        let source_mix = quantize_analog_pot(self.settings.get(Parameter::WheelModSourceMix));
+        let source_mix = quantize_analog_pot(applied_settings.get(Parameter::WheelModSourceMix));
         let wheel_source = lfo_sample * (1.0 - source_mix) + noise_sample * source_mix;
         let wheel_bus = wheel_source * self.mod_wheel;
         let modulation = VoiceModulation {
             oscillator_a_semitones: performance_pitch
                 + destination_value(
-                    self.settings,
+                    applied_settings,
                     Parameter::WheelModOscillatorAFrequency,
                     wheel_bus * 12.0,
                 ),
             oscillator_b_semitones: performance_pitch
                 + destination_value(
-                    self.settings,
+                    applied_settings,
                     Parameter::WheelModOscillatorBFrequency,
                     wheel_bus * 12.0,
                 ),
             oscillator_a_pulse_width: destination_value(
-                self.settings,
+                applied_settings,
                 Parameter::WheelModOscillatorAPulseWidth,
                 wheel_bus * 0.48,
             ),
             oscillator_b_pulse_width: destination_value(
-                self.settings,
+                applied_settings,
                 Parameter::WheelModOscillatorBPulseWidth,
                 wheel_bus * 0.48,
             ),
             filter_octaves: destination_value(
-                self.settings,
+                applied_settings,
                 Parameter::WheelModFilter,
                 wheel_bus * 4.5,
             ),
-            noise: noise_sample * quantize_analog_pot(self.settings.get(Parameter::NoiseLevel)),
+            noise: noise_sample,
+            noise_level: quantize_analog_pot(applied_settings.get(Parameter::NoiseLevel)),
         };
         let mut sample = 0.0;
         for voice in &mut self.voices {
-            sample += voice.next(self.sample_rate, self.settings, modulation);
+            sample += voice.next(self.sample_rate, applied_settings, modulation);
         }
-        let level = self.settings.get(Parameter::MasterVolume);
-        (sample * level * 0.16).clamp(-1.0, 1.0)
+        output::render(sample, applied_settings.get(Parameter::MasterVolume))
     }
 
     pub fn load_baseline_program(&mut self, id: &str) -> bool {
@@ -338,7 +350,13 @@ impl Engine {
             ],
             _ => return false,
         };
+        let master_volume = self.settings.get(Parameter::MasterVolume);
         self.settings = Settings::from_array(values).expect("baseline program values are valid");
+        let restored = self
+            .settings
+            .set(Parameter::MasterVolume as u32, f64::from(master_volume));
+        debug_assert!(restored);
+        self.controls.notify_change(self.sample_rate);
         self.rebuild_allocation_for_mode();
         true
     }
@@ -369,6 +387,7 @@ impl Engine {
             return false;
         };
         self.settings = settings;
+        self.controls.notify_change(self.sample_rate);
         self.rebuild_allocation_for_mode();
         true
     }
@@ -400,11 +419,11 @@ impl Engine {
         self.glide_target_note = target;
     }
 
-    fn advance_glide(&mut self) -> f32 {
+    fn advance_glide(&mut self, applied_settings: Settings) -> f32 {
         if !self.unison_enabled() || !self.glide_initialized {
             return 0.0;
         }
-        let amount = quantize_analog_pot(self.settings.get(Parameter::Glide));
+        let amount = quantize_analog_pot(applied_settings.get(Parameter::Glide));
         self.glide_current_note = advance_glide_note(
             self.glide_current_note,
             self.glide_target_note,
@@ -540,11 +559,13 @@ mod tests {
         assert!(engine.set_parameter(Parameter::Glide as u32, 1.0));
         engine.note_on(0, 48, 100);
         engine.note_on(0, 60, 100);
-        let offset = engine.advance_glide();
+        let target_settings = engine.settings;
+        let offset = engine.advance_glide(target_settings);
         assert!(offset < -11.9);
 
         assert!(engine.set_parameter(Parameter::Unison as u32, 0.0));
-        assert_eq!(engine.advance_glide(), 0.0);
+        let target_settings = engine.settings;
+        assert_eq!(engine.advance_glide(target_settings), 0.0);
     }
 
     #[test]
@@ -596,6 +617,17 @@ mod tests {
     }
 
     #[test]
+    fn loading_a_program_preserves_the_physical_master_volume() {
+        let mut engine = Engine::default();
+        assert!(engine.set_parameter(Parameter::MasterVolume as u32, 0.31));
+        assert!(engine.load_baseline_program("baseline-pad"));
+        assert_eq!(
+            engine.parameter(Parameter::MasterVolume as u32),
+            Some(0.31_f32 as f64)
+        );
+    }
+
+    #[test]
     fn oscillator_candidate_is_finite_across_supported_sample_rates() {
         for sample_rate in [44_100.0, 48_000.0, 96_000.0, 192_000.0] {
             let mut engine = Engine::default();
@@ -611,6 +643,27 @@ mod tests {
             assert!(peak > 0.001, "silent render at {sample_rate} Hz");
             assert!(peak <= 1.0);
         }
+    }
+
+    #[test]
+    fn single_voice_render_has_usable_level_and_headroom() {
+        let mut engine = Engine::default();
+        assert!(engine.prepare(48_000.0));
+        assert!(engine.load_baseline_program("baseline-warm"));
+        engine.note_on(0, 60, 127);
+        let mut peak = 0.0_f32;
+        let mut energy = 0.0_f32;
+        for index in 0..48_000 {
+            let sample = engine.next_sample();
+            if index > 4_800 {
+                peak = peak.max(sample.abs());
+                energy += sample * sample;
+            }
+        }
+        let rms = libm::sqrtf(energy / 43_199.0);
+        assert!(peak > 0.03, "single-voice peak too low: {peak}");
+        assert!(rms > 0.005, "single-voice RMS too low: {rms}");
+        assert!(peak < 0.95, "single-voice headroom exhausted: {peak}");
     }
 
     #[test]

@@ -8,6 +8,7 @@ use rf_5_contract::{Parameter, Settings, hardware::quantize_analog_pot};
 pub mod envelope;
 pub mod filter;
 pub mod tuning;
+pub mod vca;
 pub mod vco;
 
 use envelope::AdsrEnvelope;
@@ -36,6 +37,7 @@ pub struct VoiceModulation {
     pub oscillator_b_pulse_width: f32,
     pub filter_octaves: f32,
     pub noise: f32,
+    pub noise_level: f32,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -117,12 +119,14 @@ impl Voice {
         if self.amplifier_envelope.is_idle() {
             self.active = false;
         }
-        let filtered = self.next_signal_path(sample_rate, settings, modulation, filter_envelope);
-        if allocated {
-            filtered * amplifier_envelope
-        } else {
-            0.0
-        }
+        let voice_output = self.next_signal_path(
+            sample_rate,
+            settings,
+            modulation,
+            filter_envelope,
+            amplifier_envelope,
+        );
+        if allocated { voice_output } else { 0.0 }
     }
 
     fn next_signal_path(
@@ -131,6 +135,7 @@ impl Voice {
         settings: Settings,
         modulation: VoiceModulation,
         filter_envelope: f32,
+        amplifier_envelope: f32,
     ) -> f32 {
         let waves_a = WaveSelection {
             saw: parameter_enabled(settings, Parameter::OscillatorASaw),
@@ -219,10 +224,13 @@ impl Voice {
                 filter_keyboard,
                 common_filter_octaves + poly_filter_octaves,
             );
-            let mixer = sample_a.value * level_a + sample_b.value * level_b + modulation.noise;
-            output += self
+            let mixer = vca::unlinearized(sample_a.value, level_a)
+                + vca::unlinearized(sample_b.value, level_b)
+                + vca::unlinearized(modulation.noise, modulation.noise_level);
+            let filtered = self
                 .filter
                 .next(mixer, cutoff_hz, filter_resonance, internal_rate);
+            output += vca::linearized(filtered, amplifier_envelope);
         }
 
         output / OSCILLATOR_OVERSAMPLING as f32
@@ -375,11 +383,12 @@ mod tests {
         let mut modulated = Voice::default();
         dry.start(0, 36, 127, 0);
         modulated.start(0, 36, 127, 0);
-        let _ = dry.next_signal_path(48_000.0, dry_settings, VoiceModulation::default(), 1.0);
+        let _ = dry.next_signal_path(48_000.0, dry_settings, VoiceModulation::default(), 1.0, 1.0);
         let _ = modulated.next_signal_path(
             48_000.0,
             modulated_settings,
             VoiceModulation::default(),
+            1.0,
             1.0,
         );
         assert!(modulated.oscillator_a.phase() < dry.oscillator_a.phase());

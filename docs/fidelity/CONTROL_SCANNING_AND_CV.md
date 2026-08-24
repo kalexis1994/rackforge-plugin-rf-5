@@ -56,8 +56,23 @@ the original program data is not part of the product.
 - Public controls can remain normalized, but their hardware quantization and
   mapping must be explicit at the circuit boundary.
 - Oscillator pitch cannot share the coarse seven-bit path used by general CVs.
-- Control-rate stepping and sample/hold behaviour belong in a dedicated control
-  scheduler, separate from audio-rate modulation.
+- Control-rate stepping and sample/hold behaviour now live in a dedicated
+  scheduler, separate from audio-rate modulation. It refreshes the 24 scanned
+  pots in documented order across a 6 ms unchanged cycle or an 11 ms changed
+  cycle, then updates the switch latches.
 - Automatic tune corrections belong to each physical oscillator, not to a
   single global detune control.
 - Program decoding must remain independent from current UI parameter indices.
+
+## Active scheduler boundary
+
+MIDI notes, wheels and sustain remain sample accurate because they belong to
+the performance path. Stored panel controls enter held state through the CPU
+cycle. Master volume bypasses the scheduler because SD430 shows it as a direct
+analog path to the master CA3280, and program changes preserve its value.
+
+The physical machine refreshes 38 DAC destinations, including individual
+oscillator and filter sample-and-holds. The active candidate schedules the 24
+source controls and latches the resulting switch state at cycle completion; a
+later tuning block may subdivide oscillator correction and per-voice filter CV
+without changing this public boundary.

@@ -4,6 +4,8 @@
 //! DSP approximations and must only change when the source ledger records new
 //! evidence.
 
+use crate::Parameter;
+
 pub const VOICE_COUNT: usize = 5;
 pub const OSCILLATORS_PER_VOICE: usize = 2;
 pub const AUDIO_OSCILLATOR_COUNT: usize = VOICE_COUNT * OSCILLATORS_PER_VOICE;
@@ -105,6 +107,37 @@ impl TryFrom<u8> for AnalogPot {
     }
 }
 
+impl AnalogPot {
+    pub const fn parameter(self) -> Parameter {
+        match self {
+            Self::FilterAttack => Parameter::FilterAttack,
+            Self::FilterDecay => Parameter::FilterDecay,
+            Self::FilterSustain => Parameter::FilterSustain,
+            Self::FilterRelease => Parameter::FilterRelease,
+            Self::AmplifierAttack => Parameter::AmpAttack,
+            Self::AmplifierDecay => Parameter::AmpDecay,
+            Self::AmplifierSustain => Parameter::AmpSustain,
+            Self::AmplifierRelease => Parameter::AmpRelease,
+            Self::FilterCutoff => Parameter::FilterCutoff,
+            Self::FilterEnvelopeAmount => Parameter::FilterEnvelopeAmount,
+            Self::OscillatorBMix => Parameter::OscillatorBLevel,
+            Self::OscillatorBPulseWidth => Parameter::OscillatorBPulseWidth,
+            Self::OscillatorAMix => Parameter::OscillatorALevel,
+            Self::OscillatorAPulseWidth => Parameter::OscillatorAPulseWidth,
+            Self::NoiseMix => Parameter::NoiseLevel,
+            Self::FilterResonance => Parameter::FilterResonance,
+            Self::Glide => Parameter::Glide,
+            Self::LfoFrequency => Parameter::LfoFrequency,
+            Self::WheelModSourceMix => Parameter::WheelModSourceMix,
+            Self::PolyModOscillatorBAmount => Parameter::PolyModOscillatorBAmount,
+            Self::PolyModFilterEnvelopeAmount => Parameter::PolyModFilterEnvelopeAmount,
+            Self::OscillatorAFrequency => Parameter::OscillatorAFrequency,
+            Self::OscillatorBFrequency => Parameter::OscillatorBFrequency,
+            Self::OscillatorBFine => Parameter::OscillatorBDetune,
+        }
+    }
+}
+
 /// One raw program-memory byte: a 7-bit pot value plus one switch bit.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ProgramByte(u8);
@@ -145,6 +178,20 @@ mod tests {
             assert_eq!(pot as u8, index);
         }
         assert!(AnalogPot::try_from(ANALOG_POT_COUNT as u8).is_err());
+    }
+
+    #[test]
+    fn every_scanned_pot_maps_to_a_distinct_public_parameter() {
+        let mut seen = [false; crate::PARAMETER_COUNT];
+        for index in 0..ANALOG_POT_COUNT as u8 {
+            let parameter = AnalogPot::try_from(index).unwrap().parameter() as usize;
+            assert!(!seen[parameter]);
+            seen[parameter] = true;
+        }
+        assert_eq!(
+            seen.iter().filter(|mapped| **mapped).count(),
+            ANALOG_POT_COUNT
+        );
     }
 
     #[test]

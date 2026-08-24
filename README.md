@@ -15,9 +15,11 @@ content.
 The active candidate now contains dual oversampled oscillators, hard sync,
 shared LFO and noise, audio-rate Poly Mod, a four-pole CEM3320-class filter,
 separate CEM3310-class RC envelopes, five-voice Unison, Glide and both
-performance wheels. It remains a reverse-engineering candidate: exact analog
-calibration, mixer/VCA overload, output staging and original-instrument
-measurements still pass through the evidence gates in
+performance wheels. Separate CA3280 mixer, final-voice and master-volume
+transfers now feed the documented five-input summer and output buffer, while a
+source-backed control scheduler recreates the held 6/11 ms panel cycle. It
+remains a reverse-engineering candidate: exact analog calibration, measured
+overload/output levels and original-instrument measurements still pass through the evidence gates in
 [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
 
 ## Repository layout

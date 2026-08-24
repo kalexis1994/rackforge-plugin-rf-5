@@ -10,6 +10,7 @@
 | SRC-006 | National Semiconductor, *MM5837 Digital Noise Source* ([archival scan](https://radio-hobby.org/uploads/datasheet/39/mm58/mm5837.pdf)) | 17-bit feedback topology, self-clocked operation, cycle time and half-power range | Manufacturer data sheet | Accepted; SHA-256 `C8E8D2D8E7B03D3F5C8E9E5AF653BF750FBFA27E6757660BD48ED2022A708793` |
 | SRC-007 | Curtis Electromusic, *CEM3320 Voltage Controlled Filter* ([original data sheet scan](https://akizukidenshi.com/goodsaffix/CEM3320.pdf)) | Four independent filter cells, exponential cutoff law, resonance cell, oscillation and distortion behaviour | Manufacturer data sheet | Accepted; SHA-256 `EFA10895A3D2D432124681F135CF7CA01FB46BC65E9971D80C99A2BEF5C92B67` |
 | SRC-008 | Curtis Electromusic, *CEM3310 Voltage Controlled Envelope Generator* ([original data sheet scan](https://sandsoftwaresound.net/wp-content/uploads/2021/03/CES_CEM3310_VCEG.pdf)) | RC envelope equations, time range, attack asymptote, sustain and retrigger behaviour | Manufacturer data sheet | Accepted; SHA-256 `D4136F8DA288892E38CE174EA0A1196747CD87CF84A52A8AE8D41716CF901A17` |
+| SRC-009 | Intersil, *CA3280/CA3280A Dual 9 MHz Operational Transconductance Amplifier* ([manufacturer data sheet mirror](https://www.rxelectronics.com.ua/datasheet/db/ca3280e.pdf)) | OTA transfer, linearizing diodes, gain control, current output, distortion and operating range | Manufacturer data sheet | Accepted; SHA-256 `05E6CFF9EAE9AB8203E2FA5A75AF03E4BC5FAA1DDEE93AE351EB74190E038B55` |
 
 ## Private local evidence inventory
 
