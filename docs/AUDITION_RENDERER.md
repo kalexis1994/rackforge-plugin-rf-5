@@ -11,7 +11,7 @@ events and writes nineteen unnormalized 48 kHz mono PCM WAV files:
 5. Wheel Mod pulse-width modulation;
 6. Wheel Mod filter modulation.
 7. repeated percussive notes through the ten CEM3310 profiles;
-8. a slow chord with independent filter and amplifier RC trajectories.
+8. a slow chord with independent, populated CEM3310 timing trajectories.
 9. strong five-voice chords through the complete CA3280/output population;
 10. the common noise-level CA3280 feeding all five filter noise inputs.
 11. oscillator-B audio-rate Poly Mod through its five amount VCAs;

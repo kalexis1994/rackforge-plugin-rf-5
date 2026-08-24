@@ -17,7 +17,7 @@ program in RackForge's program browser and play normally:
 - `Audition - Envelope Punch` uses short filter/amplifier decays so repeated
   notes expose the ten CEM3310 profiles;
 - `Audition - Envelope Slow` holds a pad while the independent filter and
-  amplifier RC trajectories evolve.
+  amplifier CEM3310 trajectories evolve through the populated timing network.
 - `Audition - CA3280 Drive` sends high-level five-note chords through all ten
   oscillator mixer halves, five final VCAs, the voice summer and master VCA;
 - `Audition - Common Noise VCA` mutes both oscillators and exposes the one
