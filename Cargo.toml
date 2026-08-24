@@ -1,0 +1,23 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/rf-5-contract",
+    "crates/rf-5-voice",
+    "crates/rf-5-dsp",
+    "plugin",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+repository = "https://github.com/kalexis1994/rackforge-plugin-rf-5"
+
+[workspace.dependencies]
+rf-5-contract = { path = "crates/rf-5-contract" }
+rf-5-voice = { path = "crates/rf-5-voice" }
+rf-5-dsp = { path = "crates/rf-5-dsp" }
+
+# Portable RackForge ABI used by the processor adapter. Local contributors can
+# override this revision with `.cargo/config.toml.example`.
+rackforge-plugin-sdk = { git = "https://github.com/kalexis1994/rackforge.git", rev = "37915a58529b5f57508207fb5f936c279afa0944" }

@@ -1,0 +1,14 @@
+[package]
+name = "rackforge-rf-5"
+description = "Portable wasm-v1 RackForge adapter for RF-5"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+rackforge-plugin-sdk.workspace = true
+rf-5-dsp.workspace = true

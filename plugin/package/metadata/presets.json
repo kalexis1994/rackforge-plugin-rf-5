@@ -1,0 +1,12 @@
+{
+  "banks": [
+    { "id": "factory.rf5.baseline", "name": "RF-5 Baseline", "order": 0 }
+  ],
+  "presets": [
+    { "bank": "factory.rf5.baseline", "editable": false, "id": "baseline-init", "name": "Baseline Init", "order": 0, "tags": ["rf5", "baseline"] },
+    { "bank": "factory.rf5.baseline", "editable": false, "id": "baseline-warm", "name": "Baseline Warm", "order": 1, "tags": ["rf5", "baseline"] },
+    { "bank": "factory.rf5.baseline", "editable": false, "id": "baseline-pad", "name": "Baseline Pad", "order": 2, "tags": ["rf5", "baseline"] },
+    { "bank": "factory.rf5.baseline", "editable": false, "id": "baseline-lead", "name": "Baseline Lead", "order": 3, "tags": ["rf5", "baseline"] }
+  ],
+  "schema_version": 1
+}

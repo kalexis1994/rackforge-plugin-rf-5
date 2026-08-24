@@ -1,0 +1,11 @@
+[package]
+name = "rf-5-dsp"
+description = "Five-voice MIDI and audio engine for RF-5"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+rf-5-contract.workspace = true
+rf-5-voice.workspace = true

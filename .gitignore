@@ -1,0 +1,5 @@
+/target/
+/artifacts/
+/.cargo/config.toml
+/plugin/package/component.wasm
+*.rfplugin

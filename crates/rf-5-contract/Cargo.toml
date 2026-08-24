@@ -1,0 +1,10 @@
+[package]
+name = "rf-5-contract"
+description = "Public parameter and state vocabulary for RF-5"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+path = "src/lib.rs"
