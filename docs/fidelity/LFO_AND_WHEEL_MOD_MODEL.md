@@ -23,8 +23,8 @@ wheel in RF-5.
 - Enabled frequency destinations currently span a candidate maximum of one
   octave at full wheel and unit waveform amplitude.
 - Enabled pulse-width destinations span a candidate normalized depth of 0.48.
-- The filter destination spans a candidate normalized depth of 0.45 until the
-  CEM3320 control-voltage model replaces the baseline filter.
+- The filter destination spans a candidate 4.5 octaves on the CEM3320
+  exponential control-voltage path.
 
 ## Bounded uncertainty
 

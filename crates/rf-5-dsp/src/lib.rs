@@ -10,6 +10,71 @@ use rf_5_voice::{Voice, VoiceModulation};
 
 pub const VOICE_COUNT: usize = 5;
 pub const STATE_BYTES: usize = PARAMETER_COUNT * 4;
+const PITCH_WHEEL_RANGE_SEMITONES: f32 = 7.0;
+const MAXIMUM_GLIDE_RATE_SEMITONES_PER_SECOND: f32 = 2_400.0;
+const MINIMUM_GLIDE_RATE_SEMITONES_PER_SECOND: f32 = 12.0;
+
+#[derive(Clone, Copy, Debug, Default)]
+struct HeldNote {
+    channel: u8,
+    note: u8,
+    velocity: u8,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct HeldNoteStack {
+    entries: [HeldNote; 128],
+    len: usize,
+}
+
+impl Default for HeldNoteStack {
+    fn default() -> Self {
+        Self {
+            entries: [HeldNote::default(); 128],
+            len: 0,
+        }
+    }
+}
+
+impl HeldNoteStack {
+    fn push(&mut self, channel: u8, note: u8, velocity: u8) {
+        self.remove(channel, note);
+        if self.len < self.entries.len() {
+            self.entries[self.len] = HeldNote {
+                channel,
+                note,
+                velocity,
+            };
+            self.len += 1;
+        }
+    }
+
+    fn remove(&mut self, channel: u8, note: u8) -> bool {
+        let Some(index) = self.entries[..self.len]
+            .iter()
+            .position(|held| held.channel == channel && held.note == note)
+        else {
+            return false;
+        };
+        self.entries.copy_within(index + 1..self.len, index);
+        self.len -= 1;
+        true
+    }
+
+    fn latest(self) -> Option<HeldNote> {
+        self.len.checked_sub(1).map(|index| self.entries[index])
+    }
+
+    fn contains(self, channel: u8, note: u8) -> bool {
+        self.entries[..self.len]
+            .iter()
+            .any(|held| held.channel == channel && held.note == note)
+    }
+
+    fn clear(&mut self) {
+        self.len = 0;
+    }
+}
 
 pub struct Engine {
     settings: Settings,
@@ -19,6 +84,12 @@ pub struct Engine {
     lfo: Lfo,
     noise: PinkNoise,
     mod_wheel: f32,
+    pitch_wheel: f32,
+    sustain_pedal: bool,
+    held_notes: HeldNoteStack,
+    glide_current_note: f32,
+    glide_target_note: f32,
+    glide_initialized: bool,
 }
 
 impl Default for Engine {
@@ -31,6 +102,12 @@ impl Default for Engine {
             lfo: Lfo::default(),
             noise: PinkNoise::default(),
             mod_wheel: 0.0,
+            pitch_wheel: 0.0,
+            sustain_pedal: false,
+            held_notes: HeldNoteStack::default(),
+            glide_current_note: 0.0,
+            glide_target_note: 0.0,
+            glide_initialized: false,
         }
     }
 }
@@ -45,6 +122,10 @@ impl Engine {
         self.lfo.reset();
         self.noise.reset();
         self.mod_wheel = 0.0;
+        self.pitch_wheel = 0.0;
+        self.sustain_pedal = false;
+        self.held_notes.clear();
+        self.glide_initialized = false;
         true
     }
 
@@ -58,7 +139,14 @@ impl Engine {
     }
 
     pub fn set_parameter(&mut self, index: u32, value: f64) -> bool {
-        self.settings.set(index, value)
+        let was_unison = self.unison_enabled();
+        if !self.settings.set(index, value) {
+            return false;
+        }
+        if index == Parameter::Unison as u32 && was_unison != self.unison_enabled() {
+            self.rebuild_allocation_for_mode();
+        }
+        true
     }
 
     pub fn parameter(&self, index: u32) -> Option<f64> {
@@ -68,6 +156,11 @@ impl Engine {
     pub fn note_on(&mut self, channel: u8, note: u8, velocity: u8) {
         if velocity == 0 {
             self.note_off(channel, note);
+            return;
+        }
+        self.held_notes.push(channel, note, velocity);
+        if self.unison_enabled() {
+            self.start_unison(channel, note, velocity);
             return;
         }
         let voice_index = self
@@ -83,17 +176,60 @@ impl Engine {
     }
 
     pub fn note_off(&mut self, channel: u8, note: u8) {
+        if !self.held_notes.remove(channel, note) {
+            return;
+        }
+        if self.sustain_pedal {
+            return;
+        }
+        if self.unison_enabled() {
+            if self.glide_target_note as u8 != note {
+                return;
+            }
+            if let Some(latest) = self.held_notes.latest() {
+                self.retune_unison(latest.channel, latest.note);
+            } else {
+                self.release_all_voices();
+            }
+            return;
+        }
         for voice in &mut self.voices {
             if voice.matches(channel, note) {
-                voice.release(self.sample_rate, self.settings);
+                voice.release();
             }
         }
     }
 
     pub fn all_notes_off(&mut self) {
+        self.held_notes.clear();
+        self.sustain_pedal = false;
+        self.release_all_voices();
+    }
+
+    fn release_all_voices(&mut self) {
         for voice in &mut self.voices {
             if voice.is_active() {
-                voice.release(self.sample_rate, self.settings);
+                voice.release();
+            }
+        }
+    }
+
+    fn release_sustained_notes(&mut self) {
+        if self.unison_enabled() {
+            if let Some(latest) = self.held_notes.latest() {
+                if self.glide_target_note as u8 != latest.note {
+                    self.retune_unison(latest.channel, latest.note);
+                }
+            } else {
+                self.release_all_voices();
+            }
+            return;
+        }
+        for voice in &mut self.voices {
+            if let Some((channel, note)) = voice.identity()
+                && !self.held_notes.contains(channel, note)
+            {
+                voice.release();
             }
         }
     }
@@ -105,11 +241,24 @@ impl Engine {
             0x80 => self.note_off(channel, data[1] & 0x7f),
             0xb0 if data[1] == 120 || data[1] == 123 => self.all_notes_off(),
             0xb0 if data[1] == 1 => self.mod_wheel = f32::from(data[2] & 0x7f) / 127.0,
+            0xb0 if data[1] == 64 => {
+                let was_down = self.sustain_pedal;
+                self.sustain_pedal = data[2] >= 64;
+                if was_down && !self.sustain_pedal {
+                    self.release_sustained_notes();
+                }
+            }
+            0xe0 => {
+                let value = u16::from(data[1] & 0x7f) | (u16::from(data[2] & 0x7f) << 7);
+                self.pitch_wheel = pitch_wheel_normalized(value);
+            }
             _ => {}
         }
     }
 
     pub fn next_sample(&mut self) -> f32 {
+        let glide_offset = self.advance_glide();
+        let performance_pitch = self.pitch_wheel * PITCH_WHEEL_RANGE_SEMITONES + glide_offset;
         let lfo_sample = self.lfo.next(
             self.sample_rate,
             self.settings.get(Parameter::LfoFrequency),
@@ -124,16 +273,18 @@ impl Engine {
         let wheel_source = lfo_sample * (1.0 - source_mix) + noise_sample * source_mix;
         let wheel_bus = wheel_source * self.mod_wheel;
         let modulation = VoiceModulation {
-            oscillator_a_semitones: destination_value(
-                self.settings,
-                Parameter::WheelModOscillatorAFrequency,
-                wheel_bus * 12.0,
-            ),
-            oscillator_b_semitones: destination_value(
-                self.settings,
-                Parameter::WheelModOscillatorBFrequency,
-                wheel_bus * 12.0,
-            ),
+            oscillator_a_semitones: performance_pitch
+                + destination_value(
+                    self.settings,
+                    Parameter::WheelModOscillatorAFrequency,
+                    wheel_bus * 12.0,
+                ),
+            oscillator_b_semitones: performance_pitch
+                + destination_value(
+                    self.settings,
+                    Parameter::WheelModOscillatorBFrequency,
+                    wheel_bus * 12.0,
+                ),
             oscillator_a_pulse_width: destination_value(
                 self.settings,
                 Parameter::WheelModOscillatorAPulseWidth,
@@ -144,10 +295,10 @@ impl Engine {
                 Parameter::WheelModOscillatorBPulseWidth,
                 wheel_bus * 0.48,
             ),
-            filter_cutoff: destination_value(
+            filter_octaves: destination_value(
                 self.settings,
                 Parameter::WheelModFilter,
-                wheel_bus * 0.45,
+                wheel_bus * 4.5,
             ),
             noise: noise_sample * quantize_analog_pot(self.settings.get(Parameter::NoiseLevel)),
         };
@@ -164,26 +315,31 @@ impl Engine {
             "baseline-init" => [
                 0.72, 0.72, 0.54, 0.72, 0.08, 0.01, 0.20, 0.82, 0.28, 0.18, 0.64, 1.0, 0.0, 0.50,
                 1.0, 0.0, 0.0, 0.50, 0.0, 0.50, 0.50, 0.0, 1.0, 0.35, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0,
-                0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.01, 0.20, 0.20, 0.28, 0.35, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0,
             ],
             "baseline-warm" => [
                 0.76, 0.76, 0.58, 0.46, 0.12, 0.01, 0.28, 0.72, 0.34, 0.36, 0.54, 1.0, 1.0, 0.44,
                 1.0, 0.0, 0.0, 0.56, 0.0, 0.50, 0.50, 0.0, 1.0, 0.28, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0,
-                0.0, 0.0, 0.06, 0.0,
+                0.0, 0.0, 0.06, 0.0, 0.01, 0.32, 0.25, 0.34, 0.45, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0,
             ],
             "baseline-pad" => [
                 0.68, 0.62, 0.62, 0.38, 0.04, 0.54, 0.52, 0.78, 0.70, 0.42, 0.62, 0.0, 1.0, 0.37,
                 0.0, 1.0, 1.0, 0.63, 0.0, 0.50, 0.50, 0.0, 1.0, 0.18, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0,
-                1.0, 1.0, 0.12, 0.15,
+                1.0, 1.0, 0.12, 0.15, 0.48, 0.55, 0.65, 0.70, 0.50, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+                0.0, 0.0,
             ],
             "baseline-lead" => [
                 0.64, 0.72, 0.67, 0.82, 0.18, 0.01, 0.12, 0.90, 0.24, 0.26, 0.52, 1.0, 0.0, 0.50,
                 1.0, 0.0, 0.0, 0.50, 1.0, 0.72, 0.50, 0.0, 1.0, 0.50, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0,
-                0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.01, 0.12, 0.30, 0.20, 0.25, 0.0, 0.18, 1.0, 0.0, 0.0, 1.0,
+                0.0, 0.0,
             ],
             _ => return false,
         };
         self.settings = Settings::from_array(values).expect("baseline program values are valid");
+        self.rebuild_allocation_for_mode();
         true
     }
 
@@ -213,7 +369,76 @@ impl Engine {
             return false;
         };
         self.settings = settings;
+        self.rebuild_allocation_for_mode();
         true
+    }
+
+    fn unison_enabled(&self) -> bool {
+        parameter_enabled(self.settings, Parameter::Unison)
+    }
+
+    fn start_unison(&mut self, channel: u8, note: u8, velocity: u8) {
+        self.retarget_glide(note);
+        for (voice_index, voice) in self.voices.iter_mut().enumerate() {
+            voice.start(channel, note, velocity, voice_index);
+        }
+    }
+
+    fn retune_unison(&mut self, channel: u8, note: u8) {
+        self.retarget_glide(note);
+        for voice in &mut self.voices {
+            voice.retune(channel, note);
+        }
+    }
+
+    fn retarget_glide(&mut self, note: u8) {
+        let target = f32::from(note);
+        if !self.glide_initialized {
+            self.glide_current_note = target;
+            self.glide_initialized = true;
+        }
+        self.glide_target_note = target;
+    }
+
+    fn advance_glide(&mut self) -> f32 {
+        if !self.unison_enabled() || !self.glide_initialized {
+            return 0.0;
+        }
+        let amount = quantize_analog_pot(self.settings.get(Parameter::Glide));
+        self.glide_current_note = advance_glide_note(
+            self.glide_current_note,
+            self.glide_target_note,
+            amount,
+            self.sample_rate,
+        );
+        self.glide_current_note - self.glide_target_note
+    }
+
+    fn rebuild_allocation_for_mode(&mut self) {
+        self.voices = [Voice::default(); VOICE_COUNT];
+        self.next_voice = 0;
+        self.glide_initialized = false;
+        if self.unison_enabled() {
+            if let Some(latest) = self.held_notes.latest() {
+                self.start_unison(latest.channel, latest.note, latest.velocity);
+            }
+            return;
+        }
+        let start = self.held_notes.len.saturating_sub(VOICE_COUNT);
+        for index in start..self.held_notes.len {
+            let held = self.held_notes.entries[index];
+            self.note_on_without_tracking(held.channel, held.note, held.velocity);
+        }
+    }
+
+    fn note_on_without_tracking(&mut self, channel: u8, note: u8, velocity: u8) {
+        let voice_index = self
+            .voices
+            .iter()
+            .position(|voice| !voice.is_active())
+            .unwrap_or(self.next_voice);
+        self.next_voice = (voice_index + 1) % VOICE_COUNT;
+        self.voices[voice_index].start(channel, note, velocity, voice_index);
     }
 }
 
@@ -229,6 +454,32 @@ fn destination_value(settings: Settings, parameter: Parameter, value: f32) -> f3
     }
 }
 
+fn pitch_wheel_normalized(value: u16) -> f32 {
+    let value = value.min(16_383);
+    if value < 8_192 {
+        (f32::from(value) - 8_192.0) / 8_192.0
+    } else {
+        (f32::from(value) - 8_192.0) / 8_191.0
+    }
+}
+
+fn glide_rate_semitones_per_second(amount: f32) -> f32 {
+    let amount = amount.clamp(0.0, 1.0);
+    MAXIMUM_GLIDE_RATE_SEMITONES_PER_SECOND
+        * libm::powf(
+            MINIMUM_GLIDE_RATE_SEMITONES_PER_SECOND / MAXIMUM_GLIDE_RATE_SEMITONES_PER_SECOND,
+            amount,
+        )
+}
+
+fn advance_glide_note(current: f32, target: f32, amount: f32, sample_rate: f32) -> f32 {
+    if amount <= 0.0 {
+        return target;
+    }
+    let maximum_step = glide_rate_semitones_per_second(amount) / sample_rate.max(1.0);
+    current + (target - current).clamp(-maximum_step, maximum_step)
+}
+
 #[cfg(test)]
 mod tests {
     extern crate std;
@@ -242,6 +493,78 @@ mod tests {
         assert!((0..128).all(|_| engine.next_sample() == 0.0));
         engine.note_on(0, 60, 100);
         assert!((0..4096).any(|_| engine.next_sample().abs() > 0.001));
+    }
+
+    #[test]
+    fn pitch_wheel_uses_the_full_fourteen_bit_midi_range() {
+        assert_eq!(pitch_wheel_normalized(0), -1.0);
+        assert_eq!(pitch_wheel_normalized(8_192), 0.0);
+        assert_eq!(pitch_wheel_normalized(16_383), 1.0);
+
+        let mut engine = Engine::default();
+        engine.handle_midi([0xe0, 0, 127]);
+        assert!((engine.pitch_wheel - (16_256.0 - 8_192.0) / 8_191.0).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn maximum_glide_traverses_five_octaves_in_five_seconds() {
+        let sample_rate = 48_000.0;
+        let mut note = 0.0;
+        for _ in 0..(sample_rate as usize * 5) {
+            note = advance_glide_note(note, 60.0, 1.0, sample_rate);
+        }
+        assert!((note - 60.0).abs() < 0.001, "five-octave result: {note}");
+        assert_eq!(advance_glide_note(24.0, 60.0, 0.0, sample_rate), 60.0);
+    }
+
+    #[test]
+    fn unison_assigns_all_five_voices_and_falls_back_to_last_held_note() {
+        let mut engine = Engine::default();
+        assert!(engine.set_parameter(Parameter::Unison as u32, 1.0));
+        engine.note_on(0, 60, 100);
+        assert!(engine.voices.iter().all(|voice| voice.matches(0, 60)));
+
+        engine.note_on(0, 67, 100);
+        assert!(engine.voices.iter().all(|voice| voice.matches(0, 67)));
+        engine.note_off(0, 67);
+        assert!(engine.voices.iter().all(|voice| voice.matches(0, 60)));
+        engine.note_off(0, 60);
+        assert!(engine.voices.iter().all(|voice| voice.is_active()));
+    }
+
+    #[test]
+    fn glide_offset_exists_only_while_unison_is_enabled() {
+        let mut engine = Engine::default();
+        assert!(engine.prepare(48_000.0));
+        assert!(engine.set_parameter(Parameter::Unison as u32, 1.0));
+        assert!(engine.set_parameter(Parameter::Glide as u32, 1.0));
+        engine.note_on(0, 48, 100);
+        engine.note_on(0, 60, 100);
+        let offset = engine.advance_glide();
+        assert!(offset < -11.9);
+
+        assert!(engine.set_parameter(Parameter::Unison as u32, 0.0));
+        assert_eq!(engine.advance_glide(), 0.0);
+    }
+
+    #[test]
+    fn sustain_defers_release_until_the_pedal_rises() {
+        let mut engine = Engine::default();
+        assert!(engine.prepare(48_000.0));
+        assert!(engine.set_parameter(Parameter::AmpRelease as u32, 0.0));
+        engine.note_on(0, 60, 100);
+        engine.handle_midi([0xb0, 64, 127]);
+        engine.note_off(0, 60);
+        for _ in 0..4_096 {
+            let _ = engine.next_sample();
+        }
+        assert!(engine.voices.iter().any(|voice| voice.matches(0, 60)));
+
+        engine.handle_midi([0xb0, 64, 0]);
+        for _ in 0..32_768 {
+            let _ = engine.next_sample();
+        }
+        assert!(engine.voices.iter().all(|voice| !voice.is_active()));
     }
 
     #[test]

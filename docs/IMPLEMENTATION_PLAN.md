@@ -37,8 +37,9 @@ do not become user-selectable authenticity modes.
    - Reconstruct attack, decay, sustain and release laws separately for filter
      and amplifier paths, including retrigger and voice-steal behaviour.
 7. **Performance system**
-   - Implement unison, glide, pitch/mod wheels, velocity, aftertouch, sustain
-     and all-notes-off with sample-accurate RackForge events.
+   - Implement unison, glide, pitch/mod wheels, sustain and all-notes-off with
+     sample-accurate RackForge events; explicitly ignore velocity and
+     aftertouch because the reference keyboard does not provide them.
 8. **Output and calibration**
    - Match headroom, saturation, DC behaviour and level across single notes,
      five-note chords and unison.

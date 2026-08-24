@@ -5,9 +5,10 @@
     { "id": "oscillators", "name": "Oscillators", "order": 1, "header": "RF-5" },
     { "id": "mixer", "name": "Mixer", "order": 2, "header": "RF-5" },
     { "id": "modulation", "name": "Modulation", "order": 3, "header": "RF-5" },
-    { "id": "filter", "name": "Filter", "order": 4, "header": "RF-5" },
-    { "id": "amplifier", "name": "Amplifier", "order": 5, "header": "RF-5" },
-    { "id": "voice", "name": "Voice", "order": 6, "header": "RF-5" }
+    { "id": "poly-mod", "name": "Poly Mod", "order": 4, "header": "RF-5" },
+    { "id": "filter", "name": "Filter", "order": 5, "header": "RF-5" },
+    { "id": "amplifier", "name": "Amplifier", "order": 6, "header": "RF-5" },
+    { "id": "voice", "name": "Voice", "order": 7, "header": "RF-5" }
   ],
   "parameters": [
     {
@@ -179,6 +180,71 @@
       "index": 33, "id": "wheel-mod-source-mix", "name": "Wheel Mod Source Mix", "page": "modulation", "order": 9,
       "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.0, "step": 0.007874015748031496 },
       "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+    },
+    {
+      "index": 34, "id": "filter-attack", "name": "Filter Attack", "page": "filter", "order": 2,
+      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.01, "step": 0.007874015748031496 },
+      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+    },
+    {
+      "index": 35, "id": "filter-decay", "name": "Filter Decay", "page": "filter", "order": 3,
+      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.2, "step": 0.007874015748031496 },
+      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+    },
+    {
+      "index": 36, "id": "filter-sustain", "name": "Filter Sustain", "page": "filter", "order": 4,
+      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.2, "step": 0.007874015748031496 },
+      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+    },
+    {
+      "index": 37, "id": "filter-release", "name": "Filter Release", "page": "filter", "order": 5,
+      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.28, "step": 0.007874015748031496 },
+      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+    },
+    {
+      "index": 38, "id": "filter-envelope-amount", "name": "Filter Envelope Amount", "page": "filter", "order": 6,
+      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.35, "step": 0.007874015748031496 },
+      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+    },
+    {
+      "index": 39, "id": "poly-mod-filter-envelope-amount", "name": "Filter Envelope", "page": "poly-mod", "order": 0,
+      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.0, "step": 0.007874015748031496 },
+      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+    },
+    {
+      "index": 40, "id": "poly-mod-oscillator-b-amount", "name": "Oscillator B", "page": "poly-mod", "order": 1,
+      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.0, "step": 0.007874015748031496 },
+      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+    },
+    {
+      "index": 41, "id": "poly-mod-oscillator-a-frequency", "name": "Oscillator A Frequency", "page": "poly-mod", "order": 2,
+      "kind": { "type": "boolean", "default": false },
+      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+    },
+    {
+      "index": 42, "id": "poly-mod-oscillator-a-pulse-width", "name": "Oscillator A Pulse Width", "page": "poly-mod", "order": 3,
+      "kind": { "type": "boolean", "default": false },
+      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+    },
+    {
+      "index": 43, "id": "poly-mod-filter", "name": "Filter", "page": "poly-mod", "order": 4,
+      "kind": { "type": "boolean", "default": false },
+      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+    },
+    {
+      "index": 44, "id": "filter-keyboard", "name": "Keyboard Tracking", "page": "filter", "order": 7,
+      "kind": { "type": "boolean", "default": false },
+      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+    },
+    {
+      "index": 45, "id": "glide", "name": "Glide", "page": "voice", "order": 1,
+      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.0, "step": 0.007874015748031496 },
+      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
+    },
+    {
+      "index": 46, "id": "unison", "name": "Unison", "page": "voice", "order": 2,
+      "kind": { "type": "boolean", "default": false },
+      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
     }
   ]
 }

@@ -23,7 +23,7 @@ allocator  MIDI   state   common LFO  pink noise
  voice mix -> output calibration -> stereo host output
 ```
 
-The intended final voice path is:
+The active per-voice routing is:
 
 ```text
 VCO A ----\
@@ -31,8 +31,8 @@ VCO A ----\
 VCO B ----/          ^                ^
   |                  |                |
   +-- sync ----------+        amplifier envelope
-  +-- Poly Mod ------+
-filter envelope -----+
+  +-- Poly Mod bus --+
+filter envelope -----+---> Poly Mod bus (inverted)
 ```
 
 The first audible implementation is deliberately named a baseline. Individual
@@ -52,3 +52,12 @@ depth/range uncertainty are recorded in
 The shared MM5837-class source, its SD334 pinking stage and the current mixer
 boundary are recorded in
 [`fidelity/NOISE_AND_MIXER_MODEL.md`](fidelity/NOISE_AND_MIXER_MODEL.md).
+The per-voice Poly Mod bus, independent filter envelope, destination routing
+and bounded depth uncertainty are recorded in
+[`fidelity/POLY_MOD_MODEL.md`](fidelity/POLY_MOD_MODEL.md).
+The active four-pole filter and true-RC envelope candidates are documented in
+[`fidelity/FILTER_MODEL.md`](fidelity/FILTER_MODEL.md) and
+[`fidelity/ENVELOPE_MODEL.md`](fidelity/ENVELOPE_MODEL.md).
+Unison, Glide, pitch wheel and the explicit absence of velocity response are
+documented in
+[`fidelity/PERFORMANCE_MODEL.md`](fidelity/PERFORMANCE_MODEL.md).

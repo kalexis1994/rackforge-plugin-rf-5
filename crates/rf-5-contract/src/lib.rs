@@ -7,7 +7,7 @@
 
 pub mod hardware;
 
-pub const PARAMETER_COUNT: usize = 34;
+pub const PARAMETER_COUNT: usize = 47;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]
@@ -46,6 +46,19 @@ pub enum Parameter {
     WheelModFilter = 31,
     NoiseLevel = 32,
     WheelModSourceMix = 33,
+    FilterAttack = 34,
+    FilterDecay = 35,
+    FilterSustain = 36,
+    FilterRelease = 37,
+    FilterEnvelopeAmount = 38,
+    PolyModFilterEnvelopeAmount = 39,
+    PolyModOscillatorBAmount = 40,
+    PolyModOscillatorAFrequency = 41,
+    PolyModOscillatorAPulseWidth = 42,
+    PolyModFilter = 43,
+    FilterKeyboard = 44,
+    Glide = 45,
+    Unison = 46,
 }
 
 impl TryFrom<u32> for Parameter {
@@ -87,6 +100,19 @@ impl TryFrom<u32> for Parameter {
             31 => Ok(Self::WheelModFilter),
             32 => Ok(Self::NoiseLevel),
             33 => Ok(Self::WheelModSourceMix),
+            34 => Ok(Self::FilterAttack),
+            35 => Ok(Self::FilterDecay),
+            36 => Ok(Self::FilterSustain),
+            37 => Ok(Self::FilterRelease),
+            38 => Ok(Self::FilterEnvelopeAmount),
+            39 => Ok(Self::PolyModFilterEnvelopeAmount),
+            40 => Ok(Self::PolyModOscillatorBAmount),
+            41 => Ok(Self::PolyModOscillatorAFrequency),
+            42 => Ok(Self::PolyModOscillatorAPulseWidth),
+            43 => Ok(Self::PolyModFilter),
+            44 => Ok(Self::FilterKeyboard),
+            45 => Ok(Self::Glide),
+            46 => Ok(Self::Unison),
             _ => Err(()),
         }
     }
@@ -103,7 +129,8 @@ impl Default for Settings {
             values: [
                 0.72, 0.72, 0.54, 0.72, 0.08, 0.01, 0.2, 0.82, 0.28, 0.18, 0.64, 1.0, 0.0, 0.5,
                 1.0, 0.0, 0.0, 0.5, 0.0, 0.5, 0.5, 0.0, 1.0, 0.35, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0,
-                0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.01, 0.20, 0.20, 0.28, 0.35, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0,
             ],
         }
     }

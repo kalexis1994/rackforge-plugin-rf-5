@@ -1,13 +1,17 @@
 #![no_std]
 
-//! Per-voice synthesis path. The VCO A/B core is source-backed and
-//! band-limited; envelope, filter and gain staging remain replacement gaps.
+//! Per-voice synthesis path with dual CEM3340-class VCO candidates, two
+//! CEM3310 true-RC envelopes and an oversampled four-pole CEM3320 candidate.
 
 use rf_5_contract::{Parameter, Settings, hardware::quantize_analog_pot};
 
+pub mod envelope;
+pub mod filter;
 pub mod tuning;
 pub mod vco;
 
+use envelope::AdsrEnvelope;
+use filter::Cem3320Filter;
 pub use tuning::note_frequency;
 use vco::{Vco, WaveSelection};
 
@@ -15,6 +19,14 @@ const VOICE_SPREAD: [f32; 5] = [-0.0030, -0.0014, 0.0, 0.0016, 0.0031];
 const INITIAL_PHASE_A: [f32; 5] = [0.07, 0.31, 0.58, 0.83, 0.19];
 const INITIAL_PHASE_B: [f32; 5] = [0.67, 0.11, 0.42, 0.74, 0.93];
 const OSCILLATOR_OVERSAMPLING: usize = 4;
+const POLY_MOD_PITCH_DEPTH_SEMITONES: f32 = 48.0;
+const POLY_MOD_PULSE_WIDTH_DEPTH: f32 = 0.48;
+const POLY_MOD_FILTER_DEPTH_OCTAVES: f32 = 4.5;
+const FILTER_ENVELOPE_DEPTH_OCTAVES: f32 = 6.5;
+const FILTER_MINIMUM_HZ: f32 = 14.0;
+const FILTER_PANEL_OCTAVES: f32 = 10.0;
+const FILTER_KEYBOARD_BASE_NOTE: f32 = 36.0;
+const FILTER_SPREAD_OCTAVES: [f32; 5] = [-0.018, -0.008, 0.0, 0.009, 0.019];
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct VoiceModulation {
@@ -22,52 +34,22 @@ pub struct VoiceModulation {
     pub oscillator_b_semitones: f32,
     pub oscillator_a_pulse_width: f32,
     pub oscillator_b_pulse_width: f32,
-    pub filter_cutoff: f32,
+    pub filter_octaves: f32,
     pub noise: f32,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum EnvelopeStage {
-    Idle,
-    Attack,
-    Decay,
-    Sustain,
-    Release,
-}
-
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Voice {
     note: u8,
     channel: u8,
-    velocity: f32,
     active: bool,
     oscillator_a: Vco,
     oscillator_b: Vco,
     oscillators_initialized: bool,
     voice_index: usize,
-    envelope: f32,
-    release_step: f32,
-    stage: EnvelopeStage,
-    filter: f32,
-}
-
-impl Default for Voice {
-    fn default() -> Self {
-        Self {
-            note: 0,
-            channel: 0,
-            velocity: 0.0,
-            active: false,
-            oscillator_a: Vco::default(),
-            oscillator_b: Vco::default(),
-            oscillators_initialized: false,
-            voice_index: 0,
-            envelope: 0.0,
-            release_step: 0.0,
-            stage: EnvelopeStage::Idle,
-            filter: 0.0,
-        }
-    }
+    amplifier_envelope: AdsrEnvelope,
+    filter_envelope: AdsrEnvelope,
+    filter: Cem3320Filter,
 }
 
 impl Voice {
@@ -79,11 +61,14 @@ impl Voice {
         self.active && self.channel == channel && self.note == note
     }
 
-    pub fn start(&mut self, channel: u8, note: u8, velocity: u8, voice_index: usize) {
+    pub fn identity(self) -> Option<(u8, u8)> {
+        self.active.then_some((self.channel, self.note))
+    }
+
+    pub fn start(&mut self, channel: u8, note: u8, _velocity: u8, voice_index: usize) {
         self.note = note;
         self.channel = channel;
         self.voice_index = voice_index % VOICE_SPREAD.len();
-        self.velocity = f32::from(velocity) / 127.0;
         self.active = true;
         if !self.oscillators_initialized {
             let index = self.voice_index;
@@ -91,19 +76,21 @@ impl Voice {
             self.oscillator_b = Vco::with_phase(INITIAL_PHASE_B[index]);
             self.oscillators_initialized = true;
         }
-        self.envelope = 0.0;
-        self.release_step = 0.0;
-        self.stage = EnvelopeStage::Attack;
-        self.filter = 0.0;
+        self.amplifier_envelope.trigger();
+        self.filter_envelope.trigger();
     }
 
-    pub fn release(&mut self, sample_rate: f32, settings: Settings) {
-        if !self.active || self.stage == EnvelopeStage::Release {
+    pub fn retune(&mut self, channel: u8, note: u8) {
+        self.note = note;
+        self.channel = channel;
+    }
+
+    pub fn release(&mut self) {
+        if !self.active {
             return;
         }
-        let seconds = envelope_seconds(settings.get(Parameter::AmpRelease), 0.015, 8.0);
-        self.release_step = self.envelope / (seconds * sample_rate.max(1.0)).max(1.0);
-        self.stage = EnvelopeStage::Release;
+        self.amplifier_envelope.release();
+        self.filter_envelope.release();
     }
 
     pub fn next(
@@ -112,27 +99,38 @@ impl Voice {
         settings: Settings,
         modulation: VoiceModulation,
     ) -> f32 {
-        let raw = self.next_oscillators(sample_rate, settings, modulation) + modulation.noise;
-        if !self.active {
-            return 0.0;
+        let allocated = self.active;
+        let filter_envelope = self.filter_envelope.next(
+            sample_rate,
+            quantize_analog_pot(settings.get(Parameter::FilterAttack)),
+            quantize_analog_pot(settings.get(Parameter::FilterDecay)),
+            quantize_analog_pot(settings.get(Parameter::FilterSustain)),
+            quantize_analog_pot(settings.get(Parameter::FilterRelease)),
+        );
+        let amplifier_envelope = self.amplifier_envelope.next(
+            sample_rate,
+            quantize_analog_pot(settings.get(Parameter::AmpAttack)),
+            quantize_analog_pot(settings.get(Parameter::AmpDecay)),
+            quantize_analog_pot(settings.get(Parameter::AmpSustain)),
+            quantize_analog_pot(settings.get(Parameter::AmpRelease)),
+        );
+        if self.amplifier_envelope.is_idle() {
+            self.active = false;
         }
-
-        self.advance_envelope(sample_rate, settings);
-
-        let cutoff =
-            (settings.get(Parameter::FilterCutoff) + modulation.filter_cutoff).clamp(0.0, 1.0);
-        let sample_rate_scale = 48_000.0 / sample_rate.max(1.0);
-        let coefficient = ((0.004 + cutoff * cutoff * 0.42) * sample_rate_scale).clamp(0.001, 0.95);
-        let feedback = settings.get(Parameter::FilterResonance) * 0.82;
-        self.filter += coefficient * ((raw - self.filter * feedback) - self.filter);
-        self.filter * self.envelope * self.velocity
+        let filtered = self.next_signal_path(sample_rate, settings, modulation, filter_envelope);
+        if allocated {
+            filtered * amplifier_envelope
+        } else {
+            0.0
+        }
     }
 
-    fn next_oscillators(
+    fn next_signal_path(
         &mut self,
         sample_rate: f32,
         settings: Settings,
         modulation: VoiceModulation,
+        filter_envelope: f32,
     ) -> f32 {
         let waves_a = WaveSelection {
             saw: parameter_enabled(settings, Parameter::OscillatorASaw),
@@ -144,9 +142,8 @@ impl Voice {
             triangle: parameter_enabled(settings, Parameter::OscillatorBTriangle),
             pulse: parameter_enabled(settings, Parameter::OscillatorBPulse),
         };
-        let pulse_width_a = (quantize_analog_pot(settings.get(Parameter::OscillatorAPulseWidth))
-            + modulation.oscillator_a_pulse_width)
-            .clamp(0.02, 0.98);
+        let pulse_width_a = quantize_analog_pot(settings.get(Parameter::OscillatorAPulseWidth))
+            + modulation.oscillator_a_pulse_width;
         let pulse_width_b = (quantize_analog_pot(settings.get(Parameter::OscillatorBPulseWidth))
             + modulation.oscillator_b_pulse_width)
             .clamp(0.02, 0.98);
@@ -157,8 +154,7 @@ impl Voice {
         let frequency_a = tuning::oscillator_a_frequency(
             self.note,
             settings.get(Parameter::OscillatorAFrequency),
-        ) * semitone_ratio(modulation.oscillator_a_semitones)
-            * (1.0 + spread);
+        ) * (1.0 + spread);
         let frequency_b = tuning::oscillator_b_frequency(
             self.note,
             settings.get(Parameter::OscillatorBFrequency),
@@ -169,60 +165,68 @@ impl Voice {
             * (1.0 - spread);
         let internal_rate = sample_rate.max(1.0) * OSCILLATOR_OVERSAMPLING as f32;
         let mut output = 0.0;
+        let poly_filter_envelope = -filter_envelope
+            * quantize_analog_pot(settings.get(Parameter::PolyModFilterEnvelopeAmount));
+        let poly_oscillator_b_amount =
+            quantize_analog_pot(settings.get(Parameter::PolyModOscillatorBAmount));
+        let poly_frequency_a = parameter_enabled(settings, Parameter::PolyModOscillatorAFrequency);
+        let poly_pulse_width_a =
+            parameter_enabled(settings, Parameter::PolyModOscillatorAPulseWidth);
+        let poly_filter = parameter_enabled(settings, Parameter::PolyModFilter);
+        let filter_resonance = quantize_analog_pot(settings.get(Parameter::FilterResonance));
+        let direct_filter_envelope = filter_envelope
+            * quantize_analog_pot(settings.get(Parameter::FilterEnvelopeAmount))
+            * FILTER_ENVELOPE_DEPTH_OCTAVES;
+        let filter_spread =
+            FILTER_SPREAD_OCTAVES[self.voice_index] * settings.get(Parameter::VintageSpread);
+        let filter_cutoff = quantize_analog_pot(settings.get(Parameter::FilterCutoff));
+        let filter_keyboard = parameter_enabled(settings, Parameter::FilterKeyboard);
+        let common_filter_octaves =
+            direct_filter_envelope + modulation.filter_octaves + filter_spread;
 
         for _ in 0..OSCILLATOR_OVERSAMPLING {
-            let sample_a =
-                self.oscillator_a
-                    .next(frequency_a, internal_rate, pulse_width_a, waves_a);
             let sample_b =
                 self.oscillator_b
                     .next(frequency_b, internal_rate, pulse_width_b, waves_b);
-            output += sample_a.value * level_a + sample_b.value * level_b;
             if sync && sample_b.wrapped {
                 self.oscillator_a.hard_sync();
             }
+            let poly_bus = poly_filter_envelope + sample_b.value * poly_oscillator_b_amount;
+            let poly_pitch = if poly_frequency_a {
+                poly_bus * POLY_MOD_PITCH_DEPTH_SEMITONES
+            } else {
+                0.0
+            };
+            let poly_pulse_width = if poly_pulse_width_a {
+                poly_bus * POLY_MOD_PULSE_WIDTH_DEPTH
+            } else {
+                0.0
+            };
+            let sample_a = self.oscillator_a.next(
+                frequency_a * semitone_ratio(modulation.oscillator_a_semitones + poly_pitch),
+                internal_rate,
+                (pulse_width_a + poly_pulse_width).clamp(0.02, 0.98),
+                waves_a,
+            );
+            let poly_filter_octaves = if poly_filter {
+                poly_bus * POLY_MOD_FILTER_DEPTH_OCTAVES
+            } else {
+                0.0
+            };
+            let cutoff_hz = filter_cutoff_hz(
+                filter_cutoff,
+                self.note,
+                filter_keyboard,
+                common_filter_octaves + poly_filter_octaves,
+            );
+            let mixer = sample_a.value * level_a + sample_b.value * level_b + modulation.noise;
+            output += self
+                .filter
+                .next(mixer, cutoff_hz, filter_resonance, internal_rate);
         }
 
         output / OSCILLATOR_OVERSAMPLING as f32
     }
-
-    fn advance_envelope(&mut self, sample_rate: f32, settings: Settings) {
-        match self.stage {
-            EnvelopeStage::Idle => {}
-            EnvelopeStage::Attack => {
-                let seconds = envelope_seconds(settings.get(Parameter::AmpAttack), 0.001, 5.0);
-                self.envelope += 1.0 / (seconds * sample_rate.max(1.0)).max(1.0);
-                if self.envelope >= 1.0 {
-                    self.envelope = 1.0;
-                    self.stage = EnvelopeStage::Decay;
-                }
-            }
-            EnvelopeStage::Decay => {
-                let sustain = settings.get(Parameter::AmpSustain);
-                let seconds = envelope_seconds(settings.get(Parameter::AmpDecay), 0.004, 8.0);
-                self.envelope -= (1.0 - sustain) / (seconds * sample_rate.max(1.0)).max(1.0);
-                if self.envelope <= sustain {
-                    self.envelope = sustain;
-                    self.stage = EnvelopeStage::Sustain;
-                }
-            }
-            EnvelopeStage::Sustain => {
-                self.envelope = settings.get(Parameter::AmpSustain);
-            }
-            EnvelopeStage::Release => {
-                self.envelope -= self.release_step;
-                if self.envelope <= 0.0 {
-                    self.envelope = 0.0;
-                    self.active = false;
-                    self.stage = EnvelopeStage::Idle;
-                }
-            }
-        }
-    }
-}
-
-fn envelope_seconds(value: f32, minimum: f32, span: f32) -> f32 {
-    minimum + value * value * span
 }
 
 fn parameter_enabled(settings: Settings, parameter: Parameter) -> bool {
@@ -231,6 +235,19 @@ fn parameter_enabled(settings: Settings, parameter: Parameter) -> bool {
 
 fn semitone_ratio(semitones: f32) -> f32 {
     libm::powf(2.0, semitones / 12.0)
+}
+
+fn filter_cutoff_hz(panel: f32, note: u8, keyboard_tracking: bool, modulation_octaves: f32) -> f32 {
+    let keyboard_octaves = if keyboard_tracking {
+        (f32::from(note) - FILTER_KEYBOARD_BASE_NOTE) / 12.0
+    } else {
+        0.0
+    };
+    FILTER_MINIMUM_HZ
+        * libm::powf(
+            2.0,
+            panel.clamp(0.0, 1.0) * FILTER_PANEL_OCTAVES + keyboard_octaves + modulation_octaves,
+        )
 }
 
 #[cfg(test)]
@@ -245,6 +262,24 @@ mod tests {
     }
 
     #[test]
+    fn filter_keyboard_switch_tracks_one_volt_per_octave() {
+        let lower = filter_cutoff_hz(0.4, 36, true, 0.0);
+        let upper = filter_cutoff_hz(0.4, 48, true, 0.0);
+        assert!((upper / lower - 2.0).abs() < 1.0e-5);
+
+        let lower_off = filter_cutoff_hz(0.4, 36, false, 0.0);
+        let upper_off = filter_cutoff_hz(0.4, 48, false, 0.0);
+        assert_eq!(lower_off, upper_off);
+    }
+
+    #[test]
+    fn filter_panel_spans_ten_octaves() {
+        let bottom = filter_cutoff_hz(0.0, 36, false, 0.0);
+        let top = filter_cutoff_hz(1.0, 36, false, 0.0);
+        assert!((top / bottom - 1_024.0).abs() < 0.01);
+    }
+
+    #[test]
     fn note_starts_sounds_and_releases() {
         let settings = Settings::default();
         let mut voice = Voice::default();
@@ -255,7 +290,7 @@ mod tests {
                 .abs()
                 > 0.001
         }));
-        voice.release(48_000.0, settings);
+        voice.release();
         for _ in 0..500_000 {
             let _ = voice.next(48_000.0, settings, VoiceModulation::default());
             if !voice.is_active() {
@@ -278,6 +313,21 @@ mod tests {
         voice.start(0, 67, 100, 2);
         assert_eq!(voice.oscillator_a.phase(), phase_a);
         assert_eq!(voice.oscillator_b.phase(), phase_b);
+    }
+
+    #[test]
+    fn original_keyboard_dynamics_do_not_scale_voice_level() {
+        let settings = Settings::default();
+        let mut quiet_velocity = Voice::default();
+        let mut full_velocity = Voice::default();
+        quiet_velocity.start(0, 60, 1, 0);
+        full_velocity.start(0, 60, 127, 0);
+        for _ in 0..4_096 {
+            assert_eq!(
+                quiet_velocity.next(48_000.0, settings, VoiceModulation::default()),
+                full_velocity.next(48_000.0, settings, VoiceModulation::default())
+            );
+        }
     }
 
     #[test]
@@ -311,6 +361,70 @@ mod tests {
             difference += (free_voice.next(48_000.0, free_settings, VoiceModulation::default())
                 - sync_voice.next(48_000.0, sync_settings, VoiceModulation::default()))
             .abs();
+        }
+        assert!(difference > 1.0);
+    }
+
+    #[test]
+    fn filter_envelope_poly_mod_descends_oscillator_a_frequency() {
+        let dry_settings = Settings::default();
+        let mut modulated_settings = dry_settings;
+        assert!(modulated_settings.set(Parameter::PolyModFilterEnvelopeAmount as u32, 1.0));
+        assert!(modulated_settings.set(Parameter::PolyModOscillatorAFrequency as u32, 1.0));
+        let mut dry = Voice::default();
+        let mut modulated = Voice::default();
+        dry.start(0, 36, 127, 0);
+        modulated.start(0, 36, 127, 0);
+        let _ = dry.next_signal_path(48_000.0, dry_settings, VoiceModulation::default(), 1.0);
+        let _ = modulated.next_signal_path(
+            48_000.0,
+            modulated_settings,
+            VoiceModulation::default(),
+            1.0,
+        );
+        assert!(modulated.oscillator_a.phase() < dry.oscillator_a.phase());
+    }
+
+    #[test]
+    fn oscillator_b_poly_mod_is_independent_of_b_mixer_level() {
+        let mut dry_settings = Settings::default();
+        assert!(dry_settings.set(Parameter::OscillatorBLevel as u32, 0.0));
+        assert!(dry_settings.set(Parameter::OscillatorBSaw as u32, 0.0));
+        assert!(dry_settings.set(Parameter::OscillatorBTriangle as u32, 1.0));
+        let mut modulated_settings = dry_settings;
+        assert!(modulated_settings.set(Parameter::PolyModOscillatorBAmount as u32, 0.7));
+        assert!(modulated_settings.set(Parameter::PolyModOscillatorAFrequency as u32, 1.0));
+        let mut dry = Voice::default();
+        let mut modulated = Voice::default();
+        dry.start(0, 57, 127, 0);
+        modulated.start(0, 57, 127, 0);
+        let mut difference = 0.0;
+        for _ in 0..8_192 {
+            difference += (dry.next(48_000.0, dry_settings, VoiceModulation::default())
+                - modulated.next(48_000.0, modulated_settings, VoiceModulation::default()))
+            .abs();
+        }
+        assert!(difference > 1.0);
+    }
+
+    #[test]
+    fn poly_mod_destinations_are_independent_switches() {
+        let mut frequency_settings = Settings::default();
+        assert!(frequency_settings.set(Parameter::PolyModOscillatorBAmount as u32, 0.5));
+        assert!(frequency_settings.set(Parameter::PolyModOscillatorAFrequency as u32, 1.0));
+        let mut filter_settings = frequency_settings;
+        assert!(filter_settings.set(Parameter::PolyModOscillatorAFrequency as u32, 0.0));
+        assert!(filter_settings.set(Parameter::PolyModFilter as u32, 1.0));
+        let mut frequency_voice = Voice::default();
+        let mut filter_voice = Voice::default();
+        frequency_voice.start(0, 60, 127, 0);
+        filter_voice.start(0, 60, 127, 0);
+        let mut difference = 0.0;
+        for _ in 0..8_192 {
+            difference +=
+                (frequency_voice.next(48_000.0, frequency_settings, VoiceModulation::default())
+                    - filter_voice.next(48_000.0, filter_settings, VoiceModulation::default()))
+                .abs();
         }
         assert!(difference > 1.0);
     }

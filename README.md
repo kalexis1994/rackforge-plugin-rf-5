@@ -12,11 +12,13 @@ content.
 
 ## Current status
 
-Milestone 0 establishes the portable package, five-voice allocator, parameter
-contract, deterministic tests and CI. Its audible oscillator/filter path is a
-technical baseline only; it is not accepted as the final circuit model. Every
-fidelity block must replace that baseline through the source and measurement
-gates documented in [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
+The active candidate now contains dual oversampled oscillators, hard sync,
+shared LFO and noise, audio-rate Poly Mod, a four-pole CEM3320-class filter,
+separate CEM3310-class RC envelopes, five-voice Unison, Glide and both
+performance wheels. It remains a reverse-engineering candidate: exact analog
+calibration, mixer/VCA overload, output staging and original-instrument
+measurements still pass through the evidence gates in
+[`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
 
 ## Repository layout
 
