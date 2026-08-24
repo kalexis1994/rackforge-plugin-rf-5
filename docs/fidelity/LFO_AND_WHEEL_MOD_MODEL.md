@@ -34,11 +34,16 @@ wheel in RF-5.
   feed-through at zero input.
 - Wheel Mod amount is the passive/live performance level after that dual-OTA
   source and is not stored in a program.
-- Enabled frequency destinations currently span a candidate maximum of one
-  octave at full wheel and unit waveform amplitude.
-- Enabled pulse-width destinations span a candidate normalized depth of 0.48.
-- The filter destination spans a candidate 4.5 octaves on the CEM3320
-  exponential control-voltage path.
+- The five destination switches no longer multiply three unrelated depth
+  guesses. RF-5 converts the normalized W-MOD bus to one candidate circuit
+  voltage, then follows the populated SD334 networks: 182 kohm/100 kohm for
+  oscillator frequency, 15 kohm/100 kohm followed by 100 kohm/52.3 kohm for
+  pulse width, and 13.3 kohm/100 kohm for filter cutoff.
+- One remaining calibration anchor makes a unit source at full wheel span one
+  oscillator octave. The resistor networks consequently produce 12 semitones,
+  approximately 1.269 normalized pulse-width units and 13.684 filter octaves.
+  Pulse width and cutoff are naturally limited later by their physical model
+  boundaries rather than by arbitrary per-destination depth constants.
 - Three diagnostic factory programs temporarily establish a known wheel
   position for vibrato, pulse-width and filter auditions. This override is
   deliberately not serialized; incoming MIDI CC1 replaces it immediately.
@@ -49,8 +54,10 @@ The manual provides qualitative slow/faster-ramp checks but no absolute LFO
 frequency endpoints. RF-5 therefore accepts the circuit-derived sweep width
 while isolating the 20 Hz upper anchor in the LFO module rather than treating
 it as measured hardware fact. A populated-unit timing measurement can replace
-that one anchor without changing the control law. The three Wheel Mod depth
-constants are similarly isolated calibration hypotheses.
+that one anchor without changing the control law. Wheel Mod destination ratios
+are now circuit-derived; only the normalized-source-to-volts anchor remains a
+calibration hypothesis. A populated-unit voltage measurement at W-MOD replaces
+that anchor and recalibrates all five switches together.
 
 The original Wheel Mod source-mix control now crossfades the LFO with the
 shared MM5837-class noise candidate through its physical CA3280 rather than a
@@ -68,6 +75,8 @@ remain candidates. The noise circuit and spectral assumptions are documented sep
   ratios instead of ideal equal-amplitude shapes;
 - source-mix endpoints completely isolate the opposite OTA half, intermediate
   settings remain complementary and zero input has no balance offset;
+- oscillator, pulse-width and filter depths retain the populated SD334
+  resistor ratios and share one replaceable absolute calibration anchor;
 - silence and note events do not stop or retrigger the LFO;
 - CC1 changes the render when a documented destination is enabled;
 - audition wheel state is cleared by CC1, normal program loads and state loads;

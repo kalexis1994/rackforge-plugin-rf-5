@@ -7,6 +7,7 @@ mod lfo;
 mod noise;
 mod output;
 mod programs;
+mod wheel_mod;
 
 use allocation::PolyAllocator;
 use lfo::{Lfo, LfoWaveSelection};
@@ -340,34 +341,34 @@ impl Engine {
         let source_mix = quantize_analog_pot(applied_settings.get(Parameter::WheelModSourceMix));
         let wheel_source = vca::wheel_mod_source(lfo_sample, noise_sample, source_mix);
         let effective_mod_wheel = self.audition_mod_wheel.unwrap_or(self.mod_wheel);
-        let wheel_bus = wheel_source * effective_mod_wheel;
+        let wheel_destinations = wheel_mod::destinations(wheel_source, effective_mod_wheel);
         let modulation = VoiceModulation {
             oscillator_a_semitones: performance_pitch
                 + destination_value(
                     applied_settings,
                     Parameter::WheelModOscillatorAFrequency,
-                    wheel_bus * 12.0,
+                    wheel_destinations.oscillator_semitones,
                 ),
             oscillator_b_semitones: performance_pitch
                 + destination_value(
                     applied_settings,
                     Parameter::WheelModOscillatorBFrequency,
-                    wheel_bus * 12.0,
+                    wheel_destinations.oscillator_semitones,
                 ),
             oscillator_a_pulse_width: destination_value(
                 applied_settings,
                 Parameter::WheelModOscillatorAPulseWidth,
-                wheel_bus * 0.48,
+                wheel_destinations.pulse_width,
             ),
             oscillator_b_pulse_width: destination_value(
                 applied_settings,
                 Parameter::WheelModOscillatorBPulseWidth,
-                wheel_bus * 0.48,
+                wheel_destinations.pulse_width,
             ),
             filter_octaves: destination_value(
                 applied_settings,
                 Parameter::WheelModFilter,
-                wheel_bus * 4.5,
+                wheel_destinations.filter_octaves,
             ),
             noise: vca::common_noise(
                 noise_sample,
