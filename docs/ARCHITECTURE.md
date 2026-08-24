@@ -74,3 +74,5 @@ documented in
 [`fidelity/PERFORMANCE_MODEL.md`](fidelity/PERFORMANCE_MODEL.md).
 The distinct mixer, per-voice, master and output stages are documented in
 [`fidelity/VCA_AND_OUTPUT_MODEL.md`](fidelity/VCA_AND_OUTPUT_MODEL.md).
+Deterministic listening scenes that exercise this architecture without a UI
+are documented in [`AUDITION_RENDERER.md`](AUDITION_RENDERER.md).

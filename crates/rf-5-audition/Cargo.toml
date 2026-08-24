@@ -1,0 +1,10 @@
+[package]
+name = "rf-5-audition"
+description = "Deterministic no-UI audio renderer for RF-5"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+rf-5-dsp.workspace = true

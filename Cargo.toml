@@ -4,6 +4,7 @@ members = [
     "crates/rf-5-contract",
     "crates/rf-5-voice",
     "crates/rf-5-dsp",
+    "crates/rf-5-audition",
     "plugin",
 ]
 

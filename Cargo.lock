@@ -22,6 +22,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rf-5-audition"
+version = "0.1.0"
+dependencies = [
+ "rf-5-dsp",
+]
+
+[[package]]
 name = "rf-5-contract"
 version = "0.1.0"
 

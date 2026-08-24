@@ -44,6 +44,7 @@ filter modulation plus filter drive and resonance. They require no UI; see
 crates/rf-5-contract/  Stable public parameter and state vocabulary
 crates/rf-5-voice/     Per-voice synthesis path
 crates/rf-5-dsp/       Five-voice allocator, MIDI and audio engine
+crates/rf-5-audition/  Deterministic WAV renderer for evaluation without UI
 plugin/                RackForge wasm-v1 adapter and package resources
 docs/                  Architecture, evidence and implementation gates
 tools/                 Reproducible package builders
@@ -58,12 +59,16 @@ copy `.cargo/config.toml.example` to `.cargo/config.toml` to use that checkout.
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --release --workspace
+cargo run --release -p rf-5-audition
 rustup target add wasm32-unknown-unknown
 bash tools/build-package.sh
 ```
 
 The package is written to `artifacts/rf-5-0.1.0.rfplugin`. GitHub Actions tests
 x86-64 and ARM64 before publishing the portable package as a workflow artifact.
+The audition command writes six unnormalized listening files and their metrics
+to `artifacts/auditions`; see
+[`docs/AUDITION_RENDERER.md`](docs/AUDITION_RENDERER.md).
 
 ## Independence
 
