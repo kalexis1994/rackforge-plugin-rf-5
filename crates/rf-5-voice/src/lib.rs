@@ -79,8 +79,8 @@ impl Voice {
         self.active = true;
         if !self.oscillators_initialized {
             let index = self.voice_index;
-            self.oscillator_a = Vco::with_phase(INITIAL_PHASE_A[index]);
-            self.oscillator_b = Vco::with_phase(INITIAL_PHASE_B[index]);
+            self.oscillator_a = Vco::with_phase_and_profile(INITIAL_PHASE_A[index], index * 2);
+            self.oscillator_b = Vco::with_phase_and_profile(INITIAL_PHASE_B[index], index * 2 + 1);
             self.oscillators_initialized = true;
         }
         self.amplifier_envelope.trigger();
@@ -199,7 +199,7 @@ impl Voice {
             if sync && sample_b.wrapped {
                 self.oscillator_a.hard_sync();
             }
-            let poly_bus = poly_filter_envelope + sample_b.value * poly_oscillator_b_amount;
+            let poly_bus = poly_filter_envelope + sample_b.modulation * poly_oscillator_b_amount;
             let poly_pitch = if poly_frequency_a {
                 poly_bus * POLY_MOD_PITCH_DEPTH_SEMITONES
             } else {
@@ -227,8 +227,8 @@ impl Voice {
                 filter_keyboard,
                 common_filter_octaves + poly_filter_octaves,
             );
-            let mixer = vca::unlinearized(sample_a.value, level_a)
-                + vca::unlinearized(sample_b.value, level_b)
+            let mixer = vca::unlinearized(sample_a.audio, level_a)
+                + vca::unlinearized(sample_b.audio, level_b)
                 + vca::unlinearized(modulation.noise, modulation.noise_level);
             let filtered = self
                 .filter

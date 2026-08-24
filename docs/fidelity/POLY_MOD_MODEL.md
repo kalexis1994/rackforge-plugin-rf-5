@@ -19,8 +19,10 @@ waveforms contribute to the source bus. Hard sync is a separate route.
 - Filter attack, decay, sustain, release and direct cutoff amount use the
   original 128-position panel quantization boundary.
 - The Poly Mod filter-envelope source is explicitly inverted before summing.
-- Oscillator B is evaluated first during each 4x internal substep. Its raw
-  selected waveform sum feeds Poly Mod before the audio mixer level.
+- Oscillator B is evaluated first during each 4x internal substep. Its selected
+  waveform sum feeds Poly Mod before the audio mixer level. Saw and pulse
+  retain their board-level positive bias, while the dedicated DC level-shifter
+  makes triangle bipolar about ground.
 - Oscillator-A frequency and pulse-width destinations are evaluated at that
   internal rate, preserving audio-rate modulation.
 - The filter destination enters the four-pole CEM3320 candidate independently

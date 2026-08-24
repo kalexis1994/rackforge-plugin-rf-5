@@ -32,7 +32,11 @@ oscillator A for the following internal interval.
 
 Waveforms sum before their oscillator level. Enabling a second waveform can
 therefore raise level and drive later blocks harder; RF-5 does not normalize
-the selection count.
+the selection count. Saw, triangle and pulse now retain their data-sheet
+voltage relationships and the populated board's 150/200 kohm input weighting.
+Oscillator B exposes separate audio and Poly Mod representations so its
+level-shifted triangle can remain bipolar without incorrectly centering saw and
+pulse modulation.
 
 ## Exposed controls in this block
 
@@ -53,7 +57,7 @@ were added.
 This candidate does not yet claim final CEM3340 waveform equivalence. Open
 items are:
 
-- output amplitudes, offsets and waveform curvature at the actual board nodes;
+- waveform curvature and high-frequency rounding at the actual board nodes;
 - pulse-width transfer limits and behavior at both extremes;
 - exact hard-sync edge, reset phase and transient shape;
 - final calibration of the frequency-knob and B fine-control laws;
@@ -68,6 +72,9 @@ The ten-channel calibration pipeline is documented in
 [`AUTOTUNE_MODEL.md`](AUTOTUNE_MODEL.md).
 The ten independent post-tune trajectories and their data-sheet magnitude
 limits are documented in [`VCO_DRIFT_MODEL.md`](VCO_DRIFT_MODEL.md).
+The electrical output limits, board resistor weighting and separate audio/Poly
+Mod polarities are documented in
+[`VCO_OUTPUT_MODEL.md`](VCO_OUTPUT_MODEL.md).
 
 The candidate becomes accepted only after spectral sweeps at 44.1, 48, 96 and
 192 kHz pass the alias threshold and legally usable hardware measurements bound

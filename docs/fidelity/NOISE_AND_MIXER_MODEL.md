@@ -40,11 +40,12 @@ RF-5 isolates an 80 kHz candidate inside the documented limits. The physical
 unit powers up from a random non-zero state, while RF-5 deliberately uses a
 fixed seed so tests, saved sessions and live renders are reproducible.
 
-The output gain after the pinking network and the CA3280 gain/overload curves
-are not numerically established by the service manual. The current noise gain
-is therefore an isolated candidate, and oscillator/noise mixer gains remain
-linear until controlled measurements justify OTA nonlinearity. This block does
-not claim final mixer saturation fidelity.
+The output gain after the pinking network and the exact CA3280 drive at the
+populated board are not numerically established by the service manual. The
+current noise gain and normalized OTA drive are therefore isolated candidates.
+Oscillator waveform voltage and 150/200 kohm input weighting are now
+source-bounded, but this block does not yet claim final mixer saturation
+fidelity.
 
 ## Acceptance tests
 
