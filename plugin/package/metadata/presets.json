@@ -10,7 +10,9 @@
     { "bank": "factory.rf5.baseline", "editable": false, "id": "baseline-lead", "name": "Baseline Lead", "order": 3, "tags": ["rf5", "baseline"] },
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-wheel-vibrato", "name": "Audition - Wheel Vibrato", "order": 0, "tags": ["rf5", "audition", "lfo", "wheel-mod"] },
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-wheel-pwm", "name": "Audition - Wheel PWM", "order": 1, "tags": ["rf5", "audition", "lfo", "wheel-mod"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-wheel-filter", "name": "Audition - Wheel Filter", "order": 2, "tags": ["rf5", "audition", "lfo", "wheel-mod"] }
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-wheel-filter", "name": "Audition - Wheel Filter", "order": 2, "tags": ["rf5", "audition", "lfo", "wheel-mod"] },
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-filter-drive", "name": "Audition - Filter Drive", "order": 3, "tags": ["rf5", "audition", "filter", "drive"] },
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-filter-resonance", "name": "Audition - Filter Resonance", "order": 4, "tags": ["rf5", "audition", "filter", "resonance"] }
   ],
   "schema_version": 1
 }

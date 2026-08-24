@@ -803,6 +803,34 @@ mod tests {
     }
 
     #[test]
+    fn filter_audition_programs_are_audible_and_distinct() {
+        let mut signatures = [0.0_f32; 2];
+        for (signature, id) in signatures
+            .iter_mut()
+            .zip(["audition-filter-drive", "audition-filter-resonance"])
+        {
+            let mut engine = Engine::default();
+            assert!(engine.prepare(48_000.0));
+            assert!(engine.load_program(id));
+            engine.note_on(0, 48, 127);
+            engine.note_on(0, 55, 127);
+            engine.note_on(0, 60, 127);
+            let mut peak = 0.0_f32;
+            for index in 0..48_000 {
+                let sample = engine.next_sample();
+                assert!(sample.is_finite(), "non-finite sample in {id}");
+                peak = peak.max(sample.abs());
+                if index > 4_800 {
+                    *signature += sample.abs() * (1.0 + (index % 89) as f32 / 89.0);
+                }
+            }
+            assert!(peak > 0.01, "silent filter audition program {id}");
+            assert!(peak <= 1.0, "unbounded filter audition program {id}");
+        }
+        assert!((signatures[0] - signatures[1]).abs() > 1.0);
+    }
+
+    #[test]
     fn oscillator_tune_reconditions_machine_state_without_changing_the_patch() {
         let mut engine = Engine::default();
         assert!(engine.prepare(48_000.0));

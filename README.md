@@ -26,14 +26,16 @@ the engine exposes non-serialized retuning. Their saw, triangle and pulse
 outputs also retain the published voltage/symmetry ranges, populated-board
 resistor weighting and distinct audio versus Poly Mod polarity. A unified 6/11
 ms CPU cycle drives 38 independent sample-and-hold cells for common,
-oscillator and per-voice filter CVs. It remains a reverse-engineering
+oscillator and per-voice filter CVs. The five filter ICs now form a bounded
+CEM3320 population with individual control scales, resonance gain, clipping
+span and second-harmonic character. It remains a reverse-engineering
 candidate: measured component populations, overload/output levels and
 original-instrument measurements still pass through the evidence gates in
 [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
 
 Until the graphical panel is added, the `RF-5 Audition` factory bank provides
-three immediately playable listening programs for Wheel Mod vibrato, PWM and
-filter modulation. They require no UI or external modulation wheel; see
+five immediately playable listening programs for Wheel Mod vibrato, PWM and
+filter modulation plus filter drive and resonance. They require no UI; see
 [`docs/AUDITION_PROGRAMS.md`](docs/AUDITION_PROGRAMS.md).
 
 ## Repository layout

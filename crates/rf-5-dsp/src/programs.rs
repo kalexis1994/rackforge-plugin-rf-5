@@ -100,6 +100,37 @@ impl Program {
             }),
         }
     }
+
+    fn filter_drive() -> Self {
+        let mut values = BASELINE_WARM;
+        values[Parameter::OscillatorALevel as usize] = 1.0;
+        values[Parameter::OscillatorBLevel as usize] = 1.0;
+        values[Parameter::OscillatorASaw as usize] = 1.0;
+        values[Parameter::OscillatorAPulse as usize] = 1.0;
+        values[Parameter::OscillatorBSaw as usize] = 1.0;
+        values[Parameter::OscillatorBTriangle as usize] = 0.0;
+        values[Parameter::OscillatorBPulse as usize] = 1.0;
+        values[Parameter::FilterCutoff as usize] = 0.42;
+        values[Parameter::FilterResonance as usize] = 0.24;
+        values[Parameter::FilterEnvelopeAmount as usize] = 0.38;
+        Self::normal(values)
+    }
+
+    fn filter_resonance() -> Self {
+        let mut values = BASELINE_INIT;
+        values[Parameter::OscillatorALevel as usize] = 0.42;
+        values[Parameter::OscillatorBLevel as usize] = 0.0;
+        values[Parameter::OscillatorASaw as usize] = 1.0;
+        values[Parameter::OscillatorAPulse as usize] = 0.0;
+        values[Parameter::FilterCutoff as usize] = 0.40;
+        values[Parameter::FilterResonance as usize] = 0.88;
+        values[Parameter::FilterEnvelopeAmount as usize] = 0.18;
+        values[Parameter::FilterAttack as usize] = 0.01;
+        values[Parameter::FilterDecay as usize] = 0.36;
+        values[Parameter::FilterSustain as usize] = 0.20;
+        values[Parameter::FilterRelease as usize] = 0.32;
+        Self::normal(values)
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -118,6 +149,8 @@ pub(crate) fn find(id: &str) -> Option<Program> {
         "audition-wheel-vibrato" => Program::audition(BASELINE_LEAD, AuditionRoute::Vibrato),
         "audition-wheel-pwm" => Program::audition(BASELINE_INIT, AuditionRoute::PulseWidth),
         "audition-wheel-filter" => Program::audition(BASELINE_WARM, AuditionRoute::Filter),
+        "audition-filter-drive" => Program::filter_drive(),
+        "audition-filter-resonance" => Program::filter_resonance(),
         _ => return None,
     })
 }
@@ -136,6 +169,8 @@ mod tests {
             "audition-wheel-vibrato",
             "audition-wheel-pwm",
             "audition-wheel-filter",
+            "audition-filter-drive",
+            "audition-filter-resonance",
         ] {
             let program = find(id).expect("catalog program exists");
             assert!(rf_5_contract::Settings::from_array(program.values).is_some());

@@ -10,6 +10,10 @@ program in RackForge's program browser and play normally:
   pulse-width summing nodes;
 - `Audition - Wheel Filter` routes the LFO to the filter cutoff summing node
   with moderate resonance.
+- `Audition - Filter Drive` drives all four CEM3320 cells with both VCOs and
+  their high-level waveform combinations;
+- `Audition - Filter Resonance` places the five physical filter profiles near
+  the documented self-oscillation calibration region.
 
 These are diagnostic listening conditions rather than emulated factory
 patches. Each one temporarily places the modulation wheel at a documented
@@ -19,5 +23,7 @@ or alter the serialized patch format, is cleared by loading a normal program
 or state, survives audio-device preparation order, and is replaced by the
 first physical MIDI CC1 message.
 
-The three patches are covered by full-second render tests for finite output,
-usable level and distinct audio signatures.
+The Wheel Mod and filter patches are covered by full-second render tests for
+finite output, usable level and distinct audio signatures. All catalog
+programs are also contract-validated, and the filter population is swept at
+every supported sample rate.
