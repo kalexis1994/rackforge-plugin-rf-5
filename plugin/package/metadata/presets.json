@@ -21,7 +21,9 @@
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-poly-mod-filter-envelope", "name": "Audition - Poly Mod Filter Envelope", "order": 10, "tags": ["rf5", "audition", "poly-mod", "filter", "envelope"] },
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-wheel-noise-filter", "name": "Audition - Wheel Noise Filter", "order": 11, "tags": ["rf5", "audition", "wheel-mod", "noise", "filter"] },
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-hard-sync", "name": "Audition - Bipolar Hard Sync", "order": 12, "tags": ["rf5", "audition", "oscillator", "hard-sync", "cem3340"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-unison-priority", "name": "Audition - Unison Low Note", "order": 13, "tags": ["rf5", "audition", "unison", "low-note-priority", "legato"] }
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-unison-priority", "name": "Audition - Unison Low Note", "order": 13, "tags": ["rf5", "audition", "unison", "low-note-priority", "legato"] },
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-lfo-slow", "name": "Audition - LFO Slow Range", "order": 14, "tags": ["rf5", "audition", "lfo", "slow"] },
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-lfo-fast", "name": "Audition - LFO Fast Range", "order": 15, "tags": ["rf5", "audition", "lfo", "fast"] }
   ],
   "schema_version": 1
 }

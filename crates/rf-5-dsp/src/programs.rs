@@ -242,6 +242,15 @@ impl Program {
         program
     }
 
+    fn lfo_rate(control: f32) -> Self {
+        let mut program = Self::audition(BASELINE_LEAD, AuditionRoute::Vibrato);
+        program.values[Parameter::LfoFrequency as usize] = control;
+        // A restrained temporary wheel depth keeps the fast-rate comparison
+        // pitched and musical while still making both endpoints unmistakable.
+        program.audition_mod_wheel = Some(0.28);
+        program
+    }
+
     fn hard_sync() -> Self {
         let mut values = BASELINE_LEAD;
         values[Parameter::OscillatorAFrequency as usize] = 0.50;
@@ -310,6 +319,8 @@ pub(crate) fn find(id: &str) -> Option<Program> {
         "audition-wheel-noise-filter" => Program::wheel_noise_filter(),
         "audition-hard-sync" => Program::hard_sync(),
         "audition-unison-priority" => Program::unison_priority(),
+        "audition-lfo-slow" => Program::lfo_rate(0.10),
+        "audition-lfo-fast" => Program::lfo_rate(0.82),
         _ => return None,
     })
 }
@@ -339,6 +350,8 @@ mod tests {
             "audition-wheel-noise-filter",
             "audition-hard-sync",
             "audition-unison-priority",
+            "audition-lfo-slow",
+            "audition-lfo-fast",
         ] {
             let program = find(id).expect("catalog program exists");
             assert!(rf_5_contract::Settings::from_array(program.values).is_some());

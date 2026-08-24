@@ -1,13 +1,26 @@
 //! One free-running modulation oscillator shared by all five voices.
 //!
 //! The Rev 3 service manual establishes the single-oscillator topology, the
-//! three additive shapes and the square wave's 50% duty cycle. Its absolute
-//! frequency endpoints are not specified, so they remain isolated candidate
-//! constants until measurements can narrow them.
+//! three additive shapes and the square wave's 50% duty cycle. The populated
+//! 110 kohm frequency-CV input establishes the panel sweep width; the absolute
+//! upper-frequency anchor remains isolated until measurements can narrow it.
 
 use rf_5_contract::hardware::quantize_analog_pot;
 
-const CANDIDATE_MINIMUM_HZ: f32 = 0.08;
+// A standard 100 kohm CEM3340 control input produces one octave per volt. The
+// SD334 LFO instead populates 110 kohm and the control DAC traverses 0-10 V,
+// giving 10 * 100/110 = 9.0909 octaves. This fixes the sweep ratio from the
+// circuit even though no accepted source specifies either absolute endpoint.
+const STANDARD_ONE_VOLT_PER_OCTAVE_INPUT_OHMS: f32 = 100_000.0;
+const POPULATED_FREQUENCY_INPUT_OHMS: f32 = 110_000.0;
+const PANEL_CONTROL_RANGE_VOLTS: f32 = 10.0;
+const CIRCUIT_SWEEP_OCTAVES: f32 = PANEL_CONTROL_RANGE_VOLTS
+    * STANDARD_ONE_VOLT_PER_OCTAVE_INPUT_OHMS
+    / POPULATED_FREQUENCY_INPUT_OHMS;
+
+// Twenty hertz remains an explicit calibration hypothesis, not a measurement.
+// Keeping the uncertain anchor separate prevents it from contaminating the
+// source-backed exponential law and makes later measured replacement local.
 const CANDIDATE_MAXIMUM_HZ: f32 = 20.0;
 
 // The SD334 Wheel Mod board sends the CEM3340 saw and shifted triangle through
@@ -70,7 +83,7 @@ impl Lfo {
 
 pub fn frequency_hz(control: f32) -> f32 {
     let control = quantize_analog_pot(control);
-    CANDIDATE_MINIMUM_HZ * libm::powf(CANDIDATE_MAXIMUM_HZ / CANDIDATE_MINIMUM_HZ, control)
+    CANDIDATE_MAXIMUM_HZ * libm::powf(2.0, CIRCUIT_SWEEP_OCTAVES * (control - 1.0))
 }
 
 #[cfg(test)]
@@ -78,14 +91,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn candidate_frequency_mapping_is_monotonic_and_bounded() {
-        assert!((frequency_hz(0.0) - CANDIDATE_MINIMUM_HZ).abs() < 1.0e-6);
+    fn circuit_frequency_mapping_is_monotonic_and_bounded() {
+        let minimum = CANDIDATE_MAXIMUM_HZ / libm::powf(2.0, CIRCUIT_SWEEP_OCTAVES);
+        assert!((frequency_hz(0.0) - minimum).abs() < 1.0e-6);
         assert!((frequency_hz(1.0) - CANDIDATE_MAXIMUM_HZ).abs() < 1.0e-4);
         let mut previous = frequency_hz(0.0);
         for step in 1..=127 {
             let current = frequency_hz(step as f32 / 127.0);
             assert!(current > previous);
             previous = current;
+        }
+    }
+
+    #[test]
+    fn populated_frequency_input_sets_the_full_sweep_ratio() {
+        let ratio = frequency_hz(1.0) / frequency_hz(0.0);
+        let expected = libm::powf(2.0, 10.0 / 1.1);
+        assert!((ratio - expected).abs() < 0.001);
+        assert!((ratio - 545.30).abs() < 0.1);
+    }
+
+    #[test]
+    fn analog_panel_exposes_exactly_128_distinct_frequency_steps() {
+        let frequencies: [f32; 128] =
+            core::array::from_fn(|step| frequency_hz(step as f32 / 127.0));
+        assert_eq!(frequencies.len(), 128);
+        assert!(frequencies.windows(2).all(|pair| pair[0] < pair[1]));
+
+        for (step, expected) in frequencies.iter().enumerate().take(127) {
+            let midpoint = (step as f32 + 0.49) / 127.0;
+            assert_eq!(frequency_hz(midpoint), *expected);
         }
     }
 

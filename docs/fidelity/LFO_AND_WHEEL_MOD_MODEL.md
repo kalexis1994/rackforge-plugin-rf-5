@@ -18,6 +18,11 @@ wheel in RF-5.
 - One engine-owned, free-running phase is evaluated once per output sample and
   distributed to every active and inactive voice.
 - Frequency follows an exponential mapping from the scanned 7-bit panel value.
+  Its span is no longer a free 0.08-20 Hz guess: the populated 110 kohm
+  frequency-CV input versus the CEM3340's standard 100 kohm, one-volt-per-octave
+  input and the 0-10 V DAC range establish 9.0909 octaves, or approximately
+  545.3:1. The 20 Hz upper anchor remains an isolated calibration hypothesis,
+  which currently places the lower endpoint near 0.0367 Hz.
 - Saw, triangle and square are independently summable. Their AC-centered
   render now preserves the nominal CEM3340/SD334 current-domain relationship:
   saw is the 1.0 reference, triangle is 0.5 and pulse is approximately 1.176.
@@ -41,9 +46,11 @@ wheel in RF-5.
 ## Bounded uncertainty
 
 The manual provides qualitative slow/faster-ramp checks but no absolute LFO
-frequency endpoints. RF-5 therefore isolates a 0.08-20 Hz candidate range in
-the LFO module rather than treating it as measured hardware fact. The three
-Wheel Mod depth constants are similarly isolated calibration hypotheses.
+frequency endpoints. RF-5 therefore accepts the circuit-derived sweep width
+while isolating the 20 Hz upper anchor in the LFO module rather than treating
+it as measured hardware fact. A populated-unit timing measurement can replace
+that one anchor without changing the control law. The three Wheel Mod depth
+constants are similarly isolated calibration hypotheses.
 
 The original Wheel Mod source-mix control now crossfades the LFO with the
 shared MM5837-class noise candidate through its physical CA3280 rather than a
@@ -53,7 +60,8 @@ remain candidates. The noise circuit and spectral assumptions are documented sep
 
 ## Acceptance tests
 
-- the frequency mapping is monotonic and reaches only its candidate endpoints;
+- the frequency mapping is monotonic, exposes 128 distinct panel steps and
+  spans the circuit-derived 9.0909 octaves;
 - square-wave positive and negative intervals are equal within one sample;
 - simultaneously selected waveforms sum on one shared bus;
 - source amplitudes follow the accepted CEM3340 voltage and SD334 resistor

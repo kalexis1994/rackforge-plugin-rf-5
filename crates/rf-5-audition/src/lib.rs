@@ -336,6 +336,18 @@ fn scenes() -> Vec<Scene> {
             description: "Five-voice low-note-priority Unison with legato retuning and no envelope retrigger",
             events: unison_priority_sequence(),
         },
+        Scene {
+            id: "17_lfo_slow_range",
+            program: "audition-lfo-slow",
+            description: "Slow end of the circuit-derived nine-octave common-LFO sweep",
+            events: chord_sequence(&[(0.15, 5.35, &[57])]),
+        },
+        Scene {
+            id: "18_lfo_fast_range",
+            program: "audition-lfo-fast",
+            description: "Fast common-LFO rate using the same hardware-derived exponential law",
+            events: chord_sequence(&[(0.15, 5.35, &[57])]),
+        },
     ]
 }
 
