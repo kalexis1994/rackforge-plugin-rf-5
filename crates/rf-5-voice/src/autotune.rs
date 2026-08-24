@@ -159,70 +159,17 @@ fn successive_approximation_code(channel: usize, octave: usize) -> i32 {
 }
 
 fn extrapolate_lower_octaves(codes: &mut [i16; TUNE_OCTAVE_BIAS_COUNT]) {
-    // The manual specifies extrapolation from the C3-C9 curve but not the ROM's
-    // exact arithmetic. A least-squares quadratic uses every measured point and
-    // keeps that uncertainty isolated here.
-    let mut sx = 0.0;
-    let mut sx2 = 0.0;
-    let mut sx3 = 0.0;
-    let mut sx4 = 0.0;
-    let mut sy = 0.0;
-    let mut sxy = 0.0;
-    let mut sx2y = 0.0;
-    let mut count = 0.0;
-    for (octave, code) in codes
-        .iter()
-        .enumerate()
-        .take(TUNE_DIRECT_MEASUREMENT_LAST_OCTAVE + 1)
-        .skip(TUNE_DIRECT_MEASUREMENT_FIRST_OCTAVE)
-    {
-        let x = octave as f32;
-        let y = f32::from(*code);
-        let x2 = x * x;
-        sx += x;
-        sx2 += x2;
-        sx3 += x2 * x;
-        sx4 += x2 * x2;
-        sy += y;
-        sxy += x * y;
-        sx2y += x2 * y;
-        count += 1.0;
+    // Rev 3 V8.1 operating-ROM offsets 0x0101-0x0125 recover the exact
+    // arithmetic left implicit by the manual: form the signed 16-bit C4-C3
+    // difference once, then subtract that same difference successively to
+    // obtain C2, C1 and C0. The admitted ROM is evidence only; these operations
+    // are the independent Rust reconstruction and require no firmware at run
+    // time.
+    let c4_minus_c3 = i32::from(codes[4]) - i32::from(codes[3]);
+    for octave in (0..TUNE_DIRECT_MEASUREMENT_FIRST_OCTAVE).rev() {
+        let extrapolated = i32::from(codes[octave + 1]) - c4_minus_c3;
+        codes[octave] = extrapolated.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
     }
-    let coefficients = solve_three_by_three(
-        [[count, sx, sx2], [sx, sx2, sx3], [sx2, sx3, sx4]],
-        [sy, sxy, sx2y],
-    );
-    for (octave, code) in codes
-        .iter_mut()
-        .enumerate()
-        .take(TUNE_DIRECT_MEASUREMENT_FIRST_OCTAVE)
-    {
-        let x = octave as f32;
-        *code = libm::roundf(coefficients[0] + coefficients[1] * x + coefficients[2] * x * x)
-            .clamp(i16::MIN as f32, i16::MAX as f32) as i16;
-    }
-}
-
-fn solve_three_by_three(mut a: [[f32; 3]; 3], mut b: [f32; 3]) -> [f32; 3] {
-    for pivot in 0..3 {
-        let divisor = a[pivot][pivot];
-        for value in &mut a[pivot][pivot..] {
-            *value /= divisor;
-        }
-        b[pivot] /= divisor;
-        let pivot_row = a[pivot];
-        for (row, values) in a.iter_mut().enumerate() {
-            if row == pivot {
-                continue;
-            }
-            let factor = values[pivot];
-            for (column, value) in values.iter_mut().enumerate().skip(pivot) {
-                *value -= factor * pivot_row[column];
-            }
-            b[row] -= factor * b[pivot];
-        }
-    }
-    b
 }
 
 fn interpolated_bias(codes: [i16; TUNE_OCTAVE_BIAS_COUNT], octave: f32) -> f32 {
@@ -295,7 +242,7 @@ mod tests {
         let mean = absolute_error_sum / samples as f32;
         assert!(mean < 0.75, "mean calibrated error: {mean} cents");
         assert!(
-            worst < 2.5,
+            worst < 4.0,
             "worst calibrated error: {worst} cents at {worst_case:?}"
         );
     }
@@ -307,6 +254,37 @@ mod tests {
             {
                 let code = successive_approximation_code(channel, octave);
                 assert!((0..=DAC_MAX_CODE).contains(&code));
+            }
+        }
+    }
+
+    #[test]
+    fn lower_octaves_repeat_the_operating_rom_c4_minus_c3_slope() {
+        let mut codes = [0, 0, 0, 100, 112, -900, 700, -400, 300, -200];
+        extrapolate_lower_octaves(&mut codes);
+        assert_eq!(codes[..5], [64, 76, 88, 100, 112]);
+    }
+
+    #[test]
+    fn lower_octave_extrapolation_ignores_later_measured_curvature() {
+        let mut first = [0, 0, 0, -40, -33, -20, 2, 31, 69, 116];
+        let mut second = [0, 0, 0, -40, -33, 900, -800, 700, -600, 500];
+        extrapolate_lower_octaves(&mut first);
+        extrapolate_lower_octaves(&mut second);
+        assert_eq!(first[..3], second[..3]);
+        assert_eq!(first[..5], [-61, -54, -47, -40, -33]);
+    }
+
+    #[test]
+    fn calibrated_tables_preserve_one_lower_octave_difference() {
+        let tune = AutoTune::calibrated();
+        for channel in 0..TUNE_OSCILLATOR_COUNT {
+            let expected = tune.bias_code(channel, 4) - tune.bias_code(channel, 3);
+            for octave in 0..3 {
+                assert_eq!(
+                    tune.bias_code(channel, octave + 1) - tune.bias_code(channel, octave),
+                    expected
+                );
             }
         }
     }

@@ -27,6 +27,14 @@ period measurements at 2.5 MHz, and the search evaluates all fourteen writable
 DAC bits from most to least significant. Its result is stored as a signed bias
 relative to the ideal 83 mV semitone step.
 
+The V8.1 operating ROM resolves the lower-octave arithmetic omitted by the
+manual. Offsets `0x0101-0x0125` form the signed 16-bit difference between the
+measured C4 and C3 entries, then subtract that same difference successively to
+write C2, C1 and C0. RF-5 now reproduces this first-order extrapolation instead
+of fitting an unrelated quadratic through C3-C9. The ROM is neither distributed
+nor loaded at runtime; its admitted hash and evidence boundary are recorded in
+`SOURCE_LEDGER.md`.
+
 At render time, oscillator A and B each receive the residual error produced by
 their own calibrated table. Bias is linearly interpolated between adjacent
 octave points, applied at DAC-code resolution and retained by the corresponding
@@ -36,15 +44,18 @@ separate paths.
 
 The acceptance gate evaluates every semitone from C0 through C9 on all ten
 VCOs. The deterministic validation population must remain below 0.75 cent mean
-absolute error and 2.5 cents worst-case error. Those are engineering gates for
+absolute error and 4 cents worst-case error. The latter admits the slightly
+larger low-octave residual produced by the authentic first-order extrapolation
+instead of tuning the test around the former quadratic fit. These are gates for
 this reconstruction, not claimed factory specifications.
 
 ## Isolated uncertainty
 
-The documents prove that C0-C2 are extrapolated from the C3-C9 curve but do not
-publish the operating ROM's exact arithmetic. RF-5 currently fits a quadratic
-to all seven measured octave biases and evaluates its lower three points. That
-choice is isolated in `extrapolate_lower_octaves`.
+The C0-C2 arithmetic is no longer uncertain. The exact lower-octave
+extrapolation is independently tied to the manual's tune architecture and the
+admitted V8.1 ROM. Remaining uncertainty begins at the physical VCO population,
+the still-candidate runtime interpolation details and any revision-specific
+difference outside this Rev 3 target.
 
 Temperature motion after this measurement is deliberately outside the held
 DAC table, because it originates inside the compensated VCO at a given control
@@ -56,5 +67,5 @@ Likewise, the ten offset, scale and curvature profiles are deterministic
 component-tolerance fixtures. They make the calibration mechanism observable
 and testable; they are not measurements from a specific vintage instrument.
 When legally usable recordings or bench measurements become available, only
-those profiles and the extrapolation hypothesis need replacement. No firmware
-or original program data is shipped or loaded at runtime.
+those profiles need replacement. No firmware or original program data is
+shipped or loaded at runtime.

@@ -20,7 +20,8 @@ transfers now feed the documented five-input summer and output buffer, while a
 source-backed control scheduler recreates the held 6/11 ms panel cycle. It
 also reconstructs the ten-VCO automatic-tune path with a 2.5 MHz period
 counter, fourteen-bit successive approximation and per-semitone bias
-interpolation. Each of those ten oscillators now has an independent,
+interpolation, including the operating ROM's exact C4-C3 extrapolation for its
+three lower octaves. Each of those ten oscillators now has an independent,
 sample-rate-stable post-tune drift path bounded by the CEM3340 data sheet, and
 the engine exposes non-serialized retuning. Their saw, triangle and pulse
 outputs also retain the published voltage/symmetry ranges, populated-board
@@ -29,15 +30,14 @@ ms CPU cycle drives 38 independent sample-and-hold cells for common,
 oscillator and per-voice filter CVs. The five filter ICs now form a serviced
 CEM3320 population with 440/880 Hz scale calibration, bounded warm-up motion,
 physical resonance gain, clipping span and second-harmonic character. Its ten
-CEM3310 envelope generators now
-also retain bounded device-specific peak, asymptote and RC timing curves. It
-remains a reverse-engineering
-candidate: measured component populations, overload/output levels and
-original-instrument measurements still pass through the evidence gates in
+CEM3310 envelope generators also retain bounded device-specific peak,
+asymptote and RC timing curves. It remains a reverse-engineering candidate:
+measured component populations, overload/output levels and original-instrument
+measurements still pass through the evidence gates in
 [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
 
 Until the graphical panel is added, the `RF-5 Audition` factory bank provides
-sixteen immediately playable listening programs for Wheel/Poly Mod, LFO range,
+seventeen immediately playable listening programs for Wheel/Poly Mod, LFO range,
 Sync, filter drive, resonance, fast/slow envelope behaviour, CA3280 drive and
 common noise. They require no UI; see
 [`docs/AUDITION_PROGRAMS.md`](docs/AUDITION_PROGRAMS.md).

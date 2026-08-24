@@ -28,10 +28,14 @@ CI and the `.rfplugin`. Four neighboring archives target later sampler/vector
 instruments and are out of scope.
 
 The admitted Rev 3 V8.1 archive has SHA-256
-`3D2BF29CD5EC55D1938CEF3A6A5D237D3C738DBEA6D2C4219338D21571D893A2`.
-Its binary contents have not yet been admitted as behavioural truth. Before any
-firmware-derived conclusion enters the engine it must be independently tied to
-the documented hardware or a reproducible observation.
+`3D2BF29CD5EC55D1938CEF3A6A5D237D3C738DBEA6D2C4219338D21571D893A2`;
+its operating image `v81_2732.bin` has SHA-256
+`7990D7667B3B08A06755BA6CE98B57CC8E20AFCD162C096BB1BCFB9DC6707EB5`.
+Operating-image offsets `0x0101-0x0125` are admitted specifically for the
+signed C4-C3 difference repeatedly subtracted to create the C2-C0 automatic
+tune entries. This conclusion is independently tied to the technical manual's
+C3-C9 measurement and C0-C2 extrapolation description. No other binary region
+is admitted as behavioural truth without the same corroboration.
 
 Firmware may help establish scanning, allocation, calibration and program-memory
 behaviour, but it does not replace modelling the analog signal path. RF-5 will

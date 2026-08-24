@@ -37,7 +37,7 @@ renderer writes `manifest.json` with peak, RMS, DC and clipped-sample counts.
 It never peak-normalizes, applies loudness matching or post-processes the DSP
 output, because those operations would hide gain-staging changes.
 
-Short renders of all nineteen program paths are evaluated twice in the normal test
+Short renders of all nineteen scenes are evaluated twice in the normal test
 suite and must be sample-identical, finite, audible and bounded. The full
 renderer additionally rejects silence, exhausted headroom, clipped samples or
 excessive DC before writing a successful manifest. Release validation renders
