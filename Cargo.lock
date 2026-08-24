@@ -29,6 +29,7 @@ version = "0.1.0"
 name = "rf-5-dsp"
 version = "0.1.0"
 dependencies = [
+ "libm",
  "rf-5-contract",
  "rf-5-voice",
 ]

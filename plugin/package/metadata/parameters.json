@@ -3,9 +3,10 @@
   "pages": [
     { "id": "output", "name": "Output", "order": 0, "header": "RF-5" },
     { "id": "oscillators", "name": "Oscillators", "order": 1, "header": "RF-5" },
-    { "id": "filter", "name": "Filter", "order": 2, "header": "RF-5" },
-    { "id": "amplifier", "name": "Amplifier", "order": 3, "header": "RF-5" },
-    { "id": "voice", "name": "Voice", "order": 4, "header": "RF-5" }
+    { "id": "modulation", "name": "Modulation", "order": 2, "header": "RF-5" },
+    { "id": "filter", "name": "Filter", "order": 3, "header": "RF-5" },
+    { "id": "amplifier", "name": "Amplifier", "order": 4, "header": "RF-5" },
+    { "id": "voice", "name": "Voice", "order": 5, "header": "RF-5" }
   ],
   "parameters": [
     {
@@ -121,6 +122,51 @@
     {
       "index": 22, "id": "oscillator-b-keyboard", "name": "Oscillator B Keyboard", "page": "oscillators", "order": 14,
       "kind": { "type": "boolean", "default": true },
+      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+    },
+    {
+      "index": 23, "id": "lfo-frequency", "name": "LFO Frequency", "page": "modulation", "order": 0,
+      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.35, "step": 0.007874015748031496 },
+      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+    },
+    {
+      "index": 24, "id": "lfo-saw", "name": "LFO Saw", "page": "modulation", "order": 1,
+      "kind": { "type": "boolean", "default": false },
+      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+    },
+    {
+      "index": 25, "id": "lfo-triangle", "name": "LFO Triangle", "page": "modulation", "order": 2,
+      "kind": { "type": "boolean", "default": true },
+      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+    },
+    {
+      "index": 26, "id": "lfo-square", "name": "LFO Square", "page": "modulation", "order": 3,
+      "kind": { "type": "boolean", "default": false },
+      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+    },
+    {
+      "index": 27, "id": "wheel-mod-oscillator-a-frequency", "name": "Wheel Mod Osc A Frequency", "page": "modulation", "order": 4,
+      "kind": { "type": "boolean", "default": true },
+      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+    },
+    {
+      "index": 28, "id": "wheel-mod-oscillator-b-frequency", "name": "Wheel Mod Osc B Frequency", "page": "modulation", "order": 5,
+      "kind": { "type": "boolean", "default": true },
+      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+    },
+    {
+      "index": 29, "id": "wheel-mod-oscillator-a-pulse-width", "name": "Wheel Mod Osc A Pulse Width", "page": "modulation", "order": 6,
+      "kind": { "type": "boolean", "default": false },
+      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+    },
+    {
+      "index": 30, "id": "wheel-mod-oscillator-b-pulse-width", "name": "Wheel Mod Osc B Pulse Width", "page": "modulation", "order": 7,
+      "kind": { "type": "boolean", "default": false },
+      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+    },
+    {
+      "index": 31, "id": "wheel-mod-filter", "name": "Wheel Mod Filter", "page": "modulation", "order": 8,
+      "kind": { "type": "boolean", "default": false },
       "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
     }
   ]

@@ -1,7 +1,10 @@
 #![no_std]
 
-use rf_5_contract::{PARAMETER_COUNT, Settings};
-use rf_5_voice::Voice;
+mod lfo;
+
+use lfo::{Lfo, LfoWaveSelection};
+use rf_5_contract::{PARAMETER_COUNT, Parameter, Settings};
+use rf_5_voice::{Voice, VoiceModulation};
 
 pub const VOICE_COUNT: usize = 5;
 pub const STATE_BYTES: usize = PARAMETER_COUNT * 4;
@@ -11,6 +14,8 @@ pub struct Engine {
     voices: [Voice; VOICE_COUNT],
     sample_rate: f32,
     next_voice: usize,
+    lfo: Lfo,
+    mod_wheel: f32,
 }
 
 impl Default for Engine {
@@ -20,6 +25,8 @@ impl Default for Engine {
             voices: [Voice::default(); VOICE_COUNT],
             sample_rate: 48_000.0,
             next_voice: 0,
+            lfo: Lfo::default(),
+            mod_wheel: 0.0,
         }
     }
 }
@@ -31,6 +38,8 @@ impl Engine {
         }
         self.sample_rate = sample_rate as f32;
         self.reset_voices();
+        self.lfo.reset();
+        self.mod_wheel = 0.0;
         true
     }
 
@@ -90,16 +99,54 @@ impl Engine {
             0x90 => self.note_on(channel, data[1] & 0x7f, data[2] & 0x7f),
             0x80 => self.note_off(channel, data[1] & 0x7f),
             0xb0 if data[1] == 120 || data[1] == 123 => self.all_notes_off(),
+            0xb0 if data[1] == 1 => self.mod_wheel = f32::from(data[2] & 0x7f) / 127.0,
             _ => {}
         }
     }
 
     pub fn next_sample(&mut self) -> f32 {
+        let lfo_sample = self.lfo.next(
+            self.sample_rate,
+            self.settings.get(Parameter::LfoFrequency),
+            LfoWaveSelection {
+                saw: parameter_enabled(self.settings, Parameter::LfoSaw),
+                triangle: parameter_enabled(self.settings, Parameter::LfoTriangle),
+                square: parameter_enabled(self.settings, Parameter::LfoSquare),
+            },
+        );
+        let wheel_bus = lfo_sample * self.mod_wheel;
+        let modulation = VoiceModulation {
+            oscillator_a_semitones: destination_value(
+                self.settings,
+                Parameter::WheelModOscillatorAFrequency,
+                wheel_bus * 12.0,
+            ),
+            oscillator_b_semitones: destination_value(
+                self.settings,
+                Parameter::WheelModOscillatorBFrequency,
+                wheel_bus * 12.0,
+            ),
+            oscillator_a_pulse_width: destination_value(
+                self.settings,
+                Parameter::WheelModOscillatorAPulseWidth,
+                wheel_bus * 0.48,
+            ),
+            oscillator_b_pulse_width: destination_value(
+                self.settings,
+                Parameter::WheelModOscillatorBPulseWidth,
+                wheel_bus * 0.48,
+            ),
+            filter_cutoff: destination_value(
+                self.settings,
+                Parameter::WheelModFilter,
+                wheel_bus * 0.45,
+            ),
+        };
         let mut sample = 0.0;
         for voice in &mut self.voices {
-            sample += voice.next(self.sample_rate, self.settings);
+            sample += voice.next(self.sample_rate, self.settings, modulation);
         }
-        let level = self.settings.get(rf_5_contract::Parameter::MasterVolume);
+        let level = self.settings.get(Parameter::MasterVolume);
         (sample * level * 0.16).clamp(-1.0, 1.0)
     }
 
@@ -107,19 +154,23 @@ impl Engine {
         let values = match id {
             "baseline-init" => [
                 0.72, 0.72, 0.54, 0.72, 0.08, 0.01, 0.20, 0.82, 0.28, 0.18, 0.64, 1.0, 0.0, 0.50,
-                1.0, 0.0, 0.0, 0.50, 0.0, 0.50, 0.50, 0.0, 1.0,
+                1.0, 0.0, 0.0, 0.50, 0.0, 0.50, 0.50, 0.0, 1.0, 0.35, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0,
+                0.0, 0.0,
             ],
             "baseline-warm" => [
                 0.76, 0.76, 0.58, 0.46, 0.12, 0.01, 0.28, 0.72, 0.34, 0.36, 0.54, 1.0, 1.0, 0.44,
-                1.0, 0.0, 0.0, 0.56, 0.0, 0.50, 0.50, 0.0, 1.0,
+                1.0, 0.0, 0.0, 0.56, 0.0, 0.50, 0.50, 0.0, 1.0, 0.28, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0,
+                0.0, 0.0,
             ],
             "baseline-pad" => [
                 0.68, 0.62, 0.62, 0.38, 0.04, 0.54, 0.52, 0.78, 0.70, 0.42, 0.62, 0.0, 1.0, 0.37,
-                0.0, 1.0, 1.0, 0.63, 0.0, 0.50, 0.50, 0.0, 1.0,
+                0.0, 1.0, 1.0, 0.63, 0.0, 0.50, 0.50, 0.0, 1.0, 0.18, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0,
+                1.0, 1.0,
             ],
             "baseline-lead" => [
                 0.64, 0.72, 0.67, 0.82, 0.18, 0.01, 0.12, 0.90, 0.24, 0.26, 0.52, 1.0, 0.0, 0.50,
-                1.0, 0.0, 0.0, 0.50, 1.0, 0.72, 0.50, 0.0, 1.0,
+                1.0, 0.0, 0.0, 0.50, 1.0, 0.72, 0.50, 0.0, 1.0, 0.50, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0,
+                0.0, 0.0,
             ],
             _ => return false,
         };
@@ -154,6 +205,18 @@ impl Engine {
         };
         self.settings = settings;
         true
+    }
+}
+
+fn parameter_enabled(settings: Settings, parameter: Parameter) -> bool {
+    settings.get(parameter) >= 0.5
+}
+
+fn destination_value(settings: Settings, parameter: Parameter, value: f32) -> f32 {
+    if parameter_enabled(settings, parameter) {
+        value
+    } else {
+        0.0
     }
 }
 
@@ -216,5 +279,39 @@ mod tests {
             assert!(peak > 0.001, "silent render at {sample_rate} Hz");
             assert!(peak <= 1.0);
         }
+    }
+
+    #[test]
+    fn shared_lfo_free_runs_and_note_events_do_not_reset_it() {
+        let mut engine = Engine::default();
+        assert!(engine.prepare(48_000.0));
+        let initial_phase = engine.lfo.phase();
+        for _ in 0..257 {
+            assert_eq!(engine.next_sample(), 0.0);
+        }
+        let free_running_phase = engine.lfo.phase();
+        assert_ne!(free_running_phase, initial_phase);
+        engine.note_on(0, 60, 100);
+        assert_eq!(engine.lfo.phase(), free_running_phase);
+    }
+
+    #[test]
+    fn midi_mod_wheel_drives_enabled_lfo_destinations() {
+        let mut dry = Engine::default();
+        let mut modulated = Engine::default();
+        assert!(dry.prepare(48_000.0));
+        assert!(modulated.prepare(48_000.0));
+        assert!(dry.load_baseline_program("baseline-lead"));
+        assert!(modulated.load_baseline_program("baseline-lead"));
+        dry.note_on(0, 69, 127);
+        modulated.note_on(0, 69, 127);
+        modulated.handle_midi([0xb0, 1, 127]);
+
+        let mut difference = 0.0;
+        for _ in 0..8_192 {
+            difference += (dry.next_sample() - modulated.next_sample()).abs();
+        }
+        assert_eq!(modulated.mod_wheel, 1.0);
+        assert!(difference > 1.0);
     }
 }

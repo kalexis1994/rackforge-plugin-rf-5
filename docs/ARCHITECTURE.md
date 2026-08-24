@@ -12,10 +12,11 @@ RackForge MIDI + automation
             |
             v
       rf-5-dsp engine
-       /     |      \
- allocator  MIDI   state
-       |
-       v
+     /      |       |       \
+allocator  MIDI   state   common LFO
+     |                       |
+     +-----------+-----------+
+                 v
  five independent rf-5-voice instances
        |
        v
@@ -45,3 +46,6 @@ The active oscillator candidate and its remaining uncertainty are recorded in
 [`fidelity/VCO_MODEL.md`](fidelity/VCO_MODEL.md).
 Its control-voltage law and calibration hypotheses are isolated in
 [`fidelity/TUNING_MODEL.md`](fidelity/TUNING_MODEL.md).
+The shared modulation topology, implemented Wheel Mod routes and remaining
+depth/range uncertainty are recorded in
+[`fidelity/LFO_AND_WHEEL_MOD_MODEL.md`](fidelity/LFO_AND_WHEEL_MOD_MODEL.md).

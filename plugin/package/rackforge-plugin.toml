@@ -4,7 +4,7 @@ name = "RF-5"
 vendor = "RackForge Community"
 version = "0.1.0"
 kind = "instrument"
-state_version = 2
+state_version = 3
 capabilities = [
     "audio_output",
     "midi_input",

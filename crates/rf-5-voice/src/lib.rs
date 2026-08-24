@@ -16,6 +16,15 @@ const INITIAL_PHASE_A: [f32; 5] = [0.07, 0.31, 0.58, 0.83, 0.19];
 const INITIAL_PHASE_B: [f32; 5] = [0.67, 0.11, 0.42, 0.74, 0.93];
 const OSCILLATOR_OVERSAMPLING: usize = 4;
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct VoiceModulation {
+    pub oscillator_a_semitones: f32,
+    pub oscillator_b_semitones: f32,
+    pub oscillator_a_pulse_width: f32,
+    pub oscillator_b_pulse_width: f32,
+    pub filter_cutoff: f32,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum EnvelopeStage {
     Idle,
@@ -96,15 +105,21 @@ impl Voice {
         self.stage = EnvelopeStage::Release;
     }
 
-    pub fn next(&mut self, sample_rate: f32, settings: Settings) -> f32 {
-        let raw = self.next_oscillators(sample_rate, settings);
+    pub fn next(
+        &mut self,
+        sample_rate: f32,
+        settings: Settings,
+        modulation: VoiceModulation,
+    ) -> f32 {
+        let raw = self.next_oscillators(sample_rate, settings, modulation);
         if !self.active {
             return 0.0;
         }
 
         self.advance_envelope(sample_rate, settings);
 
-        let cutoff = settings.get(Parameter::FilterCutoff);
+        let cutoff =
+            (settings.get(Parameter::FilterCutoff) + modulation.filter_cutoff).clamp(0.0, 1.0);
         let sample_rate_scale = 48_000.0 / sample_rate.max(1.0);
         let coefficient = ((0.004 + cutoff * cutoff * 0.42) * sample_rate_scale).clamp(0.001, 0.95);
         let feedback = settings.get(Parameter::FilterResonance) * 0.82;
@@ -112,7 +127,12 @@ impl Voice {
         self.filter * self.envelope * self.velocity
     }
 
-    fn next_oscillators(&mut self, sample_rate: f32, settings: Settings) -> f32 {
+    fn next_oscillators(
+        &mut self,
+        sample_rate: f32,
+        settings: Settings,
+        modulation: VoiceModulation,
+    ) -> f32 {
         let waves_a = WaveSelection {
             saw: parameter_enabled(settings, Parameter::OscillatorASaw),
             triangle: false,
@@ -123,8 +143,12 @@ impl Voice {
             triangle: parameter_enabled(settings, Parameter::OscillatorBTriangle),
             pulse: parameter_enabled(settings, Parameter::OscillatorBPulse),
         };
-        let pulse_width_a = quantize_analog_pot(settings.get(Parameter::OscillatorAPulseWidth));
-        let pulse_width_b = quantize_analog_pot(settings.get(Parameter::OscillatorBPulseWidth));
+        let pulse_width_a = (quantize_analog_pot(settings.get(Parameter::OscillatorAPulseWidth))
+            + modulation.oscillator_a_pulse_width)
+            .clamp(0.02, 0.98);
+        let pulse_width_b = (quantize_analog_pot(settings.get(Parameter::OscillatorBPulseWidth))
+            + modulation.oscillator_b_pulse_width)
+            .clamp(0.02, 0.98);
         let level_a = quantize_analog_pot(settings.get(Parameter::OscillatorALevel));
         let level_b = quantize_analog_pot(settings.get(Parameter::OscillatorBLevel));
         let sync = parameter_enabled(settings, Parameter::OscillatorSync);
@@ -132,14 +156,16 @@ impl Voice {
         let frequency_a = tuning::oscillator_a_frequency(
             self.note,
             settings.get(Parameter::OscillatorAFrequency),
-        ) * (1.0 + spread);
+        ) * semitone_ratio(modulation.oscillator_a_semitones)
+            * (1.0 + spread);
         let frequency_b = tuning::oscillator_b_frequency(
             self.note,
             settings.get(Parameter::OscillatorBFrequency),
             settings.get(Parameter::OscillatorBDetune),
             parameter_enabled(settings, Parameter::OscillatorBKeyboard),
             parameter_enabled(settings, Parameter::OscillatorBLowFrequency),
-        ) * (1.0 - spread);
+        ) * semitone_ratio(modulation.oscillator_b_semitones)
+            * (1.0 - spread);
         let internal_rate = sample_rate.max(1.0) * OSCILLATOR_OVERSAMPLING as f32;
         let mut output = 0.0;
 
@@ -202,6 +228,10 @@ fn parameter_enabled(settings: Settings, parameter: Parameter) -> bool {
     settings.get(parameter) >= 0.5
 }
 
+fn semitone_ratio(semitones: f32) -> f32 {
+    libm::powf(2.0, semitones / 12.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -218,10 +248,15 @@ mod tests {
         let settings = Settings::default();
         let mut voice = Voice::default();
         voice.start(0, 69, 127, 0);
-        assert!((0..4096).any(|_| voice.next(48_000.0, settings).abs() > 0.001));
+        assert!((0..4096).any(|_| {
+            voice
+                .next(48_000.0, settings, VoiceModulation::default())
+                .abs()
+                > 0.001
+        }));
         voice.release(48_000.0, settings);
         for _ in 0..500_000 {
-            let _ = voice.next(48_000.0, settings);
+            let _ = voice.next(48_000.0, settings, VoiceModulation::default());
             if !voice.is_active() {
                 break;
             }
@@ -235,7 +270,7 @@ mod tests {
         let mut voice = Voice::default();
         voice.start(0, 60, 100, 2);
         for _ in 0..137 {
-            let _ = voice.next(48_000.0, settings);
+            let _ = voice.next(48_000.0, settings, VoiceModulation::default());
         }
         let phase_a = voice.oscillator_a.phase();
         let phase_b = voice.oscillator_b.phase();
@@ -252,7 +287,10 @@ mod tests {
         voice.active = false;
         let phase_before = voice.oscillator_a.phase();
         for _ in 0..64 {
-            assert_eq!(voice.next(48_000.0, settings), 0.0);
+            assert_eq!(
+                voice.next(48_000.0, settings, VoiceModulation::default()),
+                0.0
+            );
         }
         assert_ne!(voice.oscillator_a.phase(), phase_before);
     }
@@ -269,8 +307,8 @@ mod tests {
         sync_voice.start(0, 57, 127, 0);
         let mut difference = 0.0;
         for _ in 0..8_192 {
-            difference += (free_voice.next(48_000.0, free_settings)
-                - sync_voice.next(48_000.0, sync_settings))
+            difference += (free_voice.next(48_000.0, free_settings, VoiceModulation::default())
+                - sync_voice.next(48_000.0, sync_settings, VoiceModulation::default()))
             .abs();
         }
         assert!(difference > 1.0);

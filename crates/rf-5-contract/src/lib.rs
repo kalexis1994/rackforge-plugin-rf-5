@@ -7,7 +7,7 @@
 
 pub mod hardware;
 
-pub const PARAMETER_COUNT: usize = 23;
+pub const PARAMETER_COUNT: usize = 32;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]
@@ -35,6 +35,15 @@ pub enum Parameter {
     OscillatorBFrequency = 20,
     OscillatorBLowFrequency = 21,
     OscillatorBKeyboard = 22,
+    LfoFrequency = 23,
+    LfoSaw = 24,
+    LfoTriangle = 25,
+    LfoSquare = 26,
+    WheelModOscillatorAFrequency = 27,
+    WheelModOscillatorBFrequency = 28,
+    WheelModOscillatorAPulseWidth = 29,
+    WheelModOscillatorBPulseWidth = 30,
+    WheelModFilter = 31,
 }
 
 impl TryFrom<u32> for Parameter {
@@ -65,6 +74,15 @@ impl TryFrom<u32> for Parameter {
             20 => Ok(Self::OscillatorBFrequency),
             21 => Ok(Self::OscillatorBLowFrequency),
             22 => Ok(Self::OscillatorBKeyboard),
+            23 => Ok(Self::LfoFrequency),
+            24 => Ok(Self::LfoSaw),
+            25 => Ok(Self::LfoTriangle),
+            26 => Ok(Self::LfoSquare),
+            27 => Ok(Self::WheelModOscillatorAFrequency),
+            28 => Ok(Self::WheelModOscillatorBFrequency),
+            29 => Ok(Self::WheelModOscillatorAPulseWidth),
+            30 => Ok(Self::WheelModOscillatorBPulseWidth),
+            31 => Ok(Self::WheelModFilter),
             _ => Err(()),
         }
     }
@@ -80,7 +98,8 @@ impl Default for Settings {
         Self {
             values: [
                 0.72, 0.72, 0.54, 0.72, 0.08, 0.01, 0.2, 0.82, 0.28, 0.18, 0.64, 1.0, 0.0, 0.5,
-                1.0, 0.0, 0.0, 0.5, 0.0, 0.5, 0.5, 0.0, 1.0,
+                1.0, 0.0, 0.0, 0.5, 0.0, 0.5, 0.5, 0.0, 1.0, 0.35, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0,
+                0.0, 0.0,
             ],
         }
     }
