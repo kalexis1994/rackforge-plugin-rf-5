@@ -16,7 +16,7 @@ pub mod vco;
 use envelope::AdsrEnvelope;
 use filter::Cem3320Filter;
 pub use tuning::note_frequency;
-use vco::{Vco, WaveSelection};
+use vco::{HardSyncPulse, Vco, WaveSelection};
 
 const INITIAL_PHASE_A: [f32; 5] = [0.07, 0.31, 0.58, 0.83, 0.19];
 const INITIAL_PHASE_B: [f32; 5] = [0.67, 0.11, 0.42, 0.74, 0.93];
@@ -203,8 +203,12 @@ impl Voice {
             let sample_b =
                 self.oscillator_b
                     .next(frequency_b, internal_rate, pulse_width_b, waves_b);
-            if sync && sample_b.wrapped {
-                self.oscillator_a.hard_sync();
+            if sync {
+                for pulse in sample_b.sync_pulses {
+                    if pulse != HardSyncPulse::None {
+                        self.oscillator_a.hard_sync_pulse(pulse);
+                    }
+                }
             }
             let poly_bus = poly_filter_envelope
                 + vca::poly_mod_oscillator_b(

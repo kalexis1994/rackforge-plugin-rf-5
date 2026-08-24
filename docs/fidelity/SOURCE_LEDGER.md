@@ -15,6 +15,12 @@
 
 ## Private local evidence inventory
 
+Non-redistributable manuals, diagnostic notes and firmware archives belong in
+`references-local/`. That directory is deliberately ignored by Git and is the
+only persistent location inside the checkout for private evidence. Rendered PDF
+pages, package-installation stores and repeat auditions are temporary data and
+must remain under `tmp/`; `tools/clean-generated.ps1` removes them safely.
+
 The development environment contains three archives relevant to the reference
 family: a Rev 2 OS set, a Rev 3 V8.1 OS/diagnostic set and a Rev 3.3 diagnostic
 image. They are evidence inputs only and are intentionally excluded from Git,

@@ -18,6 +18,17 @@ pub struct OscillatorSample {
     /// Board-level polarity delivered to oscillator-B Poly Mod.
     pub modulation: f32,
     pub wrapped: bool,
+    /// Bipolar pulses produced by capacitively coupling this oscillator's
+    /// pulse output into another CEM3340 hard-sync input.
+    pub sync_pulses: [HardSyncPulse; 2],
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum HardSyncPulse {
+    #[default]
+    None,
+    Positive,
+    Negative,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -71,8 +82,26 @@ impl Vco {
         }
     }
 
-    pub fn hard_sync(&mut self) {
-        self.phase = 0.0;
+    /// Apply one polarity from the physical CEM3340 hard-sync input.
+    ///
+    /// Positive pulses reverse only a rising triangle and negative pulses
+    /// reverse only a falling triangle. Reflecting phase onto the opposite
+    /// branch preserves triangle voltage while allowing saw and pulse to make
+    /// the discontinuities shown in the data sheet.
+    pub fn hard_sync_pulse(&mut self, pulse: HardSyncPulse) -> bool {
+        let symmetry = TRIANGLE_SYMMETRY[self.profile_index];
+        match pulse {
+            HardSyncPulse::Positive if self.phase < symmetry => {
+                self.phase = 1.0 - self.phase * (1.0 - symmetry) / symmetry;
+                self.phase = self.phase.min(1.0 - f32::EPSILON);
+                true
+            }
+            HardSyncPulse::Negative if self.phase > symmetry => {
+                self.phase = symmetry * (1.0 - self.phase) / (1.0 - symmetry);
+                true
+            }
+            HardSyncPulse::None | HardSyncPulse::Positive | HardSyncPulse::Negative => false,
+        }
     }
 
     pub fn phase(self) -> f32 {
@@ -114,6 +143,7 @@ impl Vco {
         }
 
         let advanced = phase + increment;
+        let sync_pulses = pulse_edges(phase, advanced, pulse_width);
         let wrapped = advanced >= 1.0;
         self.phase = if wrapped { advanced - 1.0 } else { advanced };
 
@@ -121,8 +151,33 @@ impl Vco {
             audio,
             modulation,
             wrapped,
+            sync_pulses,
         }
     }
+}
+
+fn pulse_edges(phase: f32, advanced: f32, pulse_width: f32) -> [HardSyncPulse; 2] {
+    let mut pulses = [HardSyncPulse::None; 2];
+    let mut count = 0;
+    let mut push = |pulse| {
+        if count < pulses.len() {
+            pulses[count] = pulse;
+            count += 1;
+        }
+    };
+
+    if phase < pulse_width && advanced >= pulse_width {
+        push(HardSyncPulse::Negative);
+    }
+    if advanced >= 1.0 {
+        push(HardSyncPulse::Positive);
+        let wrapped_phase = advanced - 1.0;
+        if wrapped_phase >= pulse_width {
+            push(HardSyncPulse::Negative);
+        }
+    }
+
+    pulses
 }
 
 fn band_limited_saw(phase: f32, increment: f32) -> f32 {
@@ -201,10 +256,51 @@ mod tests {
     }
 
     #[test]
-    fn hard_sync_resets_phase_without_reallocation() {
-        let mut oscillator = Vco::with_phase(0.73);
-        oscillator.hard_sync();
-        assert_eq!(oscillator.phase(), 0.0);
+    fn bipolar_hard_sync_reflects_only_the_matching_triangle_branch() {
+        let symmetry = TRIANGLE_SYMMETRY[0];
+        let mut rising = Vco::with_phase(0.20);
+        let before = triangle(rising.phase(), symmetry);
+        assert!(rising.hard_sync_pulse(HardSyncPulse::Positive));
+        assert!(rising.phase() > symmetry);
+        assert!((triangle(rising.phase(), symmetry) - before).abs() < 1.0e-6);
+        let reflected = rising.phase();
+        assert!(!rising.hard_sync_pulse(HardSyncPulse::Positive));
+        assert_eq!(rising.phase(), reflected);
+
+        let mut falling = Vco::with_phase(0.80);
+        let before = triangle(falling.phase(), symmetry);
+        assert!(falling.hard_sync_pulse(HardSyncPulse::Negative));
+        assert!(falling.phase() < symmetry);
+        assert!((triangle(falling.phase(), symmetry) - before).abs() < 1.0e-6);
+        let reflected = falling.phase();
+        assert!(!falling.hard_sync_pulse(HardSyncPulse::Negative));
+        assert_eq!(falling.phase(), reflected);
+    }
+
+    #[test]
+    fn pulse_output_reports_both_capacitively_coupled_sync_polarities() {
+        let mut oscillator = Vco::with_phase(0.45);
+        let falling = oscillator.next(1_000.0, 10_000.0, 0.50, SAW);
+        assert_eq!(
+            falling.sync_pulses,
+            [HardSyncPulse::Negative, HardSyncPulse::None]
+        );
+
+        let mut oscillator = Vco::with_phase(0.95);
+        let rising = oscillator.next(1_000.0, 10_000.0, 0.50, SAW);
+        assert_eq!(
+            rising.sync_pulses,
+            [HardSyncPulse::Positive, HardSyncPulse::None]
+        );
+    }
+
+    #[test]
+    fn sync_edges_exist_even_when_pulse_is_not_selected_for_audio() {
+        let mut oscillator = Vco::with_phase(0.45);
+        let sample = oscillator.next(1_000.0, 10_000.0, 0.50, WaveSelection::default());
+        assert_eq!(sample.audio, 0.0);
+        assert_eq!(sample.modulation, 0.0);
+        assert_eq!(sample.sync_pulses[0], HardSyncPulse::Negative);
     }
 
     #[test]

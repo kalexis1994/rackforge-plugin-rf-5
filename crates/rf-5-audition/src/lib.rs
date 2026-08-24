@@ -312,6 +312,18 @@ fn scenes() -> Vec<Scene> {
             description: "Noise half of the complementary Wheel Mod source OTA routed to filter cutoff",
             events: chord_sequence(&[(0.20, 5.20, &[48, 55, 60])]),
         },
+        Scene {
+            id: "14_bipolar_hard_sync",
+            program: "audition-hard-sync",
+            description: "Both capacitively coupled oscillator-B pulse edges reverse the matching oscillator-A triangle branch",
+            events: monophonic_sequence(&[
+                (0.20, 36),
+                (1.20, 41),
+                (2.20, 48),
+                (3.20, 53),
+                (4.20, 60),
+            ]),
+        },
     ]
 }
 

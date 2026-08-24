@@ -19,7 +19,8 @@
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-common-noise-vca", "name": "Audition - Common Noise VCA", "order": 8, "tags": ["rf5", "audition", "noise", "vca", "ca3280"] },
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-poly-mod-oscillator-b", "name": "Audition - Poly Mod Oscillator B", "order": 9, "tags": ["rf5", "audition", "poly-mod", "oscillator-b", "fm"] },
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-poly-mod-filter-envelope", "name": "Audition - Poly Mod Filter Envelope", "order": 10, "tags": ["rf5", "audition", "poly-mod", "filter", "envelope"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-wheel-noise-filter", "name": "Audition - Wheel Noise Filter", "order": 11, "tags": ["rf5", "audition", "wheel-mod", "noise", "filter"] }
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-wheel-noise-filter", "name": "Audition - Wheel Noise Filter", "order": 11, "tags": ["rf5", "audition", "wheel-mod", "noise", "filter"] },
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-hard-sync", "name": "Audition - Bipolar Hard Sync", "order": 12, "tags": ["rf5", "audition", "oscillator", "hard-sync", "cem3340"] }
   ],
   "schema_version": 1
 }

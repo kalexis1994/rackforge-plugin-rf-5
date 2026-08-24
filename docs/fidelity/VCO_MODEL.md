@@ -26,9 +26,18 @@ of analog VCOs and avoids deterministic, phase-locked attacks.
 Saw and pulse discontinuities use PolyBLEP correction. The complete dual-VCO
 path runs at four times the host sample rate and is averaged back to the audio
 rate. Triangle is generated directly from phase because it is continuous,
-while its remaining corner-bandwidth error is tracked below. Hard sync is
-resolved at the same four-times internal rate: a wrap from oscillator B resets
-oscillator A for the following internal interval.
+while its remaining corner-bandwidth error is tracked below.
+
+Hard sync is resolved at the same four-times internal rate but is not a generic
+phase reset. The Revision 3 voice board takes oscillator B's pulse output before
+its audio-selection switch, gates it through a 4016 and capacitively couples
+both edges into oscillator A's CEM3340 hard-sync input. A rising B pulse creates
+the positive sync polarity and can reverse A only while A's triangle is rising;
+a falling B pulse creates the negative polarity and can reverse A only while
+its triangle is falling. RF-5 reflects A onto the opposite triangle branch at
+the same instantaneous voltage, which also creates the data-sheet saw and pulse
+discontinuities. Sync therefore remains active even when no B waveform is sent
+to the audio mixer.
 
 Waveforms sum before their oscillator level. Enabling a second waveform can
 therefore raise level and drive later blocks harder; RF-5 does not normalize
@@ -59,7 +68,7 @@ items are:
 
 - waveform curvature and high-frequency rounding at the actual board nodes;
 - pulse-width transfer limits and behavior at both extremes;
-- exact hard-sync edge, reset phase and transient shape;
+- sub-sample placement and analog bandwidth of hard-sync discontinuities;
 - final calibration of the frequency-knob and B fine-control laws;
 - measured component populations, exact drift time evolution and exact
   low-octave tune extrapolation arithmetic;
@@ -78,4 +87,4 @@ Mod polarities are documented in
 
 The candidate becomes accepted only after spectral sweeps at 44.1, 48, 96 and
 192 kHz pass the alias threshold and legally usable hardware measurements bound
-the remaining waveform and sync hypotheses.
+the remaining waveform and sync-transient hypotheses.

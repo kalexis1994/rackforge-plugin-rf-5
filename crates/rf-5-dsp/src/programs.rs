@@ -241,6 +241,31 @@ impl Program {
         program.audition_mod_wheel = Some(0.64);
         program
     }
+
+    fn hard_sync() -> Self {
+        let mut values = BASELINE_LEAD;
+        values[Parameter::OscillatorAFrequency as usize] = 0.50;
+        values[Parameter::OscillatorALevel as usize] = 0.82;
+        values[Parameter::OscillatorASaw as usize] = 1.0;
+        values[Parameter::OscillatorAPulse as usize] = 0.0;
+        values[Parameter::OscillatorBLevel as usize] = 0.0;
+        values[Parameter::OscillatorBFrequency as usize] = 0.78;
+        values[Parameter::OscillatorBDetune as usize] = 0.68;
+        values[Parameter::OscillatorBKeyboard as usize] = 1.0;
+        values[Parameter::OscillatorBLowFrequency as usize] = 0.0;
+        // The hardware sync tap precedes B's waveform-selection switches, so
+        // no oscillator-B waveform needs to enter the audio mixer.
+        values[Parameter::OscillatorBSaw as usize] = 0.0;
+        values[Parameter::OscillatorBTriangle as usize] = 0.0;
+        values[Parameter::OscillatorBPulse as usize] = 0.0;
+        values[Parameter::OscillatorSync as usize] = 1.0;
+        values[Parameter::PolyModFilterEnvelopeAmount as usize] = 0.0;
+        values[Parameter::PolyModOscillatorBAmount as usize] = 0.0;
+        values[Parameter::FilterCutoff as usize] = 0.68;
+        values[Parameter::FilterResonance as usize] = 0.12;
+        values[Parameter::FilterEnvelopeAmount as usize] = 0.08;
+        Self::normal(values)
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -268,6 +293,7 @@ pub(crate) fn find(id: &str) -> Option<Program> {
         "audition-poly-mod-oscillator-b" => Program::poly_mod_oscillator_b(),
         "audition-poly-mod-filter-envelope" => Program::poly_mod_filter_envelope(),
         "audition-wheel-noise-filter" => Program::wheel_noise_filter(),
+        "audition-hard-sync" => Program::hard_sync(),
         _ => return None,
     })
 }
@@ -295,6 +321,7 @@ mod tests {
             "audition-poly-mod-oscillator-b",
             "audition-poly-mod-filter-envelope",
             "audition-wheel-noise-filter",
+            "audition-hard-sync",
         ] {
             let program = find(id).expect("catalog program exists");
             assert!(rf_5_contract::Settings::from_array(program.values).is_some());

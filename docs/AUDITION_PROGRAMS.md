@@ -29,6 +29,9 @@ program in RackForge's program browser and play normally:
   through the five linearized envelope amount paths;
 - `Audition - Wheel Noise Filter` selects the noise endpoint of common U378
   and routes the physical wheel output to filter cutoff.
+- `Audition - Bipolar Hard Sync` removes oscillator B from the audio mixer but
+  keeps its pulse output connected to oscillator A's physical sync circuit, so
+  both edge polarities and the resulting direction reversals can be heard.
 
 These are diagnostic listening conditions rather than emulated factory
 patches. Each one temporarily places the modulation wheel at a documented
@@ -38,7 +41,7 @@ or alter the serialized patch format, is cleared by loading a normal program
 or state, survives audio-device preparation order, and is replaced by the
 first physical MIDI CC1 message.
 
-All twelve audition programs are covered by deterministic render probes for
+All thirteen audition programs are covered by deterministic render probes for
 finite output, usable level and bounded headroom. All catalog programs are
 also contract-validated, and the filter population is swept at every supported
 sample rate.
