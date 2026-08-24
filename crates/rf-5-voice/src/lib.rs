@@ -82,6 +82,8 @@ impl Voice {
             self.oscillator_a = Vco::with_phase_and_profile(INITIAL_PHASE_A[index], index * 2);
             self.oscillator_b = Vco::with_phase_and_profile(INITIAL_PHASE_B[index], index * 2 + 1);
             self.filter = Cem3320Filter::with_profile(index);
+            self.amplifier_envelope = AdsrEnvelope::with_profile(index * 2);
+            self.filter_envelope = AdsrEnvelope::with_profile(index * 2 + 1);
             self.oscillators_initialized = true;
         }
         self.amplifier_envelope.trigger();

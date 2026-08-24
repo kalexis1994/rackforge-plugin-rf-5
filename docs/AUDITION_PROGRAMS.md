@@ -14,6 +14,10 @@ program in RackForge's program browser and play normally:
   their high-level waveform combinations;
 - `Audition - Filter Resonance` places the five physical filter profiles near
   the documented self-oscillation calibration region.
+- `Audition - Envelope Punch` uses short filter/amplifier decays so repeated
+  notes expose the ten CEM3310 profiles;
+- `Audition - Envelope Slow` holds a pad while the independent filter and
+  amplifier RC trajectories evolve.
 
 These are diagnostic listening conditions rather than emulated factory
 patches. Each one temporarily places the modulation wheel at a documented

@@ -243,6 +243,26 @@ fn scenes() -> Vec<Scene> {
             description: "Common triangle LFO routed to filter cutoff",
             events: chord_sequence(&[(0.25, 5.10, &[48, 55, 60])]),
         },
+        Scene {
+            id: "07_envelope_punch",
+            program: "audition-envelope-punch",
+            description: "Short repeated notes expose ten CEM3310 attack and decay profiles",
+            events: chord_sequence(&[
+                (0.20, 0.58, &[36]),
+                (0.85, 1.23, &[36]),
+                (1.50, 1.88, &[43]),
+                (2.15, 2.53, &[43]),
+                (2.80, 3.18, &[48]),
+                (3.45, 3.83, &[48]),
+                (4.10, 4.48, &[36, 43, 48]),
+            ]),
+        },
+        Scene {
+            id: "08_envelope_slow",
+            program: "audition-envelope-slow",
+            description: "Slow chord exposes independent filter and amplifier RC trajectories",
+            events: chord_sequence(&[(0.10, 4.70, &[48, 55, 60])]),
+        },
     ]
 }
 

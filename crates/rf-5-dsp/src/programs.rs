@@ -131,6 +131,36 @@ impl Program {
         values[Parameter::FilterRelease as usize] = 0.32;
         Self::normal(values)
     }
+
+    fn envelope_punch() -> Self {
+        let mut values = BASELINE_WARM;
+        values[Parameter::FilterCutoff as usize] = 0.30;
+        values[Parameter::FilterResonance as usize] = 0.20;
+        values[Parameter::AmpAttack as usize] = 0.0;
+        values[Parameter::AmpDecay as usize] = 0.18;
+        values[Parameter::AmpSustain as usize] = 0.0;
+        values[Parameter::AmpRelease as usize] = 0.12;
+        values[Parameter::FilterAttack as usize] = 0.0;
+        values[Parameter::FilterDecay as usize] = 0.16;
+        values[Parameter::FilterSustain as usize] = 0.0;
+        values[Parameter::FilterRelease as usize] = 0.14;
+        values[Parameter::FilterEnvelopeAmount as usize] = 0.62;
+        Self::normal(values)
+    }
+
+    fn envelope_slow() -> Self {
+        let mut values = BASELINE_PAD;
+        values[Parameter::AmpAttack as usize] = 0.62;
+        values[Parameter::AmpDecay as usize] = 0.48;
+        values[Parameter::AmpSustain as usize] = 0.68;
+        values[Parameter::AmpRelease as usize] = 0.55;
+        values[Parameter::FilterAttack as usize] = 0.58;
+        values[Parameter::FilterDecay as usize] = 0.46;
+        values[Parameter::FilterSustain as usize] = 0.52;
+        values[Parameter::FilterRelease as usize] = 0.57;
+        values[Parameter::FilterEnvelopeAmount as usize] = 0.44;
+        Self::normal(values)
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -151,6 +181,8 @@ pub(crate) fn find(id: &str) -> Option<Program> {
         "audition-wheel-filter" => Program::audition(BASELINE_WARM, AuditionRoute::Filter),
         "audition-filter-drive" => Program::filter_drive(),
         "audition-filter-resonance" => Program::filter_resonance(),
+        "audition-envelope-punch" => Program::envelope_punch(),
+        "audition-envelope-slow" => Program::envelope_slow(),
         _ => return None,
     })
 }
@@ -171,6 +203,8 @@ mod tests {
             "audition-wheel-filter",
             "audition-filter-drive",
             "audition-filter-resonance",
+            "audition-envelope-punch",
+            "audition-envelope-slow",
         ] {
             let program = find(id).expect("catalog program exists");
             assert!(rf_5_contract::Settings::from_array(program.values).is_some());
