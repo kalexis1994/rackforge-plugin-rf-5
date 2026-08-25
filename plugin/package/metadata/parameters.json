@@ -108,12 +108,12 @@
     },
     {
       "index": 19, "id": "oscillator-a-frequency", "name": "Oscillator A Frequency", "page": "oscillators", "order": 11,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5, "step": 0.007874015748031496 },
+      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.3779527559055118, "step": 0.007874015748031496 },
       "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
     },
     {
       "index": 20, "id": "oscillator-b-frequency", "name": "Oscillator B Frequency", "page": "oscillators", "order": 12,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5, "step": 0.007874015748031496 },
+      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.3779527559055118, "step": 0.007874015748031496 },
       "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
     },
     {

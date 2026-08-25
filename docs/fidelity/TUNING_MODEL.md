@@ -19,20 +19,31 @@ frequency and fine controls are quantized to the documented 128 pot positions
 before conversion. Automation is evaluated for every rendered sample, so a
 sustained note responds without being retriggered.
 
-The default frequency-pot code is treated as the initial-frequency trim's
-nominal reference. Normal mode spans four octaves around that calibrated
-reference. LO FREQ spans nine octaves around the reference and then applies the
-documented -7.5-octave offset. With B KEYBOARD disabled, the pitch remains tied
-to the zero-volt end of the five-octave keyboard range instead of following the
-played note.
+The V8.1 operating ROM fixes the previously inferred coarse mapping. A normal
+oscillator-frequency pot is read as a 7-bit code, divided by two with integer
+truncation, and capped at 48 semitones. This produces 49 reachable semitone
+positions rather than a continuously centred four-octave span. Raw code 48
+therefore contributes 24 semitones and is RF-5's concert/unison default.
+
+Oscillator B LO FREQ follows the separate ROM and analog paths. Its undivided
+7-bit code is capped at 108 semitones for the digital tune-DAC coordinate; the
+hardware then inserts the documented -7.5 V (-90 semitone) analog offset. This
+preserves the full nine-octave control range without pretending that the analog
+offset belongs to the automatic-tune table. B FINE is likewise a separate
+common analog sum and does not move the table coordinate. With B KEYBOARD
+disabled, keyboard CV is omitted while the coarse, fine and tune-bias sources
+remain active.
+
+The original Scale Mode is a distinct facility: its twelve note-class offsets
+are read from the panel knobs around a centre code of 64. It is intentionally
+not conflated with oscillator B FINE or automatic tune and remains isolated for
+a later implementation block.
 
 ## Explicit hypotheses
 
-Three values cannot yet be proven from the admitted documents alone:
+Two values cannot yet be proven from the admitted documents alone:
 
 - MIDI note 36 is used for the keyboard's zero-volt, lowest-C reference;
-- the initial-frequency trim places the default 7-bit pot code at musical
-  unison;
 - oscillator B fine currently spans approximately +/-50 cents.
 
 These are isolated in `tuning.rs` and covered by tests, so later measurements

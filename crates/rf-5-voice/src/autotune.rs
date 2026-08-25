@@ -94,16 +94,17 @@ impl AutoTune {
         self,
         voice_index: usize,
         oscillator: Oscillator,
-        ideal_semitones: f32,
+        tune_dac_semitones: f32,
+        tune_table_semitone: u8,
     ) -> f32 {
-        if !ideal_semitones.is_finite() {
+        if !tune_dac_semitones.is_finite() {
             return 0.0;
         }
         let channel = channel_index(voice_index, oscillator);
-        let ideal_code = ideal_semitones * DAC_CODES_PER_SEMITONE;
-        let bias = interpolated_bias(self.tables[channel].codes, ideal_semitones);
+        let ideal_code = tune_dac_semitones * DAC_CODES_PER_SEMITONE;
+        let bias = interpolated_bias(self.tables[channel].codes, f32::from(tune_table_semitone));
         let applied_code = libm::roundf(ideal_code + bias);
-        physical_semitones(channel, applied_code) - ideal_semitones
+        physical_semitones(channel, applied_code) - tune_dac_semitones
     }
 
     #[cfg(test)]
@@ -288,8 +289,13 @@ mod tests {
         for voice in 0..5 {
             for oscillator in [Oscillator::A, Oscillator::B] {
                 for semitone in 0..=108 {
-                    let error =
-                        cents(tune.residual_semitones(voice, oscillator, semitone as f32)).abs();
+                    let error = cents(tune.residual_semitones(
+                        voice,
+                        oscillator,
+                        semitone as f32,
+                        semitone,
+                    ))
+                    .abs();
                     if error > worst {
                         worst = error;
                         worst_case = (voice, oscillator, semitone);

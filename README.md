@@ -22,9 +22,11 @@ also reconstructs the ten-VCO automatic-tune path with a 2.5 MHz period
 counter, fourteen-bit successive approximation and per-semitone bias
 interpolation, including the operating ROM's exact C4-C3 extrapolation for its
 three lower octaves and its discrete twelve-position runtime arithmetic. Each
-of those ten oscillators now has an independent,
-sample-rate-stable post-tune drift path bounded by the CEM3340 data sheet, and
-the engine exposes non-serialized retuning. Their saw, triangle and pulse
+oscillator also uses the recovered 7-bit coarse-pitch assembly, including its
+49 normal semitone positions and oscillator B's distinct nine-octave LO FREQ,
+keyboard and analog fine paths. Each of those ten oscillators now has an
+independent, sample-rate-stable post-tune drift path bounded by the CEM3340 data
+sheet, and the engine exposes non-serialized retuning. Their saw, triangle and pulse
 outputs also retain the published voltage/symmetry ranges, populated-board
 resistor weighting and distinct audio versus Poly Mod polarity. A unified 6/11
 ms CPU cycle drives 38 independent sample-and-hold cells for common,

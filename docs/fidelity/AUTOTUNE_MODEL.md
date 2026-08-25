@@ -48,9 +48,12 @@ At render time, oscillator A and B each receive the residual error produced by
 their own calibrated table. Bias is reconstructed at the twelve discrete key
 positions between adjacent octave points, with the same split multiply and
 signed application as V8.1, then applied at writable-DAC resolution and retained
-by the corresponding physical sample/hold cell. This keeps performance
-wheel and audio-rate modulation outside the digital tune table, matching their
-separate paths.
+by the corresponding physical sample/hold cell. The interpolation coordinate
+is the ROM-derived integer sum of keyboard and oscillator coarse code. The
+oscillator-B FINE source and LO FREQ's -7.5 V insertion stay outside that
+coordinate because the schematic places both in separate analog summing paths.
+This also keeps performance-wheel and audio-rate modulation outside the digital
+tune table, matching their separate paths.
 
 The acceptance gate evaluates every semitone from C0 through C9 on all ten
 VCOs. The deterministic validation population must remain below 0.75 cent mean

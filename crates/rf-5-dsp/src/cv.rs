@@ -71,11 +71,9 @@ impl CvTargets {
         }
 
         for (voice, note) in notes.into_iter().enumerate() {
-            let tuning_a = tuning::oscillator_a_tuning_semitones(
-                note,
-                settings.get(Parameter::OscillatorAFrequency),
-            );
-            let tuning_b = tuning::oscillator_b_tuning_semitones(
+            let pitch_a =
+                tuning::oscillator_a_pitch(note, settings.get(Parameter::OscillatorAFrequency));
+            let pitch_b = tuning::oscillator_b_pitch(
                 note,
                 settings.get(Parameter::OscillatorBFrequency),
                 settings.get(Parameter::OscillatorBDetune),
@@ -88,11 +86,21 @@ impl CvTargets {
             let oscillator_b = ControlVoltageDestination::oscillator(voice, true)
                 .expect("valid oscillator-B CV destination")
                 as usize;
-            volts[oscillator_a] = (tuning_a
-                + autotune.residual_semitones(voice, Oscillator::A, tuning_a))
+            volts[oscillator_a] = (pitch_a.output_semitones()
+                + autotune.residual_semitones(
+                    voice,
+                    Oscillator::A,
+                    pitch_a.tune_dac_semitones(),
+                    pitch_a.tune_table_semitone(),
+                ))
                 / SEMITONES_PER_CONTROL_VOLT;
-            volts[oscillator_b] = (tuning_b
-                + autotune.residual_semitones(voice, Oscillator::B, tuning_b))
+            volts[oscillator_b] = (pitch_b.output_semitones()
+                + autotune.residual_semitones(
+                    voice,
+                    Oscillator::B,
+                    pitch_b.tune_dac_semitones(),
+                    pitch_b.tune_table_semitone(),
+                ))
                 / SEMITONES_PER_CONTROL_VOLT;
 
             let filter = ControlVoltageDestination::filter(voice)
