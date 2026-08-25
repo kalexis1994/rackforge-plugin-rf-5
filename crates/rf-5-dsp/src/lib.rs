@@ -13,16 +13,20 @@ mod wheel_mod;
 use allocation::PolyAllocator;
 use lfo::{Lfo, LfoWaveSelection};
 use noise::PinkNoise;
-use rf_5_contract::{PARAMETER_COUNT, Parameter, Settings, hardware::quantize_analog_pot};
+use rf_5_contract::{
+    PARAMETER_COUNT, PATCH_PARAMETER_COUNT, Parameter, Settings, hardware::quantize_analog_pot,
+};
 use rf_5_voice::{
     Voice, VoiceModulation,
     autotune::{AutoTune, Oscillator},
     drift::VcoDriftBank,
+    scale::ScaleProgram,
     tuning, vca,
 };
 
 pub const VOICE_COUNT: usize = 5;
 pub const STATE_BYTES: usize = PARAMETER_COUNT * 4;
+const LEGACY_STATE_BYTES: usize = PATCH_PARAMETER_COUNT * 4;
 const PITCH_WHEEL_RANGE_SEMITONES: f32 = 7.0;
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -121,6 +125,7 @@ impl Default for Engine {
             settings,
             [0; VOICE_COUNT],
             autotune,
+            scale_program(settings),
         ));
         Self {
             settings,
@@ -426,8 +431,9 @@ impl Engine {
             return false;
         };
         let master_volume = self.settings.get(Parameter::MasterVolume);
-        self.settings =
-            Settings::from_array(program.values).expect("factory program values are valid");
+        if !self.settings.apply_patch_array(program.values) {
+            return false;
+        }
         self.audition_mod_wheel = program.audition_mod_wheel;
         let restored = self
             .settings
@@ -449,6 +455,22 @@ impl Engine {
     }
 
     pub fn load_state(&mut self, state: &[u8]) -> bool {
+        if state.len() == LEGACY_STATE_BYTES {
+            let mut values = [0.0_f32; PATCH_PARAMETER_COUNT];
+            let (chunks, remainder) = state.as_chunks::<4>();
+            if !remainder.is_empty() {
+                return false;
+            }
+            for (value, chunk) in values.iter_mut().zip(chunks) {
+                *value = f32::from_le_bytes(*chunk);
+            }
+            let mut settings = Settings::default();
+            if !settings.apply_patch_array(values) {
+                return false;
+            }
+            self.install_loaded_settings(settings);
+            return true;
+        }
         if state.len() != STATE_BYTES {
             return false;
         }
@@ -463,11 +485,15 @@ impl Engine {
         let Some(settings) = Settings::from_array(values) else {
             return false;
         };
+        self.install_loaded_settings(settings);
+        true
+    }
+
+    fn install_loaded_settings(&mut self, settings: Settings) {
         self.settings = settings;
         self.audition_mod_wheel = None;
         self.controls.notify_change(self.sample_rate);
         self.rebuild_allocation_for_mode();
-        true
     }
 
     fn unison_enabled(&self) -> bool {
@@ -541,7 +567,12 @@ impl Engine {
     }
 
     fn cv_targets(&self, settings: Settings) -> cv::CvTargets {
-        cv::CvTargets::from_state(settings, self.voice_notes(), self.autotune)
+        cv::CvTargets::from_state(
+            settings,
+            self.voice_notes(),
+            self.autotune,
+            scale_program(settings),
+        )
     }
 
     fn refresh_voice_cv(&mut self, voice_index: usize) {
@@ -557,6 +588,10 @@ impl Engine {
             self.cv.refresh_voice(voice, targets);
         }
     }
+}
+
+fn scale_program(settings: Settings) -> ScaleProgram {
+    ScaleProgram::from_normalized(settings.scale_values())
 }
 
 fn parameter_enabled(settings: Settings, parameter: Parameter) -> bool {
@@ -744,6 +779,7 @@ mod tests {
     #[test]
     fn state_and_programs_round_trip() {
         let mut engine = Engine::default();
+        assert!(engine.set_parameter(Parameter::ScaleE as u32, 46.0 / 127.0));
         assert!(engine.load_program("baseline-pad"));
         let expected = engine.settings();
         let mut state = [0_u8; STATE_BYTES];
@@ -751,6 +787,39 @@ mod tests {
         assert!(engine.load_program("baseline-lead"));
         assert!(engine.load_state(&state));
         assert_eq!(engine.settings(), expected);
+    }
+
+    #[test]
+    fn patch_programs_do_not_replace_the_active_scale_program() {
+        let mut engine = Engine::default();
+        assert!(engine.set_parameter(Parameter::ScaleCSharp as u32, 79.0 / 127.0));
+        assert!(engine.set_parameter(Parameter::ScaleE as u32, 46.0 / 127.0));
+        let expected = engine.settings.scale_values();
+        assert!(engine.load_program("baseline-pad"));
+        assert!(engine.load_program("baseline-lead"));
+        assert_eq!(engine.settings.scale_values(), expected);
+    }
+
+    #[test]
+    fn legacy_patch_only_state_loads_with_equal_temperament() {
+        let mut legacy = [0_u8; LEGACY_STATE_BYTES];
+        let values = Settings::default().as_array();
+        let (chunks, remainder) = legacy.as_chunks_mut::<4>();
+        assert!(remainder.is_empty());
+        for (chunk, value) in chunks
+            .iter_mut()
+            .zip(values[..PATCH_PARAMETER_COUNT].iter())
+        {
+            chunk.copy_from_slice(&value.to_le_bytes());
+        }
+        let mut engine = Engine::default();
+        assert!(engine.set_parameter(Parameter::ScaleE as u32, 0.0));
+        assert!(engine.load_state(&legacy));
+        assert_eq!(
+            engine.settings.scale_values(),
+            [rf_5_contract::hardware::SCALE_EQUAL_TEMPERAMENT_NORMALIZED;
+                rf_5_contract::SCALE_NOTE_COUNT]
+        );
     }
 
     #[test]

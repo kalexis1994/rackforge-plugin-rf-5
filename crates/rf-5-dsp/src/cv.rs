@@ -9,6 +9,7 @@ use rf_5_contract::{
 };
 use rf_5_voice::{
     autotune::{AutoTune, Oscillator},
+    scale::ScaleProgram,
     tuning,
 };
 
@@ -56,7 +57,12 @@ pub struct CvTargets {
 }
 
 impl CvTargets {
-    pub fn from_state(settings: Settings, notes: [u8; VOICE_COUNT], autotune: AutoTune) -> Self {
+    pub fn from_state(
+        settings: Settings,
+        notes: [u8; VOICE_COUNT],
+        autotune: AutoTune,
+        scale: ScaleProgram,
+    ) -> Self {
         let mut volts = [0.0; CONTROL_VOLTAGE_DESTINATION_COUNT];
         for (index, value) in volts
             .iter_mut()
@@ -71,6 +77,7 @@ impl CvTargets {
         }
 
         for (voice, note) in notes.into_iter().enumerate() {
+            let scale_offset = scale.offset_semitones(note);
             let pitch_a =
                 tuning::oscillator_a_pitch(note, settings.get(Parameter::OscillatorAFrequency));
             let pitch_b = tuning::oscillator_b_pitch(
@@ -92,7 +99,8 @@ impl CvTargets {
                     Oscillator::A,
                     pitch_a.tune_dac_semitones(),
                     pitch_a.tune_table_semitone(),
-                ))
+                )
+                + scale_offset)
                 / SEMITONES_PER_CONTROL_VOLT;
             volts[oscillator_b] = (pitch_b.output_semitones()
                 + autotune.residual_semitones(
@@ -100,7 +108,8 @@ impl CvTargets {
                     Oscillator::B,
                     pitch_b.tune_dac_semitones(),
                     pitch_b.tune_table_semitone(),
-                ))
+                )
+                + scale_offset)
                 / SEMITONES_PER_CONTROL_VOLT;
 
             let filter = ControlVoltageDestination::filter(voice)
@@ -260,7 +269,12 @@ mod tests {
         assert!(settings.set(Parameter::FilterCutoff as u32, 0.73));
         assert!(settings.set(Parameter::AmpRelease as u32, 0.41));
         assert!(settings.set(Parameter::PolyModOscillatorBAmount as u32, 0.62));
-        let targets = CvTargets::from_state(settings, [60; VOICE_COUNT], AutoTune::calibrated());
+        let targets = CvTargets::from_state(
+            settings,
+            [60; VOICE_COUNT],
+            AutoTune::calibrated(),
+            ScaleProgram::default(),
+        );
         let mut distributor = CvDistributor::default();
         distributor.prepare(targets);
         let applied = distributor.apply_common(settings);
@@ -279,7 +293,12 @@ mod tests {
         assert!(settings.set(Parameter::FilterCutoff as u32, 1.0));
         assert!(settings.set(Parameter::FilterResonance as u32, 1.0));
         assert!(settings.set(Parameter::Glide as u32, 1.0));
-        let targets = CvTargets::from_state(settings, [60; VOICE_COUNT], AutoTune::calibrated());
+        let targets = CvTargets::from_state(
+            settings,
+            [60; VOICE_COUNT],
+            AutoTune::calibrated(),
+            ScaleProgram::default(),
+        );
 
         assert_eq!(
             targets.get(ControlVoltageDestination::FilterCutoff as usize),
@@ -313,7 +332,12 @@ mod tests {
     #[test]
     fn strobe_reacquires_the_target_exactly() {
         let settings = Settings::default();
-        let targets = CvTargets::from_state(settings, [60; VOICE_COUNT], AutoTune::calibrated());
+        let targets = CvTargets::from_state(
+            settings,
+            [60; VOICE_COUNT],
+            AutoTune::calibrated(),
+            ScaleProgram::default(),
+        );
         let mut distributor = CvDistributor::default();
         distributor.prepare(targets);
         for _ in 0..528 {
@@ -335,7 +359,12 @@ mod tests {
     fn ten_oscillator_and_five_filter_cells_are_independent() {
         let mut settings = Settings::default();
         assert!(settings.set(Parameter::FilterKeyboard as u32, 1.0));
-        let targets = CvTargets::from_state(settings, [36, 48, 60, 72, 84], AutoTune::calibrated());
+        let targets = CvTargets::from_state(
+            settings,
+            [36, 48, 60, 72, 84],
+            AutoTune::calibrated(),
+            ScaleProgram::default(),
+        );
         let mut distributor = CvDistributor::default();
         distributor.prepare(targets);
         for voice in 0..VOICE_COUNT - 1 {
@@ -348,5 +377,36 @@ mod tests {
                 distributor.filter_keyboard_octaves(voice + 1)
             );
         }
+    }
+
+    #[test]
+    fn scale_mode_offsets_both_vcos_but_not_filter_keyboard_cv() {
+        let mut settings = Settings::default();
+        assert!(settings.set(Parameter::FilterKeyboard as u32, 1.0));
+        let equal = CvTargets::from_state(
+            settings,
+            [64; VOICE_COUNT],
+            AutoTune::calibrated(),
+            ScaleProgram::default(),
+        );
+        let mut codes = [64; 12];
+        codes[4] = 46;
+        let alternate = CvTargets::from_state(
+            settings,
+            [64; VOICE_COUNT],
+            AutoTune::calibrated(),
+            ScaleProgram::from_codes(codes).unwrap(),
+        );
+        let expected_volts = (-36.0 / 256.0) / SEMITONES_PER_CONTROL_VOLT;
+        for oscillator_b in [false, true] {
+            let destination =
+                ControlVoltageDestination::oscillator(0, oscillator_b).unwrap() as usize;
+            assert!(
+                (alternate.get(destination) - equal.get(destination) - expected_volts).abs()
+                    < 1.0e-6
+            );
+        }
+        let filter = ControlVoltageDestination::filter(0).unwrap() as usize;
+        assert_eq!(alternate.get(filter), equal.get(filter));
     }
 }

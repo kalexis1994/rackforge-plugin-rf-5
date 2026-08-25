@@ -75,6 +75,9 @@ impl ControlScheduler {
         let cv_strobe = if self.service_index < ANALOG_POT_COUNT {
             let pot = AnalogPot::try_from(self.service_index as u8).expect("valid scan position");
             copy_parameter(&mut self.applied, target, pot.parameter());
+            if let Some(scale_parameter) = pot.scale_parameter() {
+                copy_parameter(&mut self.applied, target, scale_parameter);
+            }
             None
         } else {
             if self.service_index == ANALOG_POT_COUNT {
@@ -136,9 +139,9 @@ fn copy_parameter(destination: &mut Settings, source: Settings, parameter: Param
 
 fn is_scanned_pot(parameter: Parameter) -> bool {
     (0..ANALOG_POT_COUNT as u8).any(|index| {
-        AnalogPot::try_from(index)
-            .map(|pot| pot.parameter() == parameter)
-            .unwrap_or(false)
+        AnalogPot::try_from(index).is_ok_and(|pot| {
+            pot.parameter() == parameter || pot.scale_parameter() == Some(parameter)
+        })
     })
 }
 
@@ -184,6 +187,7 @@ mod tests {
         assert!(target.set(Parameter::FilterAttack as u32, 0.8));
         assert!(target.set(Parameter::OscillatorBDetune as u32, 0.1));
         assert!(target.set(Parameter::OscillatorSync as u32, 1.0));
+        assert!(target.set(Parameter::ScaleE as u32, 0.25));
         let mut scheduler = ControlScheduler::default();
         scheduler.prepare(initial, 48_000.0);
         scheduler.notify_change(48_000.0);

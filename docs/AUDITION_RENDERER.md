@@ -2,7 +2,7 @@
 
 RF-5 can be evaluated without RackForge's graphical panel. The
 `rf-5-audition` executable drives the real DSP engine with sample-accurate MIDI
-events and writes nineteen unnormalized 48 kHz mono PCM WAV files:
+events and writes twenty unnormalized 48 kHz mono PCM WAV files:
 
 1. baseline polyphonic chords;
 2. strong dual-VCO filter drive;
@@ -24,6 +24,7 @@ events and writes nineteen unnormalized 48 kHz mono PCM WAV files:
 17. the slow region of the common LFO's circuit-derived sweep.
 18. a fast point on the same exponential common-LFO law.
 19. medium Unison transitions through the populated Glide control network.
+20. a C-major progression using a V8.1-quantized just-intonation Scale program.
 
 Run:
 
@@ -37,7 +38,7 @@ renderer writes `manifest.json` with peak, RMS, DC and clipped-sample counts.
 It never peak-normalizes, applies loudness matching or post-processes the DSP
 output, because those operations would hide gain-staging changes.
 
-Short renders of all nineteen scenes are evaluated twice in the normal test
+Short renders of all twenty scenes are evaluated twice in the normal test
 suite and must be sample-identical, finite, audible and bounded. The full
 renderer additionally rejects silence, exhausted headroom, clipped samples or
 excessive DC before writing a successful manifest. Release validation renders

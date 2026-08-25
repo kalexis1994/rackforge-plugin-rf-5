@@ -26,7 +26,9 @@ oscillator also uses the recovered 7-bit coarse-pitch assembly, including its
 49 normal semitone positions and oscillator B's distinct nine-octave LO FREQ,
 keyboard and analog fine paths. Each of those ten oscillators now has an
 independent, sample-rate-stable post-tune drift path bounded by the CEM3340 data
-sheet, and the engine exposes non-serialized retuning. Their saw, triangle and pulse
+sheet, and the engine exposes non-serialized retuning. Its original programmable
+Scale Mode adds twelve global, patch-independent chromatic offsets with exact
+V8.1 code steps. Their saw, triangle and pulse
 outputs also retain the published voltage/symmetry ranges, populated-board
 resistor weighting and distinct audio versus Poly Mod polarity. A unified 6/11
 ms CPU cycle drives 38 independent sample-and-hold cells for common,
@@ -73,7 +75,7 @@ bash tools/build-package.sh
 
 The package is written to `artifacts/rf-5-0.1.0.rfplugin`. GitHub Actions tests
 x86-64 and ARM64 before publishing the portable package as a workflow artifact.
-The audition command writes nineteen unnormalized listening files and their metrics
+The audition command writes twenty unnormalized listening files and their metrics
 to `artifacts/auditions`; see
 [`docs/AUDITION_RENDERER.md`](docs/AUDITION_RENDERER.md).
 

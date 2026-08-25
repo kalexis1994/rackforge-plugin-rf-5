@@ -7,7 +7,9 @@
 
 pub mod hardware;
 
-pub const PARAMETER_COUNT: usize = 47;
+pub const PATCH_PARAMETER_COUNT: usize = 47;
+pub const SCALE_NOTE_COUNT: usize = 12;
+pub const PARAMETER_COUNT: usize = PATCH_PARAMETER_COUNT + SCALE_NOTE_COUNT;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]
@@ -59,7 +61,34 @@ pub enum Parameter {
     FilterKeyboard = 44,
     Glide = 45,
     Unison = 46,
+    ScaleC = 47,
+    ScaleCSharp = 48,
+    ScaleD = 49,
+    ScaleDSharp = 50,
+    ScaleE = 51,
+    ScaleF = 52,
+    ScaleFSharp = 53,
+    ScaleG = 54,
+    ScaleGSharp = 55,
+    ScaleA = 56,
+    ScaleASharp = 57,
+    ScaleB = 58,
 }
+
+pub const SCALE_PARAMETERS: [Parameter; SCALE_NOTE_COUNT] = [
+    Parameter::ScaleC,
+    Parameter::ScaleCSharp,
+    Parameter::ScaleD,
+    Parameter::ScaleDSharp,
+    Parameter::ScaleE,
+    Parameter::ScaleF,
+    Parameter::ScaleFSharp,
+    Parameter::ScaleG,
+    Parameter::ScaleGSharp,
+    Parameter::ScaleA,
+    Parameter::ScaleASharp,
+    Parameter::ScaleB,
+];
 
 impl TryFrom<u32> for Parameter {
     type Error = ();
@@ -113,6 +142,18 @@ impl TryFrom<u32> for Parameter {
             44 => Ok(Self::FilterKeyboard),
             45 => Ok(Self::Glide),
             46 => Ok(Self::Unison),
+            47 => Ok(Self::ScaleC),
+            48 => Ok(Self::ScaleCSharp),
+            49 => Ok(Self::ScaleD),
+            50 => Ok(Self::ScaleDSharp),
+            51 => Ok(Self::ScaleE),
+            52 => Ok(Self::ScaleF),
+            53 => Ok(Self::ScaleFSharp),
+            54 => Ok(Self::ScaleG),
+            55 => Ok(Self::ScaleGSharp),
+            56 => Ok(Self::ScaleA),
+            57 => Ok(Self::ScaleASharp),
+            58 => Ok(Self::ScaleB),
             _ => Err(()),
         }
     }
@@ -175,6 +216,18 @@ impl Default for Settings {
                 0.0,
                 0.0,
                 0.0,
+                hardware::SCALE_EQUAL_TEMPERAMENT_NORMALIZED,
+                hardware::SCALE_EQUAL_TEMPERAMENT_NORMALIZED,
+                hardware::SCALE_EQUAL_TEMPERAMENT_NORMALIZED,
+                hardware::SCALE_EQUAL_TEMPERAMENT_NORMALIZED,
+                hardware::SCALE_EQUAL_TEMPERAMENT_NORMALIZED,
+                hardware::SCALE_EQUAL_TEMPERAMENT_NORMALIZED,
+                hardware::SCALE_EQUAL_TEMPERAMENT_NORMALIZED,
+                hardware::SCALE_EQUAL_TEMPERAMENT_NORMALIZED,
+                hardware::SCALE_EQUAL_TEMPERAMENT_NORMALIZED,
+                hardware::SCALE_EQUAL_TEMPERAMENT_NORMALIZED,
+                hardware::SCALE_EQUAL_TEMPERAMENT_NORMALIZED,
+                hardware::SCALE_EQUAL_TEMPERAMENT_NORMALIZED,
             ],
         }
     }
@@ -211,6 +264,21 @@ impl Settings {
             .all(|value| value.is_finite() && (0.0..=1.0).contains(value))
             .then_some(Self { values })
     }
+
+    pub fn apply_patch_array(&mut self, values: [f32; PATCH_PARAMETER_COUNT]) -> bool {
+        if !values
+            .iter()
+            .all(|value| value.is_finite() && (0.0..=1.0).contains(value))
+        {
+            return false;
+        }
+        self.values[..PATCH_PARAMETER_COUNT].copy_from_slice(&values);
+        true
+    }
+
+    pub fn scale_values(self) -> [f32; SCALE_NOTE_COUNT] {
+        core::array::from_fn(|index| self.get(SCALE_PARAMETERS[index]))
+    }
 }
 
 #[cfg(test)]
@@ -231,5 +299,15 @@ mod tests {
     fn state_array_round_trips() {
         let settings = Settings::default();
         assert_eq!(Settings::from_array(settings.as_array()), Some(settings));
+    }
+
+    #[test]
+    fn patch_updates_preserve_the_active_scale_program() {
+        let mut settings = Settings::default();
+        assert!(settings.set(Parameter::ScaleE as u32, 0.25));
+        let scale = settings.scale_values();
+        assert!(settings.apply_patch_array([0.5; PATCH_PARAMETER_COUNT]));
+        assert_eq!(settings.scale_values(), scale);
+        assert_eq!(settings.get(Parameter::FilterCutoff), 0.5);
     }
 }

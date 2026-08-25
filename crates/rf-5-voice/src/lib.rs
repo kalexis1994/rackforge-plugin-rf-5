@@ -9,6 +9,7 @@ pub mod autotune;
 pub mod drift;
 pub mod envelope;
 pub mod filter;
+pub mod scale;
 pub mod tuning;
 pub mod vca;
 pub mod vco;

@@ -21,6 +21,9 @@ pub const OSCILLATOR_FREQUENCY_CONCERT_NORMALIZED: f32 =
 pub const OSCILLATOR_FREQUENCY_NORMAL_MAX_SEMITONES: u8 = 48;
 pub const OSCILLATOR_FREQUENCY_LOW_MAX_SEMITONES: u8 = 108;
 pub const OSCILLATOR_FREQUENCY_LOW_OFFSET_SEMITONES: f32 = -90.0;
+pub const SCALE_EQUAL_TEMPERAMENT_POT_CODE: u8 = 64;
+pub const SCALE_EQUAL_TEMPERAMENT_NORMALIZED: f32 =
+    SCALE_EQUAL_TEMPERAMENT_POT_CODE as f32 / (ANALOG_POT_STEPS - 1) as f32;
 
 pub const CONTROL_DAC_PHYSICAL_BITS: u8 = 16;
 pub const CONTROL_DAC_WRITABLE_BITS: u8 = 14;
@@ -285,6 +288,25 @@ impl AnalogPot {
             Self::OscillatorBFine => Parameter::OscillatorBDetune,
         }
     }
+
+    /// Scale Mode reuses these twelve physical pots as C-through-B offsets.
+    pub const fn scale_parameter(self) -> Option<Parameter> {
+        match self {
+            Self::LfoFrequency => Some(Parameter::ScaleC),
+            Self::OscillatorBFrequency => Some(Parameter::ScaleCSharp),
+            Self::OscillatorBFine => Some(Parameter::ScaleD),
+            Self::OscillatorBPulseWidth => Some(Parameter::ScaleDSharp),
+            Self::FilterAttack => Some(Parameter::ScaleE),
+            Self::FilterDecay => Some(Parameter::ScaleF),
+            Self::FilterSustain => Some(Parameter::ScaleFSharp),
+            Self::FilterRelease => Some(Parameter::ScaleG),
+            Self::AmplifierAttack => Some(Parameter::ScaleGSharp),
+            Self::AmplifierDecay => Some(Parameter::ScaleA),
+            Self::AmplifierSustain => Some(Parameter::ScaleASharp),
+            Self::AmplifierRelease => Some(Parameter::ScaleB),
+            _ => None,
+        }
+    }
 }
 
 /// One raw program-memory byte: a 7-bit pot value plus one switch bit.
@@ -341,6 +363,19 @@ mod tests {
             seen.iter().filter(|mapped| **mapped).count(),
             ANALOG_POT_COUNT
         );
+    }
+
+    #[test]
+    fn scale_mode_reuses_exactly_twelve_scanned_pots() {
+        let mut seen = [false; crate::SCALE_NOTE_COUNT];
+        for index in 0..ANALOG_POT_COUNT as u8 {
+            if let Some(parameter) = AnalogPot::try_from(index).unwrap().scale_parameter() {
+                let note = parameter as usize - Parameter::ScaleC as usize;
+                assert!(!seen[note]);
+                seen[note] = true;
+            }
+        }
+        assert!(seen.into_iter().all(|mapped| mapped));
     }
 
     #[test]

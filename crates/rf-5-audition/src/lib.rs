@@ -6,10 +6,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use rf_5_contract::SCALE_PARAMETERS;
 use rf_5_dsp::Engine;
 
 pub const SAMPLE_RATE: u32 = 48_000;
 pub const SCENE_SECONDS: u32 = 6;
+const EQUAL_TEMPERAMENT: [u8; 12] = [64; 12];
+const JUST_INTONATION_C: [u8; 12] = [64, 79, 69, 84, 46, 61, 51, 67, 82, 44, 87, 49];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct MidiAction {
@@ -22,6 +25,7 @@ struct Scene {
     id: &'static str,
     program: &'static str,
     description: &'static str,
+    scale_codes: [u8; 12],
     events: Vec<MidiAction>,
 }
 
@@ -80,6 +84,16 @@ fn render_scene(output_directory: &Path, scene: &Scene) -> io::Result<RenderMetr
             "could not prepare scene {} with program {}",
             scene.id, scene.program
         )));
+    }
+    if scene.scale_codes != EQUAL_TEMPERAMENT {
+        for (parameter, code) in SCALE_PARAMETERS.into_iter().zip(scene.scale_codes) {
+            if !engine.set_parameter(parameter as u32, f64::from(code) / 127.0) {
+                return Err(io::Error::other(format!(
+                    "could not apply Scale Mode program in scene {}",
+                    scene.id
+                )));
+            }
+        }
     }
 
     let frame_count = SAMPLE_RATE * SCENE_SECONDS;
@@ -197,6 +211,7 @@ fn scenes() -> Vec<Scene> {
             id: "01_baseline_warm_chords",
             program: "baseline-warm",
             description: "Three dry polyphonic chords for global tone and level",
+            scale_codes: EQUAL_TEMPERAMENT,
             events: chord_sequence(&[
                 (0.20, 1.55, &[48, 55, 60]),
                 (1.85, 3.20, &[44, 51, 56]),
@@ -207,6 +222,7 @@ fn scenes() -> Vec<Scene> {
             id: "02_filter_drive",
             program: "audition-filter-drive",
             description: "High-level dual-VCO chords through the five filter profiles",
+            scale_codes: EQUAL_TEMPERAMENT,
             events: chord_sequence(&[
                 (0.20, 1.55, &[36, 43, 48]),
                 (1.90, 3.25, &[39, 46, 51]),
@@ -217,6 +233,7 @@ fn scenes() -> Vec<Scene> {
             id: "03_filter_resonance",
             program: "audition-filter-resonance",
             description: "Ascending notes near the documented resonance calibration region",
+            scale_codes: EQUAL_TEMPERAMENT,
             events: monophonic_sequence(&[
                 (0.20, 52),
                 (1.15, 57),
@@ -229,24 +246,28 @@ fn scenes() -> Vec<Scene> {
             id: "04_wheel_vibrato",
             program: "audition-wheel-vibrato",
             description: "Common triangle LFO routed to both oscillator frequencies",
+            scale_codes: EQUAL_TEMPERAMENT,
             events: chord_sequence(&[(0.25, 5.10, &[57])]),
         },
         Scene {
             id: "05_wheel_pwm",
             program: "audition-wheel-pwm",
             description: "Common triangle LFO routed to both pulse-width summing nodes",
+            scale_codes: EQUAL_TEMPERAMENT,
             events: chord_sequence(&[(0.25, 5.10, &[45, 52, 57])]),
         },
         Scene {
             id: "06_wheel_filter",
             program: "audition-wheel-filter",
             description: "Common triangle LFO routed to filter cutoff",
+            scale_codes: EQUAL_TEMPERAMENT,
             events: chord_sequence(&[(0.25, 5.10, &[48, 55, 60])]),
         },
         Scene {
             id: "07_envelope_punch",
             program: "audition-envelope-punch",
             description: "Short repeated notes expose ten CEM3310 attack and decay profiles",
+            scale_codes: EQUAL_TEMPERAMENT,
             events: chord_sequence(&[
                 (0.20, 0.58, &[36]),
                 (0.85, 1.23, &[36]),
@@ -261,12 +282,14 @@ fn scenes() -> Vec<Scene> {
             id: "08_envelope_slow",
             program: "audition-envelope-slow",
             description: "Slow chord exposes independent filter and amplifier RC trajectories",
+            scale_codes: EQUAL_TEMPERAMENT,
             events: chord_sequence(&[(0.10, 4.70, &[48, 55, 60])]),
         },
         Scene {
             id: "09_ca3280_drive",
             program: "audition-ca3280-drive",
             description: "Strong five-voice chords traverse all mixer, final and master CA3280 stages",
+            scale_codes: EQUAL_TEMPERAMENT,
             events: chord_sequence(&[
                 (0.20, 1.75, &[36, 43, 48, 52, 55]),
                 (2.05, 3.60, &[41, 48, 53, 57, 60]),
@@ -277,6 +300,7 @@ fn scenes() -> Vec<Scene> {
             id: "10_common_noise_vca",
             program: "audition-common-noise-vca",
             description: "Common noise-level CA3280 feeding the five filter noise inputs",
+            scale_codes: EQUAL_TEMPERAMENT,
             events: chord_sequence(&[
                 (0.20, 1.45, &[36]),
                 (1.75, 3.00, &[43, 48]),
@@ -287,6 +311,7 @@ fn scenes() -> Vec<Scene> {
             id: "11_poly_mod_oscillator_b",
             program: "audition-poly-mod-oscillator-b",
             description: "Audio-rate oscillator-B triangle through five unlinearized Poly Mod amount VCAs",
+            scale_codes: EQUAL_TEMPERAMENT,
             events: monophonic_sequence(&[
                 (0.20, 43),
                 (1.20, 48),
@@ -299,6 +324,7 @@ fn scenes() -> Vec<Scene> {
             id: "12_poly_mod_filter_envelope",
             program: "audition-poly-mod-filter-envelope",
             description: "Descending resonant sweeps through five linearized Poly Mod envelope VCAs",
+            scale_codes: EQUAL_TEMPERAMENT,
             events: chord_sequence(&[
                 (0.20, 1.35, &[36]),
                 (1.60, 2.75, &[43]),
@@ -310,12 +336,14 @@ fn scenes() -> Vec<Scene> {
             id: "13_wheel_noise_filter",
             program: "audition-wheel-noise-filter",
             description: "Noise half of the complementary Wheel Mod source OTA routed to filter cutoff",
+            scale_codes: EQUAL_TEMPERAMENT,
             events: chord_sequence(&[(0.20, 5.20, &[48, 55, 60])]),
         },
         Scene {
             id: "14_bipolar_hard_sync",
             program: "audition-hard-sync",
             description: "Both capacitively coupled oscillator-B pulse edges reverse the matching oscillator-A triangle branch",
+            scale_codes: EQUAL_TEMPERAMENT,
             events: monophonic_sequence(&[
                 (0.20, 36),
                 (1.20, 41),
@@ -328,31 +356,47 @@ fn scenes() -> Vec<Scene> {
             id: "15_voice_assignment",
             program: "baseline-warm",
             description: "First-five assignment, earliest-used stealing and same-voice note repetition",
+            scale_codes: EQUAL_TEMPERAMENT,
             events: voice_assignment_sequence(),
         },
         Scene {
             id: "16_unison_low_note_legato",
             program: "audition-unison-priority",
             description: "Five-voice low-note-priority Unison with legato retuning and no envelope retrigger",
+            scale_codes: EQUAL_TEMPERAMENT,
             events: unison_priority_sequence(),
         },
         Scene {
             id: "17_lfo_slow_range",
             program: "audition-lfo-slow",
             description: "Slow end of the circuit-derived nine-octave common-LFO sweep",
+            scale_codes: EQUAL_TEMPERAMENT,
             events: chord_sequence(&[(0.15, 5.35, &[57])]),
         },
         Scene {
             id: "18_lfo_fast_range",
             program: "audition-lfo-fast",
             description: "Fast common-LFO rate using the same hardware-derived exponential law",
+            scale_codes: EQUAL_TEMPERAMENT,
             events: chord_sequence(&[(0.15, 5.35, &[57])]),
         },
         Scene {
             id: "19_unison_glide_circuit",
             program: "audition-unison-glide",
             description: "Panel-six Unison transitions through the Q309/CA3280/C376 Glide circuit",
+            scale_codes: EQUAL_TEMPERAMENT,
             events: unison_glide_sequence(),
+        },
+        Scene {
+            id: "20_scale_mode_just_c",
+            program: "baseline-init",
+            description: "V8.1 Scale Mode offsets a C-major progression toward just intonation",
+            scale_codes: JUST_INTONATION_C,
+            events: chord_sequence(&[
+                (0.20, 1.55, &[48, 52, 55]),
+                (1.85, 3.20, &[53, 57, 60]),
+                (3.50, 5.10, &[55, 59, 62]),
+            ]),
         },
     ]
 }

@@ -5,11 +5,13 @@
 //! physical modulation wheel. The override is machine state, never patch
 //! state, and the first incoming CC1 immediately replaces it.
 
+#[cfg(test)]
+use rf_5_contract::Settings;
 use rf_5_contract::{
-    PARAMETER_COUNT, Parameter, hardware::OSCILLATOR_FREQUENCY_CONCERT_NORMALIZED,
+    PATCH_PARAMETER_COUNT, Parameter, hardware::OSCILLATOR_FREQUENCY_CONCERT_NORMALIZED,
 };
 
-const BASELINE_INIT: [f32; PARAMETER_COUNT] = [
+const BASELINE_INIT: [f32; PATCH_PARAMETER_COUNT] = [
     0.72,
     0.72,
     0.54,
@@ -59,7 +61,7 @@ const BASELINE_INIT: [f32; PARAMETER_COUNT] = [
     0.0,
 ];
 
-const BASELINE_WARM: [f32; PARAMETER_COUNT] = [
+const BASELINE_WARM: [f32; PATCH_PARAMETER_COUNT] = [
     0.76,
     0.76,
     0.58,
@@ -109,7 +111,7 @@ const BASELINE_WARM: [f32; PARAMETER_COUNT] = [
     0.0,
 ];
 
-const BASELINE_PAD: [f32; PARAMETER_COUNT] = [
+const BASELINE_PAD: [f32; PATCH_PARAMETER_COUNT] = [
     0.68,
     0.62,
     0.62,
@@ -159,7 +161,7 @@ const BASELINE_PAD: [f32; PARAMETER_COUNT] = [
     0.0,
 ];
 
-const BASELINE_LEAD: [f32; PARAMETER_COUNT] = [
+const BASELINE_LEAD: [f32; PATCH_PARAMETER_COUNT] = [
     0.64,
     0.72,
     0.67,
@@ -211,19 +213,19 @@ const BASELINE_LEAD: [f32; PARAMETER_COUNT] = [
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Program {
-    pub values: [f32; PARAMETER_COUNT],
+    pub values: [f32; PATCH_PARAMETER_COUNT],
     pub audition_mod_wheel: Option<f32>,
 }
 
 impl Program {
-    const fn normal(values: [f32; PARAMETER_COUNT]) -> Self {
+    const fn normal(values: [f32; PATCH_PARAMETER_COUNT]) -> Self {
         Self {
             values,
             audition_mod_wheel: None,
         }
     }
 
-    fn audition(mut values: [f32; PARAMETER_COUNT], route: AuditionRoute) -> Self {
+    fn audition(mut values: [f32; PATCH_PARAMETER_COUNT], route: AuditionRoute) -> Self {
         // Common LFO audition setup: triangle only, no noise in the Wheel Mod
         // source crossfade. Destination switches are set below per route.
         values[Parameter::LfoFrequency as usize] = match route {
@@ -541,7 +543,8 @@ mod tests {
             "audition-lfo-fast",
         ] {
             let program = find(id).expect("catalog program exists");
-            assert!(rf_5_contract::Settings::from_array(program.values).is_some());
+            let mut settings = Settings::default();
+            assert!(settings.apply_patch_array(program.values));
         }
     }
 

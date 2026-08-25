@@ -34,10 +34,11 @@ common analog sum and does not move the table coordinate. With B KEYBOARD
 disabled, keyboard CV is omitted while the coarse, fine and tune-bias sources
 remain active.
 
-The original Scale Mode is a distinct facility: its twelve note-class offsets
-are read from the panel knobs around a centre code of 64. It is intentionally
-not conflated with oscillator B FINE or automatic tune and remains isolated for
-a later implementation block.
+The original Scale Mode is now active as a distinct facility. Its twelve
+note-class offsets reuse the documented panel knobs around centre code 64 and
+are added after automatic-tune interpolation. Patch loads preserve the active
+scale. Exact arithmetic, physical-pot mapping and state semantics are recorded
+in [`SCALE_MODE.md`](SCALE_MODE.md).
 
 ## Explicit hypotheses
 

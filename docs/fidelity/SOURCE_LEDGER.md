@@ -2,7 +2,7 @@
 
 | ID | Source | Scope | Class | Status |
 | --- | --- | --- | --- | --- |
-| SRC-001 | Sequential, original *Prophet-5 Owner's Manual* ([archival scan](https://device.report/m/53bd1bb5dfcacc44b25c01ad486bc93a9adc1fdfc4fdb0340c51b239ee1c578d_pdf)) | Public control architecture, performance behaviour, pitch-wheel span, Poly Mod routing and Scale Mode operation | Manufacturer documentation | Accepted for topology, approximately +/-one-fifth pitch-wheel span and twelve-note Scale Mode operator behavior; other numerical mappings pending |
+| SRC-001 | Sequential, original *Prophet-5 Owner's Manual* ([archival scan](https://device.report/m/53bd1bb5dfcacc44b25c01ad486bc93a9adc1fdfc4fdb0340c51b239ee1c578d_pdf)) | Public control architecture, performance behaviour, pitch-wheel span, Poly Mod routing and Scale Mode operation | Manufacturer documentation | Accepted for topology, approximately +/-one-fifth pitch-wheel span and twelve-note Scale Mode operator behavior; SHA-256 `4C5D84BBB5A0FE8D1687A66DB67292259BFF160D7738F0366DB8DE39026FB85C` |
 | SRC-002 | Sequential, current Prophet-5 product specifications | Oscillator, filter, envelope and performance inventory | Manufacturer documentation | Accepted for inventory only |
 | SRC-003 | Original program patch sheets published by Sequential | Historical control positions | Manufacturer document | Reference only; programs will not be redistributed |
 | SRC-004 | Sequential Circuits, *Prophet-5 Synthesizer Technical Manual*, TM1000D.2, Oct. 1981 ([archival scan](https://www.synfo.nl/servicemanuals/Sequential/SEQUENTIAL_PROPHET-5-REV3_SERVICE_MANUAL.pdf)) | Rev 3.0-3.2 topology, schematics, calibration, control scanning and selected IC data sheets | Manufacturer technical manual | Accepted; SHA-256 `6B8701C4F526AB415CBA8BE2CA5538BDE14B228A0948151EBA964DA06A97BD25` |
@@ -35,14 +35,15 @@ Operating-image offsets `0x0101-0x0125` are admitted specifically for the
 signed C4-C3 difference repeatedly subtracted to create the C2-C0 automatic
 tune entries. This conclusion is independently tied to the technical manual's
 C3-C9 measurement and C0-C2 extrapolation description. Offsets
-`0x0383-0x03E9` are admitted for normal/LO FREQ coarse-code assembly, keyboard
+`0x0235-0x023D` are admitted for the equal-tempered code-64 power-up state.
+Offsets `0x0383-0x03E9` are admitted for normal/LO FREQ coarse-code assembly, keyboard
 inclusion and the 108-semitone cap. Offsets `0x03EE-0x0483`, the multiply data
 they address at `0x0A00-0x0BDF`, and the DAC
 write paths at `0x0155-0x01DB` and `0x0583-0x05C4` are admitted for the signed
 runtime interpolation, its lookup-rounding behavior and its 128-writable-code
-semitone scale. Offsets `0x0484-0x04BF` are admitted only for identifying the
-twelve note-class Scale Mode offsets and their centre code; that facility is
-not yet active. Those conclusions are independently corroborated by the
+semitone scale. Offsets `0x0484-0x04BF` and lookup bytes `0x0BE7-0x0BF2` are
+admitted for the active twelve-note Scale Mode pot map, signed half-semitone
+arithmetic and post-interpolation application. Those conclusions are independently corroborated by the
 manuals' keyboard/frequency/LO FREQ CV sums, ten-octave bias-table,
 between-octave calculation, 14-bit writable-DAC, 83 mV/651 uV descriptions and
 Scale Mode operator behavior. No other binary region is admitted as behavioural

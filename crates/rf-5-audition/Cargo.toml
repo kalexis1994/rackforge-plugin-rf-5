@@ -7,4 +7,5 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+rf-5-contract.workspace = true
 rf-5-dsp.workspace = true

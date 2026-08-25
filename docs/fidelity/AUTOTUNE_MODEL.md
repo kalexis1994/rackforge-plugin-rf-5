@@ -52,8 +52,10 @@ by the corresponding physical sample/hold cell. The interpolation coordinate
 is the ROM-derived integer sum of keyboard and oscillator coarse code. The
 oscillator-B FINE source and LO FREQ's -7.5 V insertion stay outside that
 coordinate because the schematic places both in separate analog summing paths.
-This also keeps performance-wheel and audio-rate modulation outside the digital
-tune table, matching their separate paths.
+The active Scale Mode note-class offset is likewise added only after the bias
+lookup, matching V8.1 offsets `0x0484-0x04BF`. This also keeps performance-wheel
+and audio-rate modulation outside the digital tune table, matching their
+separate paths.
 
 The acceptance gate evaluates every semitone from C0 through C9 on all ten
 VCOs. The deterministic validation population must remain below 0.75 cent mean

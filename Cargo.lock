@@ -25,6 +25,7 @@ dependencies = [
 name = "rf-5-audition"
 version = "0.1.0"
 dependencies = [
+ "rf-5-contract",
  "rf-5-dsp",
 ]
 
