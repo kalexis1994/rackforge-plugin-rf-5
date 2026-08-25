@@ -45,7 +45,12 @@ scale. The complete output loop at `0x0583-0x05C4` is additionally admitted for
 the five banks of eight S/H strobe addresses and their two unconnected terminal
 slots. Offsets `0x0484-0x04BF` and lookup bytes `0x0BE7-0x0BF2` are
 admitted for the active twelve-note Scale Mode pot map, signed half-semitone
-arithmetic and post-interpolation application. Those conclusions are independently corroborated by the
+arithmetic and post-interpolation application. Offsets `0x07C8-0x0813` are
+admitted for the 24-byte program pack/unpack loops, `0x0563-0x056E` for their
+three switch-latch output bytes, and `0x0524-0x0558` for the stored RELEASE
+branch and its fixed `0x64` disabled value. SD333 independently fixes the
+latch-bit destinations, while the owner's manual fixes the audible meaning of
+RELEASE on and off. Those conclusions are independently corroborated by the
 manuals' keyboard/frequency/LO FREQ CV sums, ten-octave bias-table,
 between-octave calculation, 14-bit writable-DAC, 83 mV/651 uV descriptions and
 Scale Mode operator behavior. No other binary region is admitted as behavioural

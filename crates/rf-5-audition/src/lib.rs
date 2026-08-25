@@ -398,6 +398,13 @@ fn scenes() -> Vec<Scene> {
                 (3.50, 5.10, &[55, 59, 62]),
             ]),
         },
+        Scene {
+            id: "21_release_switch_off",
+            program: "audition-release-switch-off",
+            description: "V8.1 stored RELEASE bit overrides both deliberately maximum release pots with the global minimum time",
+            scale_codes: EQUAL_TEMPERAMENT,
+            events: chord_sequence(&[(0.20, 2.20, &[48, 55, 60])]),
+        },
     ]
 }
 

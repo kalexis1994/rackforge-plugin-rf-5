@@ -59,6 +59,7 @@ const BASELINE_INIT: [f32; PATCH_PARAMETER_COUNT] = [
     0.0,
     0.0,
     0.0,
+    1.0,
 ];
 
 const BASELINE_WARM: [f32; PATCH_PARAMETER_COUNT] = [
@@ -109,6 +110,7 @@ const BASELINE_WARM: [f32; PATCH_PARAMETER_COUNT] = [
     0.0,
     0.0,
     0.0,
+    1.0,
 ];
 
 const BASELINE_PAD: [f32; PATCH_PARAMETER_COUNT] = [
@@ -159,6 +161,7 @@ const BASELINE_PAD: [f32; PATCH_PARAMETER_COUNT] = [
     1.0,
     0.0,
     0.0,
+    1.0,
 ];
 
 const BASELINE_LEAD: [f32; PATCH_PARAMETER_COUNT] = [
@@ -209,6 +212,7 @@ const BASELINE_LEAD: [f32; PATCH_PARAMETER_COUNT] = [
     1.0,
     0.0,
     0.0,
+    1.0,
 ];
 
 #[derive(Clone, Copy, Debug)]
@@ -339,6 +343,16 @@ impl Program {
         values[Parameter::FilterSustain as usize] = 0.52;
         values[Parameter::FilterRelease as usize] = 0.57;
         values[Parameter::FilterEnvelopeAmount as usize] = 0.44;
+        Self::normal(values)
+    }
+
+    fn release_switch_off() -> Self {
+        let mut values = BASELINE_PAD;
+        // The long stored pots make the global override unmistakable: the
+        // V8.1 RELEASE bit forces both generators to their minimum time.
+        values[Parameter::AmpRelease as usize] = 1.0;
+        values[Parameter::FilterRelease as usize] = 1.0;
+        values[Parameter::ReleaseSwitch as usize] = 0.0;
         Self::normal(values)
     }
 
@@ -499,6 +513,7 @@ pub(crate) fn find(id: &str) -> Option<Program> {
         "audition-filter-resonance" => Program::filter_resonance(),
         "audition-envelope-punch" => Program::envelope_punch(),
         "audition-envelope-slow" => Program::envelope_slow(),
+        "audition-release-switch-off" => Program::release_switch_off(),
         "audition-ca3280-drive" => Program::ca3280_drive(),
         "audition-common-noise-vca" => Program::common_noise_vca(),
         "audition-poly-mod-oscillator-b" => Program::poly_mod_oscillator_b(),
@@ -531,6 +546,7 @@ mod tests {
             "audition-filter-resonance",
             "audition-envelope-punch",
             "audition-envelope-slow",
+            "audition-release-switch-off",
             "audition-ca3280-drive",
             "audition-common-noise-vca",
             "audition-poly-mod-oscillator-b",

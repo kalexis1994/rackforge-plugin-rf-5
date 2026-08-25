@@ -35,6 +35,12 @@ position 6 and a release longer than 20 seconds at position 10.
   ratios inside the published 0.75-1.30 and 0.83-1.20 limits.
 - Retrigger changes the charging phase without digitally clearing the stored
   capacitor voltage; note release likewise changes only the active phase.
+- The stored RELEASE switch governs both filter and amplifier generators. When
+  on, each uses its own programmed Release pot. When off, both use the global
+  minimum-time setting, matching the owner's-manual behavior. V8.1's fixed
+  `0x64` release-CV code remains recorded at the firmware boundary; until an
+  instrument measurement fixes its absolute CEM3310 offset, the active analog
+  model maps that serviced minimum to its fastest admitted time.
 
 ## Bounded uncertainty
 
@@ -62,6 +68,8 @@ the chip equation and populated circuit.
   electrical bounds;
 - retrigger preserves the existing capacitor voltage;
 - a complete attack-decay-sustain-release lifecycle reaches idle safely.
+- RELEASE off overrides both programmed release pots and reaches idle far
+  sooner than a maximum-release patch.
 
 Primary evidence: TM1000D.2 sections 2-7 and service tests 4-5/4-6, voice schematic SD431 and
 the original CEM3310 data sheet. Provenance is recorded in `SOURCE_LEDGER.md`.

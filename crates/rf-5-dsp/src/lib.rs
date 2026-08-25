@@ -14,7 +14,8 @@ use allocation::PolyAllocator;
 use lfo::{Lfo, LfoWaveSelection};
 use noise::PinkNoise;
 use rf_5_contract::{
-    PARAMETER_COUNT, PATCH_PARAMETER_COUNT, Parameter, Settings, hardware::quantize_analog_pot,
+    PARAMETER_COUNT, Parameter, Settings,
+    hardware::{decode_program, encode_program, quantize_analog_pot},
 };
 use rf_5_voice::{
     Voice, VoiceModulation,
@@ -26,7 +27,10 @@ use rf_5_voice::{
 
 pub const VOICE_COUNT: usize = 5;
 pub const STATE_BYTES: usize = PARAMETER_COUNT * 4;
-const LEGACY_STATE_BYTES: usize = PATCH_PARAMETER_COUNT * 4;
+const PRE_SCALE_PATCH_PARAMETER_COUNT: usize = 47;
+const PRE_SCALE_STATE_BYTES: usize = PRE_SCALE_PATCH_PARAMETER_COUNT * 4;
+const PRE_RELEASE_PARAMETER_COUNT: usize = 59;
+const PRE_RELEASE_STATE_BYTES: usize = PRE_RELEASE_PARAMETER_COUNT * 4;
 const PITCH_WHEEL_RANGE_SEMITONES: f32 = 7.0;
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -430,15 +434,12 @@ impl Engine {
         let Some(program) = programs::find(id) else {
             return false;
         };
-        let master_volume = self.settings.get(Parameter::MasterVolume);
-        if !self.settings.apply_patch_array(program.values) {
+        let mut source = Settings::default();
+        if !source.apply_patch_array(program.values) {
             return false;
         }
+        self.settings = decode_program(encode_program(source), self.settings);
         self.audition_mod_wheel = program.audition_mod_wheel;
-        let restored = self
-            .settings
-            .set(Parameter::MasterVolume as u32, f64::from(master_volume));
-        debug_assert!(restored);
         self.controls.notify_change(self.sample_rate);
         self.rebuild_allocation_for_mode();
         true
@@ -455,8 +456,8 @@ impl Engine {
     }
 
     pub fn load_state(&mut self, state: &[u8]) -> bool {
-        if state.len() == LEGACY_STATE_BYTES {
-            let mut values = [0.0_f32; PATCH_PARAMETER_COUNT];
+        if state.len() == PRE_SCALE_STATE_BYTES {
+            let mut values = [0.0_f32; PRE_SCALE_PATCH_PARAMETER_COUNT];
             let (chunks, remainder) = state.as_chunks::<4>();
             if !remainder.is_empty() {
                 return false;
@@ -465,9 +466,31 @@ impl Engine {
                 *value = f32::from_le_bytes(*chunk);
             }
             let mut settings = Settings::default();
-            if !settings.apply_patch_array(values) {
+            for (index, value) in values.into_iter().enumerate() {
+                if !settings.set(index as u32, f64::from(value)) {
+                    return false;
+                }
+            }
+            self.install_loaded_settings(settings);
+            return true;
+        }
+        if state.len() == PRE_RELEASE_STATE_BYTES {
+            let mut old = [0.0_f32; PRE_RELEASE_PARAMETER_COUNT];
+            let (chunks, remainder) = state.as_chunks::<4>();
+            if !remainder.is_empty() {
                 return false;
             }
+            for (value, chunk) in old.iter_mut().zip(chunks) {
+                *value = f32::from_le_bytes(*chunk);
+            }
+            let mut values = Settings::default().as_array();
+            values[..PRE_SCALE_PATCH_PARAMETER_COUNT]
+                .copy_from_slice(&old[..PRE_SCALE_PATCH_PARAMETER_COUNT]);
+            values[Parameter::ScaleC as usize..]
+                .copy_from_slice(&old[PRE_SCALE_PATCH_PARAMETER_COUNT..]);
+            let Some(settings) = Settings::from_array(values) else {
+                return false;
+            };
             self.install_loaded_settings(settings);
             return true;
         }
@@ -802,13 +825,13 @@ mod tests {
 
     #[test]
     fn legacy_patch_only_state_loads_with_equal_temperament() {
-        let mut legacy = [0_u8; LEGACY_STATE_BYTES];
+        let mut legacy = [0_u8; PRE_SCALE_STATE_BYTES];
         let values = Settings::default().as_array();
         let (chunks, remainder) = legacy.as_chunks_mut::<4>();
         assert!(remainder.is_empty());
         for (chunk, value) in chunks
             .iter_mut()
-            .zip(values[..PATCH_PARAMETER_COUNT].iter())
+            .zip(values[..PRE_SCALE_PATCH_PARAMETER_COUNT].iter())
         {
             chunk.copy_from_slice(&value.to_le_bytes());
         }
@@ -820,6 +843,28 @@ mod tests {
             [rf_5_contract::hardware::SCALE_EQUAL_TEMPERAMENT_NORMALIZED;
                 rf_5_contract::SCALE_NOTE_COUNT]
         );
+        assert_eq!(engine.settings.get(Parameter::ReleaseSwitch), 1.0);
+    }
+
+    #[test]
+    fn pre_release_state_migrates_scale_values_and_enables_release() {
+        let mut old_values = [0.0_f32; PRE_RELEASE_PARAMETER_COUNT];
+        let current = Settings::default().as_array();
+        old_values[..PRE_SCALE_PATCH_PARAMETER_COUNT]
+            .copy_from_slice(&current[..PRE_SCALE_PATCH_PARAMETER_COUNT]);
+        old_values[PRE_SCALE_PATCH_PARAMETER_COUNT..]
+            .copy_from_slice(&current[Parameter::ScaleC as usize..]);
+        old_values[Parameter::ScaleE as usize - 1] = 0.31;
+        let mut state = [0_u8; PRE_RELEASE_STATE_BYTES];
+        for (chunk, value) in state.as_chunks_mut::<4>().0.iter_mut().zip(old_values) {
+            chunk.copy_from_slice(&value.to_le_bytes());
+        }
+
+        let mut engine = Engine::default();
+        assert!(engine.set_parameter(Parameter::ReleaseSwitch as u32, 0.0));
+        assert!(engine.load_state(&state));
+        assert_eq!(engine.settings.get(Parameter::ReleaseSwitch), 1.0);
+        assert_eq!(engine.settings.get(Parameter::ScaleE), 0.31);
     }
 
     #[test]
@@ -950,6 +995,14 @@ mod tests {
             engine.parameter(Parameter::MasterVolume as u32),
             Some(0.31_f32 as f64)
         );
+    }
+
+    #[test]
+    fn loading_a_program_preserves_non_program_machine_character() {
+        let mut engine = Engine::default();
+        assert!(engine.set_parameter(Parameter::VintageSpread as u32, 0.63));
+        assert!(engine.load_program("baseline-pad"));
+        assert_eq!(engine.settings.get(Parameter::VintageSpread), 0.63);
     }
 
     #[test]

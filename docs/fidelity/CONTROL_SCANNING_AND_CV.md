@@ -54,10 +54,28 @@ expectation, not as a nominal modulation source.
 
 ## Program memory
 
-The documented machine holds 40 programs of 24 bytes. Each byte combines a
-7-bit pot value in bits 0-6 and one switch state in bit 7. RF-5 models that raw
-layout with `ProgramByte` so private research dumps can be checked without
-shipping, loading or depending on them.
+The documented machine holds 40 programs of 24 bytes. Each byte combines the
+corresponding 7-bit pot value in bits 0-6 with one switch state in bit 7. V8.1
+offsets `0x07c8-0x0813` recover the high bits into three switch-latch bytes on
+load and fold them back into the same 24 pot bytes on write.
+
+RF-5 now models the complete format rather than merely the individual byte.
+The pot half follows `AnalogPot` order. The switch half follows SD333 and the
+three V8.1 output bytes exactly:
+
+1. oscillator A pulse/saw/sync, oscillator B saw/triangle/pulse, oscillator B
+   keyboard and Unison;
+2. Poly Mod oscillator-A frequency/pulse-width/filter, LFO saw/triangle/square,
+   filter keyboard and Release;
+3. Wheel Mod oscillator-A frequency, oscillator-B frequency, oscillator-A
+   pulse width, oscillator-B pulse width, filter and oscillator-B low
+   frequency; the last two bits are unused.
+
+`encode_program` and `decode_program` perform this physical packing. Factory
+program loads pass through that codec, so hardware pots are quantized to 128
+positions and only actually stored controls replace the current patch.
+Master Volume, RF-5's machine-character control and Scale Mode remain outside
+the patch, as they do not occupy those bytes.
 
 RF-5 factory content remains original. The raw layout is an engineering fact;
 the original program data is not part of the product.
@@ -76,7 +94,8 @@ the original program data is not part of the product.
   timing of unconnected hardware addresses.
 - Automatic tune corrections belong to each physical oscillator, not to a
   single global detune control.
-- Program decoding must remain independent from current UI parameter indices.
+- Program decoding remains independent from current UI parameter indices and
+  preserves the two unused high bits as non-controls.
 
 ## Active scheduler boundary
 

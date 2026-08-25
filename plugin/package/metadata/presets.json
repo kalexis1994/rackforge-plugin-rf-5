@@ -24,7 +24,8 @@
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-unison-priority", "name": "Audition - Unison Low Note", "order": 13, "tags": ["rf5", "audition", "unison", "low-note-priority", "legato"] },
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-lfo-slow", "name": "Audition - LFO Slow Range", "order": 14, "tags": ["rf5", "audition", "lfo", "slow"] },
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-lfo-fast", "name": "Audition - LFO Fast Range", "order": 15, "tags": ["rf5", "audition", "lfo", "fast"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-unison-glide", "name": "Audition - Unison Glide Circuit", "order": 16, "tags": ["rf5", "audition", "unison", "glide", "ca3280"] }
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-unison-glide", "name": "Audition - Unison Glide Circuit", "order": 16, "tags": ["rf5", "audition", "unison", "glide", "ca3280"] },
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-release-switch-off", "name": "Audition - Release Switch Off", "order": 17, "tags": ["rf5", "audition", "envelope", "release", "program-memory"] }
   ],
   "schema_version": 1
 }

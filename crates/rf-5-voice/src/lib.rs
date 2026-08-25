@@ -29,6 +29,7 @@ const FILTER_ENVELOPE_DEPTH_OCTAVES: f32 = 6.5;
 const FILTER_MINIMUM_HZ: f32 = 16.351_599;
 const FILTER_PANEL_OCTAVES: f32 = 10.0;
 const FILTER_KEYBOARD_BASE_NOTE: f32 = 36.0;
+const RELEASE_SWITCH_OFF_CONTROL: f32 = 0.0;
 #[cfg(test)]
 const FILTER_SERVICE_CV_PANEL_POSITION: f32 = 0.2;
 #[cfg(test)]
@@ -115,19 +116,30 @@ impl Voice {
         modulation: VoiceModulation,
     ) -> f32 {
         let allocated = self.active;
+        let release_enabled = parameter_enabled(settings, Parameter::ReleaseSwitch);
+        let filter_release = if release_enabled {
+            settings.get(Parameter::FilterRelease)
+        } else {
+            RELEASE_SWITCH_OFF_CONTROL
+        };
+        let amplifier_release = if release_enabled {
+            settings.get(Parameter::AmpRelease)
+        } else {
+            RELEASE_SWITCH_OFF_CONTROL
+        };
         let filter_envelope = self.filter_envelope.next(
             sample_rate,
             quantize_analog_pot(settings.get(Parameter::FilterAttack)),
             quantize_analog_pot(settings.get(Parameter::FilterDecay)),
             quantize_analog_pot(settings.get(Parameter::FilterSustain)),
-            quantize_analog_pot(settings.get(Parameter::FilterRelease)),
+            quantize_analog_pot(filter_release),
         );
         let amplifier_envelope = self.amplifier_envelope.next(
             sample_rate,
             quantize_analog_pot(settings.get(Parameter::AmpAttack)),
             quantize_analog_pot(settings.get(Parameter::AmpDecay)),
             quantize_analog_pot(settings.get(Parameter::AmpSustain)),
-            quantize_analog_pot(settings.get(Parameter::AmpRelease)),
+            quantize_analog_pot(amplifier_release),
         );
         if self.amplifier_envelope.is_idle() {
             self.active = false;
@@ -358,6 +370,31 @@ mod tests {
             }
         }
         assert!(!voice.is_active());
+    }
+
+    #[test]
+    fn release_switch_off_uses_the_global_minimum_time() {
+        let mut enabled = Settings::default();
+        assert!(enabled.set(Parameter::AmpRelease as u32, 1.0));
+        assert!(enabled.set(Parameter::FilterRelease as u32, 1.0));
+        let mut disabled = enabled;
+        assert!(disabled.set(Parameter::ReleaseSwitch as u32, 0.0));
+        let mut long = Voice::default();
+        let mut short = Voice::default();
+        long.start(0, 60, 100, 0);
+        short.start(0, 60, 100, 0);
+        for _ in 0..4_096 {
+            let _ = long.next(48_000.0, enabled, VoiceModulation::default());
+            let _ = short.next(48_000.0, disabled, VoiceModulation::default());
+        }
+        long.release();
+        short.release();
+        for _ in 0..48_000 {
+            let _ = long.next(48_000.0, enabled, VoiceModulation::default());
+            let _ = short.next(48_000.0, disabled, VoiceModulation::default());
+        }
+        assert!(long.is_active());
+        assert!(!short.is_active());
     }
 
     #[test]

@@ -7,7 +7,7 @@
 
 pub mod hardware;
 
-pub const PATCH_PARAMETER_COUNT: usize = 47;
+pub const PATCH_PARAMETER_COUNT: usize = 48;
 pub const SCALE_NOTE_COUNT: usize = 12;
 pub const PARAMETER_COUNT: usize = PATCH_PARAMETER_COUNT + SCALE_NOTE_COUNT;
 
@@ -61,18 +61,19 @@ pub enum Parameter {
     FilterKeyboard = 44,
     Glide = 45,
     Unison = 46,
-    ScaleC = 47,
-    ScaleCSharp = 48,
-    ScaleD = 49,
-    ScaleDSharp = 50,
-    ScaleE = 51,
-    ScaleF = 52,
-    ScaleFSharp = 53,
-    ScaleG = 54,
-    ScaleGSharp = 55,
-    ScaleA = 56,
-    ScaleASharp = 57,
-    ScaleB = 58,
+    ReleaseSwitch = 47,
+    ScaleC = 48,
+    ScaleCSharp = 49,
+    ScaleD = 50,
+    ScaleDSharp = 51,
+    ScaleE = 52,
+    ScaleF = 53,
+    ScaleFSharp = 54,
+    ScaleG = 55,
+    ScaleGSharp = 56,
+    ScaleA = 57,
+    ScaleASharp = 58,
+    ScaleB = 59,
 }
 
 pub const SCALE_PARAMETERS: [Parameter; SCALE_NOTE_COUNT] = [
@@ -142,18 +143,19 @@ impl TryFrom<u32> for Parameter {
             44 => Ok(Self::FilterKeyboard),
             45 => Ok(Self::Glide),
             46 => Ok(Self::Unison),
-            47 => Ok(Self::ScaleC),
-            48 => Ok(Self::ScaleCSharp),
-            49 => Ok(Self::ScaleD),
-            50 => Ok(Self::ScaleDSharp),
-            51 => Ok(Self::ScaleE),
-            52 => Ok(Self::ScaleF),
-            53 => Ok(Self::ScaleFSharp),
-            54 => Ok(Self::ScaleG),
-            55 => Ok(Self::ScaleGSharp),
-            56 => Ok(Self::ScaleA),
-            57 => Ok(Self::ScaleASharp),
-            58 => Ok(Self::ScaleB),
+            47 => Ok(Self::ReleaseSwitch),
+            48 => Ok(Self::ScaleC),
+            49 => Ok(Self::ScaleCSharp),
+            50 => Ok(Self::ScaleD),
+            51 => Ok(Self::ScaleDSharp),
+            52 => Ok(Self::ScaleE),
+            53 => Ok(Self::ScaleF),
+            54 => Ok(Self::ScaleFSharp),
+            55 => Ok(Self::ScaleG),
+            56 => Ok(Self::ScaleGSharp),
+            57 => Ok(Self::ScaleA),
+            58 => Ok(Self::ScaleASharp),
+            59 => Ok(Self::ScaleB),
             _ => Err(()),
         }
     }
@@ -216,6 +218,7 @@ impl Default for Settings {
                 0.0,
                 0.0,
                 0.0,
+                1.0,
                 hardware::SCALE_EQUAL_TEMPERAMENT_NORMALIZED,
                 hardware::SCALE_EQUAL_TEMPERAMENT_NORMALIZED,
                 hardware::SCALE_EQUAL_TEMPERAMENT_NORMALIZED,

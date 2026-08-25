@@ -248,62 +248,67 @@
       "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
     },
     {
-      "index": 47, "id": "scale-c", "name": "C", "page": "temperament", "order": 0,
+      "index": 47, "id": "release-enable", "name": "Release", "page": "voice", "order": 3,
+      "kind": { "type": "boolean", "default": true },
+      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+    },
+    {
+      "index": 48, "id": "scale-c", "name": "C", "page": "temperament", "order": 0,
       "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5039370078740157, "step": 0.007874015748031496 },
       "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
     },
     {
-      "index": 48, "id": "scale-c-sharp", "name": "C Sharp", "page": "temperament", "order": 1,
+      "index": 49, "id": "scale-c-sharp", "name": "C Sharp", "page": "temperament", "order": 1,
       "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5039370078740157, "step": 0.007874015748031496 },
       "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
     },
     {
-      "index": 49, "id": "scale-d", "name": "D", "page": "temperament", "order": 2,
+      "index": 50, "id": "scale-d", "name": "D", "page": "temperament", "order": 2,
       "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5039370078740157, "step": 0.007874015748031496 },
       "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
     },
     {
-      "index": 50, "id": "scale-d-sharp", "name": "D Sharp", "page": "temperament", "order": 3,
+      "index": 51, "id": "scale-d-sharp", "name": "D Sharp", "page": "temperament", "order": 3,
       "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5039370078740157, "step": 0.007874015748031496 },
       "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
     },
     {
-      "index": 51, "id": "scale-e", "name": "E", "page": "temperament", "order": 4,
+      "index": 52, "id": "scale-e", "name": "E", "page": "temperament", "order": 4,
       "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5039370078740157, "step": 0.007874015748031496 },
       "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
     },
     {
-      "index": 52, "id": "scale-f", "name": "F", "page": "temperament", "order": 5,
+      "index": 53, "id": "scale-f", "name": "F", "page": "temperament", "order": 5,
       "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5039370078740157, "step": 0.007874015748031496 },
       "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
     },
     {
-      "index": 53, "id": "scale-f-sharp", "name": "F Sharp", "page": "temperament", "order": 6,
+      "index": 54, "id": "scale-f-sharp", "name": "F Sharp", "page": "temperament", "order": 6,
       "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5039370078740157, "step": 0.007874015748031496 },
       "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
     },
     {
-      "index": 54, "id": "scale-g", "name": "G", "page": "temperament", "order": 7,
+      "index": 55, "id": "scale-g", "name": "G", "page": "temperament", "order": 7,
       "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5039370078740157, "step": 0.007874015748031496 },
       "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
     },
     {
-      "index": 55, "id": "scale-g-sharp", "name": "G Sharp", "page": "temperament", "order": 8,
+      "index": 56, "id": "scale-g-sharp", "name": "G Sharp", "page": "temperament", "order": 8,
       "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5039370078740157, "step": 0.007874015748031496 },
       "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
     },
     {
-      "index": 56, "id": "scale-a", "name": "A", "page": "temperament", "order": 9,
+      "index": 57, "id": "scale-a", "name": "A", "page": "temperament", "order": 9,
       "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5039370078740157, "step": 0.007874015748031496 },
       "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
     },
     {
-      "index": 57, "id": "scale-a-sharp", "name": "A Sharp", "page": "temperament", "order": 10,
+      "index": 58, "id": "scale-a-sharp", "name": "A Sharp", "page": "temperament", "order": 10,
       "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5039370078740157, "step": 0.007874015748031496 },
       "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
     },
     {
-      "index": 58, "id": "scale-b", "name": "B", "page": "temperament", "order": 11,
+      "index": 59, "id": "scale-b", "name": "B", "page": "temperament", "order": 11,
       "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5039370078740157, "step": 0.007874015748031496 },
       "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
     }

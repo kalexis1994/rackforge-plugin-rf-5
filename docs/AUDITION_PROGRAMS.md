@@ -19,6 +19,9 @@ program in RackForge's program browser and play normally:
   notes expose the ten CEM3310 profiles;
 - `Audition - Envelope Slow` holds a pad while the independent filter and
   amplifier CEM3310 trajectories evolve through the populated timing network.
+- `Audition - Release Switch Off` deliberately stores both Release pots at
+  maximum while the V8.1 program bit forces their common minimum, making the
+  global switch audible without a UI.
 - `Audition - CA3280 Drive` sends high-level five-note chords through all ten
   oscillator mixer halves, five final VCAs, the voice summer and master VCA;
 - `Audition - Common Noise VCA` mutes both oscillators and exposes the one
@@ -49,7 +52,7 @@ or alter the serialized patch format, is cleared by loading a normal program
 or state, survives audio-device preparation order, and is replaced by the
 first physical MIDI CC1 message.
 
-All seventeen audition programs are covered by deterministic render probes for
+All eighteen audition programs are covered by deterministic render probes for
 finite output, usable level and bounded headroom. All catalog programs are
 also contract-validated, and the filter population is swept at every supported
 sample rate.

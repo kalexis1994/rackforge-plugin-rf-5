@@ -240,6 +240,7 @@ impl ControlVoltageDestination {
 
 pub const PROGRAM_COUNT: usize = 40;
 pub const PROGRAM_BYTES: usize = 24;
+pub const PROGRAM_SWITCH_COUNT: usize = 22;
 
 /// Quantize a normalized host value to the 128 positions stored by a panel pot.
 pub fn quantize_analog_pot(value: f32) -> f32 {
@@ -395,6 +396,128 @@ impl ProgramByte {
     }
 }
 
+/// V8.1 program-switch order inside the high bits of the 24 program bytes.
+///
+/// The first two groups also contain the software-only Unison and Release
+/// flags and the separately clocked keyboard switches. The final two storage
+/// bits are physically unused.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum ProgramSwitch {
+    OscillatorAPulse = 0,
+    OscillatorASaw = 1,
+    OscillatorSync = 2,
+    OscillatorBSaw = 3,
+    OscillatorBTriangle = 4,
+    OscillatorBPulse = 5,
+    OscillatorBKeyboard = 6,
+    Unison = 7,
+    PolyModOscillatorAFrequency = 8,
+    PolyModOscillatorAPulseWidth = 9,
+    PolyModFilter = 10,
+    LfoSaw = 11,
+    LfoTriangle = 12,
+    LfoSquare = 13,
+    FilterKeyboard = 14,
+    Release = 15,
+    WheelModOscillatorAFrequency = 16,
+    WheelModOscillatorBFrequency = 17,
+    WheelModOscillatorAPulseWidth = 18,
+    WheelModOscillatorBPulseWidth = 19,
+    WheelModFilter = 20,
+    OscillatorBLowFrequency = 21,
+}
+
+impl ProgramSwitch {
+    pub const fn from_storage_index(index: u8) -> Option<Self> {
+        match index {
+            0 => Some(Self::OscillatorAPulse),
+            1 => Some(Self::OscillatorASaw),
+            2 => Some(Self::OscillatorSync),
+            3 => Some(Self::OscillatorBSaw),
+            4 => Some(Self::OscillatorBTriangle),
+            5 => Some(Self::OscillatorBPulse),
+            6 => Some(Self::OscillatorBKeyboard),
+            7 => Some(Self::Unison),
+            8 => Some(Self::PolyModOscillatorAFrequency),
+            9 => Some(Self::PolyModOscillatorAPulseWidth),
+            10 => Some(Self::PolyModFilter),
+            11 => Some(Self::LfoSaw),
+            12 => Some(Self::LfoTriangle),
+            13 => Some(Self::LfoSquare),
+            14 => Some(Self::FilterKeyboard),
+            15 => Some(Self::Release),
+            16 => Some(Self::WheelModOscillatorAFrequency),
+            17 => Some(Self::WheelModOscillatorBFrequency),
+            18 => Some(Self::WheelModOscillatorAPulseWidth),
+            19 => Some(Self::WheelModOscillatorBPulseWidth),
+            20 => Some(Self::WheelModFilter),
+            21 => Some(Self::OscillatorBLowFrequency),
+            _ => None,
+        }
+    }
+
+    pub const fn parameter(self) -> Parameter {
+        match self {
+            Self::OscillatorAPulse => Parameter::OscillatorAPulse,
+            Self::OscillatorASaw => Parameter::OscillatorASaw,
+            Self::OscillatorSync => Parameter::OscillatorSync,
+            Self::OscillatorBSaw => Parameter::OscillatorBSaw,
+            Self::OscillatorBTriangle => Parameter::OscillatorBTriangle,
+            Self::OscillatorBPulse => Parameter::OscillatorBPulse,
+            Self::OscillatorBKeyboard => Parameter::OscillatorBKeyboard,
+            Self::Unison => Parameter::Unison,
+            Self::PolyModOscillatorAFrequency => Parameter::PolyModOscillatorAFrequency,
+            Self::PolyModOscillatorAPulseWidth => Parameter::PolyModOscillatorAPulseWidth,
+            Self::PolyModFilter => Parameter::PolyModFilter,
+            Self::LfoSaw => Parameter::LfoSaw,
+            Self::LfoTriangle => Parameter::LfoTriangle,
+            Self::LfoSquare => Parameter::LfoSquare,
+            Self::FilterKeyboard => Parameter::FilterKeyboard,
+            Self::Release => Parameter::ReleaseSwitch,
+            Self::WheelModOscillatorAFrequency => Parameter::WheelModOscillatorAFrequency,
+            Self::WheelModOscillatorBFrequency => Parameter::WheelModOscillatorBFrequency,
+            Self::WheelModOscillatorAPulseWidth => Parameter::WheelModOscillatorAPulseWidth,
+            Self::WheelModOscillatorBPulseWidth => Parameter::WheelModOscillatorBPulseWidth,
+            Self::WheelModFilter => Parameter::WheelModFilter,
+            Self::OscillatorBLowFrequency => Parameter::OscillatorBLowFrequency,
+        }
+    }
+}
+
+/// Encode only the controls that the original 24-byte program memory stores.
+pub fn encode_program(settings: crate::Settings) -> [ProgramByte; PROGRAM_BYTES] {
+    core::array::from_fn(|index| {
+        let pot = AnalogPot::try_from(index as u8).expect("program pot index");
+        let pot_value = (quantize_analog_pot(settings.get(pot.parameter()))
+            * (ANALOG_POT_STEPS - 1) as f32) as u8;
+        let switch_on = ProgramSwitch::from_storage_index(index as u8)
+            .is_some_and(|switch| settings.get(switch.parameter()) >= 0.5);
+        ProgramByte::from_parts(pot_value, switch_on).expect("seven-bit program pot")
+    })
+}
+
+/// Decode a 24-byte program over existing machine state.
+///
+/// Master volume, RF-5's machine-character control and Scale Mode remain
+/// untouched because none of them belongs to a Rev 3 patch record.
+pub fn decode_program(
+    raw: [ProgramByte; PROGRAM_BYTES],
+    mut settings: crate::Settings,
+) -> crate::Settings {
+    for (index, byte) in raw.into_iter().enumerate() {
+        let pot = AnalogPot::try_from(index as u8).expect("program pot index");
+        let normalized = f64::from(byte.pot_value()) / f64::from(ANALOG_POT_STEPS - 1);
+        let updated = settings.set(pot.parameter() as u32, normalized);
+        debug_assert!(updated);
+        if let Some(switch) = ProgramSwitch::from_storage_index(index as u8) {
+            let updated = settings.set(switch.parameter() as u32, f64::from(byte.switch_on()));
+            debug_assert!(updated);
+        }
+    }
+    settings
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -519,6 +642,57 @@ mod tests {
                 .expect("seven-bit pot value");
             assert_eq!(rebuilt.raw(), raw);
         }
+    }
+
+    #[test]
+    fn program_switch_map_matches_the_three_v81_latch_bytes() {
+        assert_eq!(ProgramSwitch::OscillatorAPulse as u8, 0);
+        assert_eq!(ProgramSwitch::Unison as u8, 7);
+        assert_eq!(ProgramSwitch::PolyModOscillatorAFrequency as u8, 8);
+        assert_eq!(ProgramSwitch::Release as u8, 15);
+        assert_eq!(ProgramSwitch::WheelModOscillatorAFrequency as u8, 16);
+        assert_eq!(ProgramSwitch::OscillatorBLowFrequency as u8, 21);
+        assert!(ProgramSwitch::from_storage_index(22).is_none());
+        assert!(ProgramSwitch::from_storage_index(23).is_none());
+        assert_eq!(PROGRAM_SWITCH_COUNT, 22);
+    }
+
+    #[test]
+    fn program_codec_round_trips_every_stored_control_only() {
+        let mut source = crate::Settings::default();
+        for index in 0..ANALOG_POT_COUNT as u8 {
+            let pot = AnalogPot::try_from(index).unwrap();
+            assert!(source.set(pot.parameter() as u32, f64::from(index) / 23.0));
+        }
+        for index in 0..PROGRAM_SWITCH_COUNT as u8 {
+            let switch = ProgramSwitch::from_storage_index(index).unwrap();
+            assert!(source.set(switch.parameter() as u32, f64::from(index % 2)));
+        }
+
+        let mut destination = crate::Settings::default();
+        assert!(destination.set(Parameter::MasterVolume as u32, 0.23));
+        assert!(destination.set(Parameter::VintageSpread as u32, 0.67));
+        assert!(destination.set(Parameter::ScaleE as u32, 0.31));
+        let decoded = decode_program(encode_program(source), destination);
+
+        for index in 0..ANALOG_POT_COUNT as u8 {
+            let parameter = AnalogPot::try_from(index).unwrap().parameter();
+            assert_eq!(
+                decoded.get(parameter),
+                quantize_analog_pot(source.get(parameter))
+            );
+        }
+        for index in 0..PROGRAM_SWITCH_COUNT as u8 {
+            let parameter = ProgramSwitch::from_storage_index(index)
+                .unwrap()
+                .parameter();
+            assert_eq!(decoded.get(parameter), source.get(parameter));
+        }
+        assert_eq!(decoded.get(Parameter::MasterVolume), 0.23);
+        assert_eq!(decoded.get(Parameter::VintageSpread), 0.67);
+        assert_eq!(decoded.get(Parameter::ScaleE), 0.31);
+        assert!(!encode_program(source)[22].switch_on());
+        assert!(!encode_program(source)[23].switch_on());
     }
 
     #[test]
