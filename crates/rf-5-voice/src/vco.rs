@@ -18,9 +18,10 @@ pub struct OscillatorSample {
     /// Board-level polarity delivered to oscillator-B Poly Mod.
     pub modulation: f32,
     pub wrapped: bool,
-    /// Bipolar pulses produced by capacitively coupling this oscillator's
-    /// pulse output into another CEM3340 hard-sync input.
-    pub sync_pulses: [HardSyncPulse; 2],
+    /// Bipolar pulses and their fractional positions inside this internal
+    /// sample, produced by capacitively coupling the pulse output into another
+    /// CEM3340 hard-sync input.
+    pub sync_events: [HardSyncEvent; 2],
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -29,6 +30,13 @@ pub enum HardSyncPulse {
     None,
     Positive,
     Negative,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct HardSyncEvent {
+    pub pulse: HardSyncPulse,
+    /// Position inside the current internal sample, from zero to one.
+    pub offset: f32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -68,6 +76,10 @@ const TRIANGLE_SYMMETRY: [f32; OUTPUT_PROFILE_COUNT] = [
 // Values below are expressed relative to a nominal 5 V saw half-excursion.
 const PULSE_AC_GAIN: f32 = 1.1025;
 const PULSE_MODULATION_OFFSET: f32 = 1.0125;
+// The correction spans two host samples at the four-times internal rate. A
+// wider polynomial transition is necessary when the 1%/99% hardware pulse
+// endpoints put both discontinuities inside one short reconstruction window.
+const POLY_BLEP_WIDTH: f32 = 8.0;
 
 impl Vco {
     pub fn with_phase(phase: f32) -> Self {
@@ -115,6 +127,23 @@ impl Vco {
         pulse_width: f32,
         waves: WaveSelection,
     ) -> OscillatorSample {
+        self.next_with_sync(
+            frequency,
+            sample_rate,
+            pulse_width,
+            waves,
+            [HardSyncEvent::default(); 2],
+        )
+    }
+
+    pub fn next_with_sync(
+        &mut self,
+        frequency: f32,
+        sample_rate: f32,
+        pulse_width: f32,
+        waves: WaveSelection,
+        external_sync: [HardSyncEvent; 2],
+    ) -> OscillatorSample {
         let increment = (frequency.max(0.0) / sample_rate.max(1.0)).clamp(0.0, 0.49);
         let pulse_width = pulse_width.clamp(0.0, 1.0);
         let phase = self.phase;
@@ -142,50 +171,82 @@ impl Vco {
             modulation += centered + PULSE_MODULATION_OFFSET;
         }
 
-        let advanced = phase + increment;
-        let sync_pulses = pulse_edges(phase, advanced, pulse_width);
-        let wrapped = advanced >= 1.0;
-        self.phase = if wrapped { advanced - 1.0 } else { advanced };
+        let sync_events = pulse_edges(phase, increment, pulse_width);
+        let wrapped = self.advance_with_sync(increment, external_sync);
 
         OscillatorSample {
             audio,
             modulation,
             wrapped,
-            sync_pulses,
+            sync_events,
+        }
+    }
+
+    fn advance_with_sync(&mut self, increment: f32, sync_events: [HardSyncEvent; 2]) -> bool {
+        let mut elapsed = 0.0;
+        let mut wrapped = false;
+        for event in sync_events {
+            if event.pulse == HardSyncPulse::None {
+                continue;
+            }
+            let offset = if event.offset.is_finite() {
+                event.offset.clamp(elapsed, 1.0)
+            } else {
+                elapsed
+            };
+            wrapped |= self.advance_phase(increment * (offset - elapsed));
+            self.hard_sync_pulse(event.pulse);
+            elapsed = offset;
+        }
+        wrapped | self.advance_phase(increment * (1.0 - elapsed))
+    }
+
+    fn advance_phase(&mut self, increment: f32) -> bool {
+        let advanced = self.phase + increment;
+        if advanced >= 1.0 {
+            self.phase = advanced - 1.0;
+            true
+        } else {
+            self.phase = advanced;
+            false
         }
     }
 }
 
-fn pulse_edges(phase: f32, advanced: f32, pulse_width: f32) -> [HardSyncPulse; 2] {
+fn pulse_edges(phase: f32, increment: f32, pulse_width: f32) -> [HardSyncEvent; 2] {
     if pulse_width <= 0.0 || pulse_width >= 1.0 {
-        return [HardSyncPulse::None; 2];
+        return [HardSyncEvent::default(); 2];
     }
-    let mut pulses = [HardSyncPulse::None; 2];
+    let advanced = phase + increment;
+    let mut events = [HardSyncEvent::default(); 2];
     let mut count = 0;
-    let mut push = |pulse| {
-        if count < pulses.len() {
-            pulses[count] = pulse;
+    let mut push = |pulse, distance: f32| {
+        if count < events.len() && increment > 0.0 {
+            events[count] = HardSyncEvent {
+                pulse,
+                offset: (distance / increment).clamp(0.0, 1.0),
+            };
             count += 1;
         }
     };
 
     if phase < pulse_width && advanced >= pulse_width {
-        push(HardSyncPulse::Negative);
+        push(HardSyncPulse::Negative, pulse_width - phase);
     }
     if advanced >= 1.0 {
-        push(HardSyncPulse::Positive);
+        push(HardSyncPulse::Positive, 1.0 - phase);
         let wrapped_phase = advanced - 1.0;
         if wrapped_phase >= pulse_width {
-            push(HardSyncPulse::Negative);
+            push(HardSyncPulse::Negative, 1.0 - phase + pulse_width);
         }
     }
 
-    pulses
+    events
 }
 
 fn band_limited_saw(phase: f32, increment: f32) -> f32 {
     let naive = phase * 2.0 - 1.0;
-    naive - poly_blep(phase, increment)
+    naive - poly_blep(phase, blep_width(increment))
 }
 
 fn band_limited_pulse(phase: f32, increment: f32, pulse_width: f32) -> f32 {
@@ -201,7 +262,12 @@ fn band_limited_pulse(phase: f32, increment: f32, pulse_width: f32) -> f32 {
     } else {
         phase + (1.0 - pulse_width)
     };
-    naive + poly_blep(phase, increment) - poly_blep(falling_phase, increment)
+    let correction_width = blep_width(increment);
+    naive + poly_blep(phase, correction_width) - poly_blep(falling_phase, correction_width)
+}
+
+fn blep_width(increment: f32) -> f32 {
+    (increment * POLY_BLEP_WIDTH).min(0.5)
 }
 
 fn triangle(phase: f32, symmetry: f32) -> f32 {
@@ -271,7 +337,7 @@ mod tests {
             for _ in 0..2_000 {
                 let sample = oscillator.next(440.0, 48_000.0, width, PULSE);
                 assert!((sample.audio - expected).abs() < 1.0e-6);
-                assert_eq!(sample.sync_pulses, [HardSyncPulse::None; 2]);
+                assert_eq!(sample.sync_events, [HardSyncEvent::default(); 2]);
             }
         }
     }
@@ -280,14 +346,33 @@ mod tests {
     fn one_and_ninety_nine_percent_remain_complementary_pulses() {
         let mut narrow = Vco::default();
         let mut wide = Vco::default();
-        let mut narrow_positive = 0;
-        let mut wide_positive = 0;
+        let mut narrow_sum = 0.0;
+        let mut wide_sum = 0.0;
+        let mut narrow_edges = 0;
+        let mut wide_edges = 0;
         for _ in 0..10_000 {
-            narrow_positive += (narrow.next(100.0, 10_000.0, 0.01, PULSE).audio > 0.0) as usize;
-            wide_positive += (wide.next(100.0, 10_000.0, 0.99, PULSE).audio > 0.0) as usize;
+            let narrow_sample = narrow.next(100.0, 10_000.0, 0.01, PULSE);
+            let wide_sample = wide.next(100.0, 10_000.0, 0.99, PULSE);
+            narrow_sum += narrow_sample.audio;
+            wide_sum += wide_sample.audio;
+            narrow_edges += narrow_sample
+                .sync_events
+                .iter()
+                .filter(|event| event.pulse != HardSyncPulse::None)
+                .count();
+            wide_edges += wide_sample
+                .sync_events
+                .iter()
+                .filter(|event| event.pulse != HardSyncPulse::None)
+                .count();
         }
-        assert!((narrow_positive as isize - 100).abs() < 25);
-        assert!((wide_positive as isize - 9_900).abs() < 25);
+        let narrow_mean = narrow_sum / 10_000.0;
+        let wide_mean = wide_sum / 10_000.0;
+        assert!((narrow_mean + wide_mean).abs() < 1.0e-4);
+        assert!((narrow_mean / PULSE_AC_GAIN + 0.98).abs() < 0.01);
+        assert!((wide_mean / PULSE_AC_GAIN - 0.98).abs() < 0.01);
+        assert!((narrow_edges as isize - 200).abs() <= 2);
+        assert!((wide_edges as isize - 200).abs() <= 2);
     }
 
     #[test]
@@ -316,17 +401,15 @@ mod tests {
     fn pulse_output_reports_both_capacitively_coupled_sync_polarities() {
         let mut oscillator = Vco::with_phase(0.45);
         let falling = oscillator.next(1_000.0, 10_000.0, 0.50, SAW);
-        assert_eq!(
-            falling.sync_pulses,
-            [HardSyncPulse::Negative, HardSyncPulse::None]
-        );
+        assert_eq!(falling.sync_events[0].pulse, HardSyncPulse::Negative);
+        assert!((falling.sync_events[0].offset - 0.5).abs() < 1.0e-6);
+        assert_eq!(falling.sync_events[1], HardSyncEvent::default());
 
         let mut oscillator = Vco::with_phase(0.95);
         let rising = oscillator.next(1_000.0, 10_000.0, 0.50, SAW);
-        assert_eq!(
-            rising.sync_pulses,
-            [HardSyncPulse::Positive, HardSyncPulse::None]
-        );
+        assert_eq!(rising.sync_events[0].pulse, HardSyncPulse::Positive);
+        assert!((rising.sync_events[0].offset - 0.5).abs() < 1.0e-6);
+        assert_eq!(rising.sync_events[1], HardSyncEvent::default());
     }
 
     #[test]
@@ -335,7 +418,70 @@ mod tests {
         let sample = oscillator.next(1_000.0, 10_000.0, 0.50, WaveSelection::default());
         assert_eq!(sample.audio, 0.0);
         assert_eq!(sample.modulation, 0.0);
-        assert_eq!(sample.sync_pulses[0], HardSyncPulse::Negative);
+        assert_eq!(sample.sync_events[0].pulse, HardSyncPulse::Negative);
+    }
+
+    #[test]
+    fn two_edges_inside_one_sample_are_ordered_and_fractional() {
+        let mut oscillator = Vco::with_phase(0.95);
+        let sample = oscillator.next(4_000.0, 10_000.0, 0.10, WaveSelection::default());
+        assert_eq!(sample.sync_events[0].pulse, HardSyncPulse::Positive);
+        assert!((sample.sync_events[0].offset - 0.125).abs() < 1.0e-6);
+        assert_eq!(sample.sync_events[1].pulse, HardSyncPulse::Negative);
+        assert!((sample.sync_events[1].offset - 0.375).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn external_sync_is_applied_at_its_sub_sample_position() {
+        let mut oscillator = Vco::with_phase_and_profile(0.20, 0);
+        let sample = oscillator.next_with_sync(
+            1_000.0,
+            10_000.0,
+            0.5,
+            SAW,
+            [
+                HardSyncEvent {
+                    pulse: HardSyncPulse::Positive,
+                    offset: 0.25,
+                },
+                HardSyncEvent::default(),
+            ],
+        );
+
+        let phase_at_edge = 0.20 + 0.10 * 0.25;
+        let symmetry = TRIANGLE_SYMMETRY[0];
+        let reflected = 1.0 - phase_at_edge * (1.0 - symmetry) / symmetry;
+        let expected_phase = reflected + 0.10 * 0.75;
+        assert!((oscillator.phase() - expected_phase).abs() < 1.0e-6);
+
+        let expected_audio =
+            band_limited_saw(0.20, 0.10) * (SAW_UPPER_VOLTS[0] - SAW_LOWER_VOLTS[0]) / 10.0;
+        assert!((sample.audio - expected_audio).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn invalid_or_reversed_sync_offsets_cannot_break_phase_bounds() {
+        let mut oscillator = Vco::with_phase(0.25);
+        for _ in 0..1_000 {
+            let sample = oscillator.next_with_sync(
+                9_000.0,
+                48_000.0,
+                0.5,
+                SAW,
+                [
+                    HardSyncEvent {
+                        pulse: HardSyncPulse::Positive,
+                        offset: f32::NAN,
+                    },
+                    HardSyncEvent {
+                        pulse: HardSyncPulse::Negative,
+                        offset: -10.0,
+                    },
+                ],
+            );
+            assert!(sample.audio.is_finite());
+            assert!((0.0..1.0).contains(&oscillator.phase()));
+        }
     }
 
     #[test]
@@ -411,28 +557,17 @@ mod tests {
     }
 
     #[test]
-    fn polyblep_saw_is_closer_than_a_naive_edge_to_the_band_limited_reference() {
-        let increment = 0.18;
-        let harmonic_count = libm::floorf(0.5 / increment) as usize;
-        let mut phase = 0.137;
-        let mut corrected_error = 0.0;
-        let mut naive_error = 0.0;
-        for _ in 0..4_096 {
-            let mut ideal = 0.0;
-            for harmonic in 1..=harmonic_count {
-                ideal -= 2.0 / core::f32::consts::PI
-                    * libm::sinf(2.0 * core::f32::consts::PI * harmonic as f32 * phase)
-                    / harmonic as f32;
-            }
-            let corrected = band_limited_saw(phase, increment);
-            let naive = phase * 2.0 - 1.0;
-            corrected_error += (corrected - ideal) * (corrected - ideal);
-            naive_error += (naive - ideal) * (naive - ideal);
-            phase += increment;
-            if phase >= 1.0 {
-                phase -= 1.0;
+    fn widened_polyblep_saw_is_continuous_finite_and_bounded() {
+        for increment in [0.001, 0.01, 0.10, 0.49] {
+            let edge_epsilon = blep_width(increment) * 1.0e-5;
+            let below_wrap = band_limited_saw(1.0 - edge_epsilon, increment);
+            let at_wrap = band_limited_saw(0.0, increment);
+            assert!((below_wrap - at_wrap).abs() < 1.0e-4);
+            for index in 0..10_000 {
+                let sample = band_limited_saw(index as f32 / 10_000.0, increment);
+                assert!(sample.is_finite());
+                assert!(sample.abs() <= 1.0 + f32::EPSILON);
             }
         }
-        assert!(corrected_error < naive_error * 0.7);
     }
 }

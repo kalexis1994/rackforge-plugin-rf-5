@@ -12,6 +12,8 @@ pub mod envelope;
 pub mod filter;
 mod pulse_width;
 pub mod scale;
+#[cfg(test)]
+mod spectral_tests;
 pub mod tuning;
 pub mod vca;
 pub mod vco;
@@ -19,7 +21,7 @@ pub mod vco;
 use envelope::AdsrEnvelope;
 use filter::Cem3320Filter;
 pub use tuning::note_frequency;
-use vco::{HardSyncPulse, Vco, WaveSelection};
+use vco::{Vco, WaveSelection};
 
 const INITIAL_PHASE_A: [f32; 5] = [0.07, 0.31, 0.58, 0.83, 0.19];
 const INITIAL_PHASE_B: [f32; 5] = [0.67, 0.11, 0.42, 0.74, 0.93];
@@ -224,13 +226,6 @@ impl Voice {
             let sample_b =
                 self.oscillator_b
                     .next(frequency_b, internal_rate, pulse_width_b, waves_b);
-            if sync {
-                for pulse in sample_b.sync_pulses {
-                    if pulse != HardSyncPulse::None {
-                        self.oscillator_a.hard_sync_pulse(pulse);
-                    }
-                }
-            }
             let poly_bus = poly_filter_envelope
                 + vca::poly_mod_oscillator_b(
                     sample_b.modulation,
@@ -247,11 +242,17 @@ impl Voice {
             } else {
                 0.0
             };
-            let sample_a = self.oscillator_a.next(
+            let sync_events = if sync {
+                sample_b.sync_events
+            } else {
+                [vco::HardSyncEvent::default(); 2]
+            };
+            let sample_a = self.oscillator_a.next_with_sync(
                 frequency_a * semitone_ratio(modulation.oscillator_a_semitones + poly_pitch),
                 internal_rate,
                 pulse_width::add_modulation(pulse_width_a, poly_pulse_width),
                 waves_a,
+                sync_events,
             );
             let poly_filter_octaves = if poly_filter {
                 poly_bus * POLY_MOD_FILTER_DEPTH_OCTAVES

@@ -44,6 +44,9 @@ in [`fidelity/REFERENCE_HARDWARE.md`](fidelity/REFERENCE_HARDWARE.md) and
 [`fidelity/CONTROL_SCANNING_AND_CV.md`](fidelity/CONTROL_SCANNING_AND_CV.md).
 The active oscillator candidate and its remaining uncertainty are recorded in
 [`fidelity/VCO_MODEL.md`](fidelity/VCO_MODEL.md).
+The fractional dual-edge synchronization path and its spectral acceptance
+matrix are isolated in
+[`fidelity/HARD_SYNC_MODEL.md`](fidelity/HARD_SYNC_MODEL.md).
 Its CEM3340 endpoint limits, board-level waveform weighting and distinct audio
 and modulation domains are documented in
 [`fidelity/VCO_OUTPUT_MODEL.md`](fidelity/VCO_OUTPUT_MODEL.md).

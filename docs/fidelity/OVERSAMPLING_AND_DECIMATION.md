@@ -33,6 +33,13 @@ Numerical regressions verify:
 - less than 0.0001 relative RMS at 60 kHz with a 48 kHz host rate;
 - deterministic reset and containment of non-finite input.
 
+An in-crate radix-2 spectral harness additionally evaluates complete
+oscillator-plus-decimator renders at 44.1, 48, 96 and 192 kHz. Four pitch
+regions cover saw, square, triangle and the 1%/99% pulse endpoints; periodic
+fractional hard sync is covered at three pitch regions. Energy outside the
+mathematically valid harmonic bins must remain below -40 dB relative to total
+AC energy.
+
 The passband/stopband figures describe this digital reconstruction filter, not
 a claimed analog bandwidth for the original instrument. Populated-unit output
 bandwidth and spectral measurements remain separate evidence-gated questions.

@@ -14,7 +14,9 @@ content.
 
 The active candidate now contains dual four-times-oversampled oscillators,
 hard sync and a 127-tap anti-alias decimator after the nonlinear per-voice
-filter/VCA path,
+filter/VCA path. Saw and pulse edges use a two-host-sample PolyBLEP correction,
+while both capacitively coupled hard-sync polarities retain their fractional
+position inside each internal sample,
 one shared LFO, independent pink Wheel-Mod and white audio-noise generators,
 audio-rate Poly Mod, a four-pole CEM3320-class filter,
 separate CEM3310-class RC envelopes, five-voice Unison, Glide and both
