@@ -10,7 +10,7 @@ use rf_5_contract::{
     hardware::{
         ANALOG_POT_COUNT, AnalogPot, CONTROL_LOOP_CHANGED_MICROSECONDS,
         CONTROL_LOOP_IDLE_MICROSECONDS, CONTROL_VOLTAGE_STROBE_ORDER,
-        CONTROL_VOLTAGE_STROBE_SLOT_COUNT,
+        CONTROL_VOLTAGE_STROBE_SLOT_COUNT, PANEL_POT_CONFIRMING_STEPS, analog_pot_code,
     },
 };
 
@@ -25,16 +25,58 @@ pub struct ControlTick {
 #[derive(Clone, Copy, Debug)]
 pub struct ControlScheduler {
     applied: Settings,
+    panel: PanelPotScanner,
     service_index: usize,
     samples_until_service: u32,
     cycle_samples: u32,
     changed_cycle: bool,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct PanelPotScanner {
+    accepted: Settings,
+    pending_direction: [i8; PARAMETER_COUNT],
+}
+
+impl PanelPotScanner {
+    fn new(settings: Settings) -> Self {
+        Self {
+            accepted: settings,
+            pending_direction: [0; PARAMETER_COUNT],
+        }
+    }
+
+    fn synchronize(&mut self, settings: Settings) {
+        self.accepted = settings;
+        self.pending_direction = [0; PARAMETER_COUNT];
+    }
+
+    fn scan(&mut self, target: Settings, parameter: Parameter) -> f32 {
+        debug_assert_eq!(PANEL_POT_CONFIRMING_STEPS, 2);
+        let index = parameter as usize;
+        let accepted_code = analog_pot_code(self.accepted.get(parameter));
+        let target_code = analog_pot_code(target.get(parameter));
+        let direction = target_code.cmp(&accepted_code) as i8;
+        if direction == 0 {
+            self.pending_direction[index] = 0;
+        } else if self.pending_direction[index] == direction {
+            let copied = self
+                .accepted
+                .set(parameter as u32, f64::from(target.get(parameter)));
+            debug_assert!(copied);
+            self.pending_direction[index] = 0;
+        } else {
+            self.pending_direction[index] = direction;
+        }
+        self.accepted.get(parameter)
+    }
+}
+
 impl Default for ControlScheduler {
     fn default() -> Self {
         Self {
             applied: Settings::default(),
+            panel: PanelPotScanner::new(Settings::default()),
             service_index: 0,
             samples_until_service: 1,
             cycle_samples: CONTROL_SERVICE_STEP_COUNT as u32,
@@ -46,6 +88,7 @@ impl Default for ControlScheduler {
 impl ControlScheduler {
     pub fn prepare(&mut self, target: Settings, sample_rate: f32) {
         self.applied = target;
+        self.panel.synchronize(target);
         self.begin_cycle(target, sample_rate);
     }
 
@@ -64,6 +107,13 @@ impl ControlScheduler {
         self.changed_cycle = true;
     }
 
+    /// Program/state recall replaces the stored table directly; it does not
+    /// pretend that twenty-four physical knobs moved across the panel.
+    pub fn notify_recall(&mut self, target: Settings, sample_rate: f32) {
+        self.panel.synchronize(target);
+        self.notify_change(sample_rate);
+    }
+
     pub fn next(&mut self, target: Settings, sample_rate: f32) -> ControlTick {
         if self.samples_until_service > 1 {
             self.samples_until_service -= 1;
@@ -75,9 +125,9 @@ impl ControlScheduler {
 
         let cv_strobe = if self.service_index < ANALOG_POT_COUNT {
             let pot = AnalogPot::try_from(self.service_index as u8).expect("valid scan position");
-            copy_parameter(&mut self.applied, target, pot.parameter());
+            self.scan_panel_parameter(target, pot.parameter());
             if let Some(scale_parameter) = pot.scale_parameter() {
-                copy_parameter(&mut self.applied, target, scale_parameter);
+                self.scan_panel_parameter(target, scale_parameter);
             }
             None
         } else {
@@ -123,6 +173,12 @@ impl ControlScheduler {
                 copy_parameter(&mut self.applied, target, parameter);
             }
         }
+    }
+
+    fn scan_panel_parameter(&mut self, target: Settings, parameter: Parameter) {
+        let accepted = self.panel.scan(target, parameter);
+        let copied = self.applied.set(parameter as u32, f64::from(accepted));
+        debug_assert!(copied);
     }
 
     fn with_direct_controls(&self, target: Settings) -> Settings {
@@ -195,11 +251,89 @@ mod tests {
         scheduler.prepare(initial, 48_000.0);
         scheduler.notify_change(48_000.0);
         assert_eq!(scheduler.cycle_samples, 528);
-        for _ in 0..527 {
+        for _ in 0..528 {
             let _ = scheduler.next(target, 48_000.0);
         }
-        assert_ne!(scheduler.next(target, 48_000.0).settings, initial);
+        assert_eq!(
+            scheduler.current(target).get(Parameter::FilterAttack),
+            initial.get(Parameter::FilterAttack)
+        );
+        for _ in 0..528 {
+            let _ = scheduler.next(target, 48_000.0);
+        }
         assert_eq!(scheduler.next(target, 48_000.0).settings, target);
+    }
+
+    #[test]
+    fn panel_pot_requires_two_consecutive_scans_in_one_direction() {
+        let initial = Settings::default();
+        let mut higher = initial;
+        let start = analog_pot_code(initial.get(Parameter::FilterAttack));
+        assert!(higher.set(Parameter::FilterAttack as u32, f64::from(start + 1) / 127.0));
+        let mut scheduler = ControlScheduler::default();
+        scheduler.prepare(initial, 48_000.0);
+        scheduler.notify_change(48_000.0);
+
+        for _ in 0..528 {
+            let _ = scheduler.next(higher, 48_000.0);
+        }
+        assert_eq!(
+            scheduler.current(higher).get(Parameter::FilterAttack),
+            initial.get(Parameter::FilterAttack)
+        );
+        for _ in 0..528 {
+            let _ = scheduler.next(higher, 48_000.0);
+        }
+        assert_eq!(
+            scheduler.current(higher).get(Parameter::FilterAttack),
+            higher.get(Parameter::FilterAttack)
+        );
+    }
+
+    #[test]
+    fn reversing_a_panel_move_restarts_direction_confirmation() {
+        let initial = Settings::default();
+        let start = analog_pot_code(initial.get(Parameter::FilterAttack));
+        let mut higher = initial;
+        let mut lower = initial;
+        assert!(higher.set(Parameter::FilterAttack as u32, f64::from(start + 1) / 127.0));
+        assert!(lower.set(Parameter::FilterAttack as u32, 0.0));
+        let mut scheduler = ControlScheduler::default();
+        scheduler.prepare(initial, 48_000.0);
+        scheduler.notify_change(48_000.0);
+        for target in [higher, lower] {
+            for _ in 0..528 {
+                let _ = scheduler.next(target, 48_000.0);
+            }
+        }
+        assert_eq!(
+            scheduler.current(lower).get(Parameter::FilterAttack),
+            initial.get(Parameter::FilterAttack)
+        );
+        for _ in 0..528 {
+            let _ = scheduler.next(lower, 48_000.0);
+        }
+        assert_eq!(
+            scheduler.current(lower).get(Parameter::FilterAttack),
+            lower.get(Parameter::FilterAttack)
+        );
+    }
+
+    #[test]
+    fn program_recall_bypasses_physical_pot_confirmation() {
+        let initial = Settings::default();
+        let mut recalled = initial;
+        assert!(recalled.set(Parameter::FilterAttack as u32, 0.8));
+        let mut scheduler = ControlScheduler::default();
+        scheduler.prepare(initial, 48_000.0);
+        scheduler.notify_recall(recalled, 48_000.0);
+        for _ in 0..528 {
+            let _ = scheduler.next(recalled, 48_000.0);
+        }
+        assert_eq!(
+            scheduler.current(recalled).get(Parameter::FilterAttack),
+            recalled.get(Parameter::FilterAttack)
+        );
     }
 
     #[test]

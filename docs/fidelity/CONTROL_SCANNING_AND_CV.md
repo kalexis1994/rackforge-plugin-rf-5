@@ -20,11 +20,20 @@ material fixes the scan order now encoded by
 8. Poly Mod oscillator B and filter-envelope amounts;
 9. oscillator A frequency, oscillator B frequency and oscillator B fine.
 
-The comparator path includes electrical hysteresis, and the operating software
-requires movement in the same direction across two steps before accepting a
-pot change. This is relevant to authentic panel response, but it must not be
-applied blindly to host automation until its interaction with RackForge is
-tested.
+The DAC/comparator path is a window ADC with 34 mV of electrical hysteresis.
+One 7-bit code across the panel's 5 V span is approximately 39.37 mV, so even
+the smallest representable movement exceeds that window. V8.1 nevertheless
+qualifies direction in software: a pot must compare above or below its accepted
+value on two consecutive scans before the new value enters the active table.
+RF-5 now reproduces that rule for panel/host control motion. A reversal restarts
+the confirmation, a stable one-code movement is accepted on its second scan,
+and returning to the accepted code clears the pending direction.
+
+Program and serialized-state recalls do not simulate physical pot motion. They
+synchronize the scanner and active table immediately, matching the firmware's
+separate program-unpack path while avoiding a stale physical comparison after
+recall. Master Volume remains outside both paths because it is an unscanned
+analog control on the output board.
 
 ## DAC and CV distribution
 
@@ -92,6 +101,9 @@ the original program data is not part of the product.
   changed cycle contains the 24 documented pot reads followed by the exact 40
   V8.1 strobe-address slots; 38 slots refresh real cells and two preserve the
   timing of unconnected hardware addresses.
+- Panel-pot changes cross the documented 34 mV comparator window and the V8.1
+  two-scan same-direction qualifier before entering held state. Program and
+  state recalls synchronize held and scanner state directly.
 - Automatic tune corrections belong to each physical oscillator, not to a
   single global detune control.
 - Program decoding remains independent from current UI parameter indices and

@@ -14,6 +14,9 @@ pub const LFO_COUNT: usize = 1;
 pub const ANALOG_POT_COUNT: usize = 24;
 pub const ANALOG_POT_RESOLUTION_BITS: u8 = 7;
 pub const ANALOG_POT_STEPS: u16 = 1 << ANALOG_POT_RESOLUTION_BITS;
+pub const PANEL_POT_FULL_SCALE_VOLTS: f32 = 5.0;
+pub const ADC_WINDOW_HYSTERESIS_MILLIVOLTS: f32 = 34.0;
+pub const PANEL_POT_CONFIRMING_STEPS: u8 = 2;
 
 pub const OSCILLATOR_FREQUENCY_CONCERT_POT_CODE: u8 = 48;
 pub const OSCILLATOR_FREQUENCY_CONCERT_NORMALIZED: f32 =
@@ -253,6 +256,11 @@ pub fn quantize_analog_pot(value: f32) -> f32 {
     step as f32 / (ANALOG_POT_STEPS - 1) as f32
 }
 
+/// Convert a normalized host value to the seven-bit code compared by V8.1.
+pub fn analog_pot_code(value: f32) -> u8 {
+    (quantize_analog_pot(value) * (ANALOG_POT_STEPS - 1) as f32) as u8
+}
+
 /// Hardware multiplexer order used when the CPU scans the 24 analog controls.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
@@ -489,8 +497,7 @@ impl ProgramSwitch {
 pub fn encode_program(settings: crate::Settings) -> [ProgramByte; PROGRAM_BYTES] {
     core::array::from_fn(|index| {
         let pot = AnalogPot::try_from(index as u8).expect("program pot index");
-        let pot_value = (quantize_analog_pot(settings.get(pot.parameter()))
-            * (ANALOG_POT_STEPS - 1) as f32) as u8;
+        let pot_value = analog_pot_code(settings.get(pot.parameter()));
         let switch_on = ProgramSwitch::from_storage_index(index as u8)
             .is_some_and(|switch| settings.get(switch.parameter()) >= 0.5);
         ProgramByte::from_parts(pot_value, switch_on).expect("seven-bit program pot")
@@ -704,6 +711,20 @@ mod tests {
             let normalized = step as f32 / (ANALOG_POT_STEPS - 1) as f32;
             let quantized = quantize_analog_pot(normalized);
             assert!((quantized - normalized).abs() < 1.0e-6);
+        }
+    }
+
+    #[test]
+    fn one_pot_code_exceeds_the_documented_comparator_window() {
+        let millivolts_per_code =
+            PANEL_POT_FULL_SCALE_VOLTS * 1_000.0 / (ANALOG_POT_STEPS - 1) as f32;
+        assert!(millivolts_per_code > ADC_WINDOW_HYSTERESIS_MILLIVOLTS);
+        assert_eq!(PANEL_POT_CONFIRMING_STEPS, 2);
+        for code in 0..ANALOG_POT_STEPS as u8 {
+            assert_eq!(
+                analog_pot_code(code as f32 / (ANALOG_POT_STEPS - 1) as f32),
+                code
+            );
         }
     }
 }

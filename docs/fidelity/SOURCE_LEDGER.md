@@ -36,6 +36,10 @@ signed C4-C3 difference repeatedly subtracted to create the C2-C0 automatic
 tune entries. This conclusion is independently tied to the technical manual's
 C3-C9 measurement and C0-C2 extrapolation description. Offsets
 `0x0235-0x023D` are admitted for the equal-tempered code-64 power-up state.
+Offsets `0x02C9-0x0333` are admitted for the 24-pot window-ADC scan, its
+increment/decrement comparison and its same-direction change qualification.
+The technical manual independently fixes the 34 mV comparator hysteresis and
+the requirement for two movements in one direction.
 Offsets `0x0383-0x03E9` are admitted for normal/LO FREQ coarse-code assembly, keyboard
 inclusion and the 108-semitone cap. Offsets `0x03EE-0x0483`, the multiply data
 they address at `0x0A00-0x0BDF`, and the DAC

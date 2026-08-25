@@ -21,6 +21,9 @@ envelopes, and every original RF-5 patch is packed through the recovered V8.1
 CA3280 mixer, final-voice and master-volume
 transfers now feed the documented five-input summer and output buffer, while a
 source-backed control scheduler recreates the held 6/11 ms panel cycle. It
+retains the physical window ADC's 34 mV hysteresis boundary and the V8.1
+two-scan same-direction pot qualification, while program and state recalls
+synchronize immediately through their separate path. It
 also reconstructs the ten-VCO automatic-tune path with a 2.5 MHz period
 counter, fourteen-bit successive approximation and per-semitone bias
 interpolation, including the operating ROM's exact C4-C3 extrapolation for its

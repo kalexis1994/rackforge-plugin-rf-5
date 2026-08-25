@@ -440,7 +440,7 @@ impl Engine {
         }
         self.settings = decode_program(encode_program(source), self.settings);
         self.audition_mod_wheel = program.audition_mod_wheel;
-        self.controls.notify_change(self.sample_rate);
+        self.controls.notify_recall(self.settings, self.sample_rate);
         self.rebuild_allocation_for_mode();
         true
     }
@@ -515,7 +515,7 @@ impl Engine {
     fn install_loaded_settings(&mut self, settings: Settings) {
         self.settings = settings;
         self.audition_mod_wheel = None;
-        self.controls.notify_change(self.sample_rate);
+        self.controls.notify_recall(self.settings, self.sample_rate);
         self.rebuild_allocation_for_mode();
     }
 
