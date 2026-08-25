@@ -42,6 +42,12 @@ pub const TUNE_BIAS_BYTES: usize =
 pub const IDEAL_SEMITONE_CONTROL_VOLTS: f32 = 0.083;
 
 pub const CONTROL_VOLTAGE_DESTINATION_COUNT: usize = 38;
+/// V8.1 always addresses five complete banks of eight S/H positions. The
+/// final address on PCB3 and PCB4 is physically unconnected, leaving 38 real
+/// destinations inside 40 firmware strobe slots.
+pub const CONTROL_VOLTAGE_STROBE_SLOT_COUNT: usize = 40;
+pub const UNUSED_CONTROL_VOLTAGE_STROBE_SLOT_COUNT: usize =
+    CONTROL_VOLTAGE_STROBE_SLOT_COUNT - CONTROL_VOLTAGE_DESTINATION_COUNT;
 pub const COMMON_AND_PATCH_SAMPLE_HOLD_COUNT: usize = 23;
 pub const INDIVIDUAL_OSCILLATOR_AND_FILTER_SAMPLE_HOLD_COUNT: usize = 15;
 pub const CONTROL_LOOP_IDLE_MICROSECONDS: u32 = 6_000;
@@ -49,8 +55,9 @@ pub const CONTROL_LOOP_CHANGED_MICROSECONDS: u32 = 11_000;
 pub const SAMPLE_HOLD_SERVICE_DROOP_LIMIT_VOLTS_PER_7_MS: f32 = 0.0005;
 
 /// Logical sample/hold destinations grouped as shown on SD333 and SD430.
-/// The numeric order is RF-5's stable control-plane vocabulary; exact ROM
-/// strobe order remains an independently testable hypothesis.
+/// The numeric order is RF-5's stable control-plane vocabulary. Physical V8.1
+/// strobe addresses are represented separately because each board also has an
+/// unconnected eighth position.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
 pub enum ControlVoltageDestination {
@@ -93,6 +100,56 @@ pub enum ControlVoltageDestination {
     Filter4 = 36,
     Filter5 = 37,
 }
+
+/// Exact V8.1 S/H address sequence recovered from the five eight-address
+/// firmware passes at 0x0583-0x05c4 and corroborated by SD333/SD430.
+///
+/// Slots 0-23 address the three common-CV 4051s on PCB3. Slot 23 is U355 X7,
+/// which is marked NC. Slots 24-39 address the two individual-CV 4051s on
+/// PCB4. Slot 39 is U405 X7, also marked NC.
+pub const CONTROL_VOLTAGE_STROBE_ORDER: [Option<ControlVoltageDestination>;
+    CONTROL_VOLTAGE_STROBE_SLOT_COUNT] = [
+    Some(ControlVoltageDestination::FilterAttack),
+    Some(ControlVoltageDestination::FilterDecay),
+    Some(ControlVoltageDestination::FilterSustain),
+    Some(ControlVoltageDestination::FilterRelease),
+    Some(ControlVoltageDestination::AmplifierAttack),
+    Some(ControlVoltageDestination::AmplifierDecay),
+    Some(ControlVoltageDestination::AmplifierSustain),
+    Some(ControlVoltageDestination::AmplifierRelease),
+    Some(ControlVoltageDestination::FilterCutoff),
+    Some(ControlVoltageDestination::FilterEnvelopeAmount),
+    Some(ControlVoltageDestination::OscillatorBMix),
+    Some(ControlVoltageDestination::OscillatorBPulseWidth),
+    Some(ControlVoltageDestination::OscillatorAMix),
+    Some(ControlVoltageDestination::OscillatorAPulseWidth),
+    Some(ControlVoltageDestination::NoiseMix),
+    Some(ControlVoltageDestination::FilterResonance),
+    Some(ControlVoltageDestination::Glide),
+    Some(ControlVoltageDestination::LfoFrequency),
+    Some(ControlVoltageDestination::WheelModSourceMix),
+    Some(ControlVoltageDestination::PolyModOscillatorBAmount),
+    Some(ControlVoltageDestination::PolyModFilterEnvelopeAmount),
+    Some(ControlVoltageDestination::Unison),
+    Some(ControlVoltageDestination::SequencerOutput),
+    None,
+    Some(ControlVoltageDestination::Oscillator1A),
+    Some(ControlVoltageDestination::Oscillator1B),
+    Some(ControlVoltageDestination::Oscillator2A),
+    Some(ControlVoltageDestination::Oscillator2B),
+    Some(ControlVoltageDestination::Oscillator3A),
+    Some(ControlVoltageDestination::Oscillator3B),
+    Some(ControlVoltageDestination::Oscillator4A),
+    Some(ControlVoltageDestination::Oscillator4B),
+    Some(ControlVoltageDestination::Oscillator5A),
+    Some(ControlVoltageDestination::Oscillator5B),
+    Some(ControlVoltageDestination::Filter1),
+    Some(ControlVoltageDestination::Filter2),
+    Some(ControlVoltageDestination::Filter3),
+    Some(ControlVoltageDestination::Filter4),
+    Some(ControlVoltageDestination::Filter5),
+    None,
+];
 
 impl TryFrom<u8> for ControlVoltageDestination {
     type Error = ();
@@ -407,6 +464,34 @@ mod tests {
                 COMMON_AND_PATCH_SAMPLE_HOLD_COUNT + AUDIO_OSCILLATOR_COUNT + voice
             );
         }
+    }
+
+    #[test]
+    fn firmware_strobe_order_contains_every_destination_once() {
+        let mut seen = [false; CONTROL_VOLTAGE_DESTINATION_COUNT];
+        for destination in CONTROL_VOLTAGE_STROBE_ORDER.into_iter().flatten() {
+            let index = destination as usize;
+            assert!(!seen[index]);
+            seen[index] = true;
+        }
+        assert!(seen.into_iter().all(|strobed| strobed));
+        assert_eq!(
+            CONTROL_VOLTAGE_STROBE_ORDER
+                .into_iter()
+                .filter(Option::is_none)
+                .count(),
+            UNUSED_CONTROL_VOLTAGE_STROBE_SLOT_COUNT
+        );
+    }
+
+    #[test]
+    fn unconnected_strobe_slots_end_each_physical_board_group() {
+        assert_eq!(CONTROL_VOLTAGE_STROBE_ORDER[23], None);
+        assert_eq!(CONTROL_VOLTAGE_STROBE_ORDER[39], None);
+        assert_eq!(
+            CONTROL_VOLTAGE_STROBE_ORDER[24],
+            Some(ControlVoltageDestination::Oscillator1A)
+        );
     }
 
     #[test]

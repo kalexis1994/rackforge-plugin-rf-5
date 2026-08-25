@@ -39,9 +39,11 @@ C3-C9 measurement and C0-C2 extrapolation description. Offsets
 Offsets `0x0383-0x03E9` are admitted for normal/LO FREQ coarse-code assembly, keyboard
 inclusion and the 108-semitone cap. Offsets `0x03EE-0x0483`, the multiply data
 they address at `0x0A00-0x0BDF`, and the DAC
-write paths at `0x0155-0x01DB` and `0x0583-0x05C4` are admitted for the signed
-runtime interpolation, its lookup-rounding behavior and its 128-writable-code
-semitone scale. Offsets `0x0484-0x04BF` and lookup bytes `0x0BE7-0x0BF2` are
+write paths at `0x0155-0x01DB` are admitted for the signed runtime
+interpolation, its lookup-rounding behavior and its 128-writable-code semitone
+scale. The complete output loop at `0x0583-0x05C4` is additionally admitted for
+the five banks of eight S/H strobe addresses and their two unconnected terminal
+slots. Offsets `0x0484-0x04BF` and lookup bytes `0x0BE7-0x0BF2` are
 admitted for the active twelve-note Scale Mode pot map, signed half-semitone
 arithmetic and post-interpolation application. Those conclusions are independently corroborated by the
 manuals' keyboard/frequency/LO FREQ CV sums, ten-octave bias-table,

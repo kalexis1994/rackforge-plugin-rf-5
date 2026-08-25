@@ -9,11 +9,12 @@ use rf_5_contract::{
     PARAMETER_COUNT, Parameter, Settings,
     hardware::{
         ANALOG_POT_COUNT, AnalogPot, CONTROL_LOOP_CHANGED_MICROSECONDS,
-        CONTROL_LOOP_IDLE_MICROSECONDS, CONTROL_VOLTAGE_DESTINATION_COUNT,
+        CONTROL_LOOP_IDLE_MICROSECONDS, CONTROL_VOLTAGE_STROBE_ORDER,
+        CONTROL_VOLTAGE_STROBE_SLOT_COUNT,
     },
 };
 
-const CONTROL_SERVICE_STEP_COUNT: usize = ANALOG_POT_COUNT + CONTROL_VOLTAGE_DESTINATION_COUNT;
+const CONTROL_SERVICE_STEP_COUNT: usize = ANALOG_POT_COUNT + CONTROL_VOLTAGE_STROBE_SLOT_COUNT;
 
 #[derive(Clone, Copy, Debug)]
 pub struct ControlTick {
@@ -83,7 +84,8 @@ impl ControlScheduler {
             if self.service_index == ANALOG_POT_COUNT {
                 self.copy_switch_latches(target);
             }
-            Some(self.service_index - ANALOG_POT_COUNT)
+            let strobe_slot = self.service_index - ANALOG_POT_COUNT;
+            CONTROL_VOLTAGE_STROBE_ORDER[strobe_slot].map(|destination| destination as usize)
         };
         self.service_index += 1;
 
@@ -167,6 +169,7 @@ fn service_spacing(cycle_samples: u32, service_index: usize) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rf_5_contract::hardware::CONTROL_VOLTAGE_DESTINATION_COUNT;
 
     #[test]
     fn unchanged_cycle_is_exactly_six_milliseconds() {
@@ -228,5 +231,28 @@ mod tests {
             }
         }
         assert!(strobed.into_iter().all(|value| value));
+    }
+
+    #[test]
+    fn cv_writes_follow_the_v81_physical_strobe_sequence() {
+        let settings = Settings::default();
+        let mut scheduler = ControlScheduler::default();
+        scheduler.prepare(settings, 48_000.0);
+        let mut observed = [None; CONTROL_VOLTAGE_STROBE_SLOT_COUNT];
+        let mut strobe_slot = 0;
+        for _ in 0..288 {
+            let service_due = scheduler.samples_until_service == 1;
+            let before = scheduler.service_index;
+            let tick = scheduler.next(settings, 48_000.0);
+            if service_due && before >= ANALOG_POT_COUNT {
+                observed[strobe_slot] = tick.cv_strobe;
+                strobe_slot += 1;
+            }
+        }
+        assert_eq!(strobe_slot, CONTROL_VOLTAGE_STROBE_SLOT_COUNT);
+        assert_eq!(
+            observed,
+            CONTROL_VOLTAGE_STROBE_ORDER.map(|destination| destination.map(|value| value as usize))
+        );
     }
 }

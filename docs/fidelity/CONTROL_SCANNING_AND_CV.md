@@ -42,12 +42,15 @@ admitted 0-5 V control span. Other destinations remain isolated behind the
 existing candidate mapping until an equally specific electrical anchor is
 available.
 
-CV distribution is sequential. The DAC services 38 sample-and-hold
+CV distribution is sequential. The DAC services 38 connected sample-and-hold
 destinations: 23 common/patch destinations on the computer board and 15
-individual oscillator/filter destinations on the voice board. A normal control
-loop is approximately 6 ms and extends to roughly 11 ms when state changes.
-The manual treats 0.5 mV of droop over 7 ms as the upper service expectation,
-not as a nominal modulation source.
+individual oscillator/filter destinations on the voice board. V8.1 nevertheless
+walks five complete groups of eight strobe addresses. U355 X7 at the end of the
+PCB3 group and U405 X7 at the end of the PCB4 group are unconnected, so the
+firmware executes 40 address slots while only 38 cells acquire a voltage. A
+normal control loop is approximately 6 ms and extends to roughly 11 ms when
+state changes. The manual treats 0.5 mV of droop over 7 ms as the upper service
+expectation, not as a nominal modulation source.
 
 ## Program memory
 
@@ -68,7 +71,9 @@ the original program data is not part of the product.
 - Oscillator pitch cannot share the coarse seven-bit path used by general CVs.
 - Control-rate stepping and sample/hold behaviour now live in a dedicated
   scheduler, separate from audio-rate modulation. One 6 ms unchanged or 11 ms
-  changed cycle contains the 24 documented pot reads and all 38 CV writes.
+  changed cycle contains the 24 documented pot reads followed by the exact 40
+  V8.1 strobe-address slots; 38 slots refresh real cells and two preserve the
+  timing of unconnected hardware addresses.
 - Automatic tune corrections belong to each physical oscillator, not to a
   single global detune control.
 - Program decoding must remain independent from current UI parameter indices.
@@ -82,8 +87,8 @@ analog path to the master CA3280, and program changes preserve its value.
 
 The physical machine refreshes 38 DAC destinations, including individual
 oscillator and filter sample-and-holds. The active candidate now models all 38
-cells, their sequential strobes and bounded leakage. The ten oscillator cells
-receive independent automatic-tune corrections at fourteen-bit resolution;
-the five filter cells retain per-voice keyboard CV. Exact operating-ROM strobe
-order and measured leakage populations remain open and are isolated in
-[`SAMPLE_HOLD_MODEL.md`](SAMPLE_HOLD_MODEL.md).
+cells, their exact PCB3-then-PCB4 V8.1 strobe order, both unconnected address
+slots and bounded leakage. The ten oscillator cells receive independent
+automatic-tune corrections at fourteen-bit resolution; the five filter cells
+retain per-voice keyboard CV. Measured leakage populations remain open and are
+isolated in [`SAMPLE_HOLD_MODEL.md`](SAMPLE_HOLD_MODEL.md).
