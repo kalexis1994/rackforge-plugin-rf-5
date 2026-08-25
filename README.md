@@ -16,7 +16,8 @@ The active candidate now contains dual oversampled oscillators, hard sync,
 one shared LFO, independent pink Wheel-Mod and white audio-noise generators,
 audio-rate Poly Mod, a four-pole CEM3320-class filter,
 separate CEM3310-class RC envelopes, five-voice Unison, Glide and both
-performance wheels. The global programmable Release switch now drives both
+performance wheels, including the pitch wheel's SD334 diode deadband. The
+global programmable Release switch now drives both
 envelopes, and every original RF-5 patch is packed through the recovered V8.1
 24-byte program format with 24 seven-bit pots and 22 mapped switches. Separate
 CA3280 mixer, final-voice and master-volume
@@ -84,7 +85,7 @@ bash tools/build-package.sh
 
 The package is written to `artifacts/rf-5-0.1.0.rfplugin`. GitHub Actions tests
 x86-64 and ARM64 before publishing the portable package as a workflow artifact.
-The audition command writes twenty-one unnormalized listening files and their metrics
+The audition command writes twenty-two unnormalized listening files and their metrics
 to `artifacts/auditions`; see
 [`docs/AUDITION_RENDERER.md`](docs/AUDITION_RENDERER.md).
 

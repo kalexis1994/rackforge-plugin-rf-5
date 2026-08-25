@@ -7,6 +7,7 @@ mod glide;
 mod lfo;
 mod noise;
 mod output;
+mod pitch_wheel;
 mod programs;
 mod wheel_mod;
 
@@ -31,7 +32,6 @@ const PRE_SCALE_PATCH_PARAMETER_COUNT: usize = 47;
 const PRE_SCALE_STATE_BYTES: usize = PRE_SCALE_PATCH_PARAMETER_COUNT * 4;
 const PRE_RELEASE_PARAMETER_COUNT: usize = 59;
 const PRE_RELEASE_STATE_BYTES: usize = PRE_RELEASE_PARAMETER_COUNT * 4;
-const PITCH_WHEEL_RANGE_SEMITONES: f32 = 7.0;
 
 #[derive(Clone, Copy, Debug, Default)]
 struct HeldNote {
@@ -324,7 +324,7 @@ impl Engine {
             }
             0xe0 => {
                 let value = u16::from(data[1] & 0x7f) | (u16::from(data[2] & 0x7f) << 7);
-                self.pitch_wheel = pitch_wheel_normalized(value);
+                self.pitch_wheel = pitch_wheel::normalized_output(value);
             }
             _ => {}
         }
@@ -341,7 +341,7 @@ impl Engine {
         self.vco_drift.advance(self.sample_rate);
         let drift_character = applied_settings.get(Parameter::VintageSpread);
         let glide_offset = self.advance_glide(applied_settings);
-        let performance_pitch = self.pitch_wheel * PITCH_WHEEL_RANGE_SEMITONES + glide_offset;
+        let performance_pitch = self.pitch_wheel * pitch_wheel::RANGE_SEMITONES + glide_offset;
         let lfo_sample = self.lfo.next(
             self.sample_rate,
             applied_settings.get(Parameter::LfoFrequency),
@@ -633,15 +633,6 @@ fn destination_value(settings: Settings, parameter: Parameter, value: f32) -> f3
     }
 }
 
-fn pitch_wheel_normalized(value: u16) -> f32 {
-    let value = value.min(16_383);
-    if value < 8_192 {
-        (f32::from(value) - 8_192.0) / 8_192.0
-    } else {
-        (f32::from(value) - 8_192.0) / 8_191.0
-    }
-}
-
 #[cfg(test)]
 mod tests {
     extern crate std;
@@ -695,13 +686,13 @@ mod tests {
 
     #[test]
     fn pitch_wheel_uses_the_full_fourteen_bit_midi_range() {
-        assert_eq!(pitch_wheel_normalized(0), -1.0);
-        assert_eq!(pitch_wheel_normalized(8_192), 0.0);
-        assert_eq!(pitch_wheel_normalized(16_383), 1.0);
+        assert_eq!(pitch_wheel::normalized_output(0), -1.0);
+        assert_eq!(pitch_wheel::normalized_output(8_192), 0.0);
+        assert_eq!(pitch_wheel::normalized_output(16_383), 1.0);
 
         let mut engine = Engine::default();
         engine.handle_midi([0xe0, 0, 127]);
-        assert!((engine.pitch_wheel - (16_256.0 - 8_192.0) / 8_191.0).abs() < 1.0e-6);
+        assert_eq!(engine.pitch_wheel, pitch_wheel::normalized_output(16_256));
     }
 
     #[test]

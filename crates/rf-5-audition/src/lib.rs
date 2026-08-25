@@ -405,7 +405,34 @@ fn scenes() -> Vec<Scene> {
             scale_codes: EQUAL_TEMPERAMENT,
             events: chord_sequence(&[(0.20, 2.20, &[48, 55, 60])]),
         },
+        Scene {
+            id: "22_pitch_wheel_deadband",
+            program: "baseline-lead",
+            description: "Centred, sub-threshold and bipolar pitch-wheel moves through the SD334 diode deadband",
+            scale_codes: EQUAL_TEMPERAMENT,
+            events: pitch_wheel_sequence(),
+        },
     ]
+}
+
+fn pitch_wheel_sequence() -> Vec<MidiAction> {
+    [
+        (0.20, [0x90, 57, 112]),
+        (0.80, [0xe0, 16, 67]),
+        (1.30, [0xe0, 127, 111]),
+        (2.30, [0xe0, 0, 64]),
+        (2.80, [0xe0, 0, 16]),
+        (3.80, [0xe0, 0, 64]),
+        (4.30, [0xe0, 112, 60]),
+        (4.80, [0xe0, 0, 64]),
+        (5.20, [0x80, 57, 0]),
+    ]
+    .into_iter()
+    .map(|(seconds, data)| MidiAction {
+        frame: seconds_to_frame(seconds),
+        data,
+    })
+    .collect()
 }
 
 fn voice_assignment_sequence() -> Vec<MidiAction> {

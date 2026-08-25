@@ -11,11 +11,20 @@ polyphonic playing. The original keyboard has neither velocity nor aftertouch.
 The original owner's manual further identifies the pitch-wheel excursion as
 approximately a fifth in both directions.
 
+SD334 places anti-parallel 1N914 diodes D315/D316 between the 100 kohm R1
+wheel wiper and the tune path. The service procedure centres P301-7 to 0 V,
+allows only +/-0.05 V while mechanically detented and then trims the residual
+summer contribution back to 0.000 V. After the diodes conduct, R3177's 1 Mohm
+input and the 100 kohm master-summer feedback attenuate the wheel voltage by
+ten before it reaches both oscillator master sums.
+
 ## Active candidate
 
 - MIDI pitch bend consumes the complete 14-bit message, has an exact centre
-  and applies the documented approximately plus or minus seven semitones to
-  both VCOs.
+  and passes through the SD334 diode deadband before applying the documented
+  approximately plus or minus seven semitones to both VCOs. A 0.6 V candidate
+  1N914 forward drop and the populated 0.1 downstream gain produce a 9.33%
+  centre deadband while preserving both serviced endpoints.
 - CC1 remains the live modulation-wheel amount and is not stored in programs.
 - MIDI CC64 defers key releases until the sustain pedal rises, in both
   polyphonic and Unison allocation.
@@ -41,16 +50,21 @@ approximately a fifth in both directions.
 
 ## Bounded uncertainty
 
-The feature routing, pitch-wheel span, polyphonic assignment, Unison
+The feature routing, pitch-wheel topology/span, polyphonic assignment, Unison
 priority/retrigger rules, Glide topology, populated divider/timing components
-and service limits are accepted. Q309 temperature and device population, the
-absolute CA3280 current, capacitor tolerance and the serviced unit's time at
-panel 10 remain unmeasured. The five-second boundary is deliberately isolated
-as one replaceable absolute anchor; the relative panel curve is circuit-derived.
+and service limits are accepted. The exact D315/D316 forward drops and R1's
+mechanical endpoint are unmeasured, so the deadband is an isolated candidate
+rather than a claimed measured width. Q309 temperature and device population,
+the absolute CA3280 current, capacitor tolerance and the serviced unit's time
+at panel 10 also remain unmeasured. The five-second Glide boundary is
+deliberately isolated as one replaceable absolute anchor; the relative panel
+curve is circuit-derived.
 
 ## Acceptance tests
 
 - 14-bit pitch bend reaches exact negative, centre and positive endpoints;
+- centred and service-tolerance wheel values remain inside the diode deadband,
+  and the complete transfer is symmetric, bounded and monotonic;
 - every one of the 128 Glide positions is finite and monotonically slower;
 - the populated divider produces 0.13145 V across Q309's control span and its
   matched-pair law produces the bounded full-range rate ratio;
