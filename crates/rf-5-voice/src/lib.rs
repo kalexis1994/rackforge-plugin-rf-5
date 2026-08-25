@@ -10,6 +10,7 @@ mod decimator;
 pub mod drift;
 pub mod envelope;
 pub mod filter;
+pub mod poly_mod;
 mod pulse_width;
 pub mod scale;
 #[cfg(test)]
@@ -26,9 +27,6 @@ use vco::{Vco, WaveSelection};
 const INITIAL_PHASE_A: [f32; 5] = [0.07, 0.31, 0.58, 0.83, 0.19];
 const INITIAL_PHASE_B: [f32; 5] = [0.67, 0.11, 0.42, 0.74, 0.93];
 const OSCILLATOR_OVERSAMPLING: usize = 4;
-const POLY_MOD_PITCH_DEPTH_SEMITONES: f32 = 48.0;
-const POLY_MOD_PULSE_WIDTH_DEPTH: f32 = 0.48;
-const POLY_MOD_FILTER_DEPTH_OCTAVES: f32 = 4.5;
 const FILTER_ENVELOPE_DEPTH_OCTAVES: f32 = 6.5;
 const FILTER_MINIMUM_HZ: f32 = 16.351_599;
 const FILTER_PANEL_OCTAVES: f32 = 10.0;
@@ -233,13 +231,14 @@ impl Voice {
                     poly_oscillator_b_amount,
                     self.voice_index,
                 );
+            let poly_destinations = poly_mod::destinations(poly_bus);
             let poly_pitch = if poly_frequency_a {
-                poly_bus * POLY_MOD_PITCH_DEPTH_SEMITONES
+                poly_destinations.oscillator_a_semitones
             } else {
                 0.0
             };
             let poly_pulse_width = if poly_pulse_width_a {
-                poly_bus * POLY_MOD_PULSE_WIDTH_DEPTH
+                poly_destinations.oscillator_a_pulse_width
             } else {
                 0.0
             };
@@ -256,7 +255,7 @@ impl Voice {
                 sync_events,
             );
             let poly_filter_octaves = if poly_filter {
-                poly_bus * POLY_MOD_FILTER_DEPTH_OCTAVES
+                poly_destinations.filter_octaves
             } else {
                 0.0
             };

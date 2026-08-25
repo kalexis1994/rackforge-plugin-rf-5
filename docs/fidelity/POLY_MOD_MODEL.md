@@ -32,16 +32,28 @@ waveforms contribute to the source bus. Hard sync is a separate route.
 - The filter destination enters the four-pole CEM3320 candidate independently
   on every internal substep, preserving its audio-rate content.
 - Source amounts are additive and destinations can be enabled independently.
+- The two amount VCAs now feed one normalized PMOD bus boundary. One candidate
+  1.2 V/unit conversion is applied before every destination, rather than
+  assigning three unrelated maximum depths.
+- Oscillator-A frequency follows R4357 (30.1 kohm) relative to the calibrated
+  100 kohm, one-volt-per-octave pitch path. A unit PMOD bus therefore spans
+  approximately 47.84 semitones with the current voltage anchor.
+- Oscillator-A pulse width follows R4112 (30.1 kohm), U432 feedback R4162
+  (52.3 kohm) and the CEM3340's 5 V duty-cycle range, producing approximately
+  0.417 normalized duty-cycle units per unit bus.
+- Filter cutoff follows R4181 (54.9 kohm) relative to the 100 kohm calibrated
+  common filter input. The shared per-voice FIL 1 SCALE stage cancels from
+  that ratio, producing approximately 2.186 octaves per unit bus.
 
 ## Bounded uncertainty
 
 The circuit and service procedure establish routing, polarity, active versus
-cut-off linearizing terminals and balance trims. The CA3280 population is
-bounded by its data-sheet output-current ratios, but populated-device gain and
-overload remain unmeasured. Candidate maximum depths are therefore isolated
-constants: 48 semitones for oscillator-A
-frequency, 0.48 normalized units for pulse width and 4.5 octaves for filter
-cutoff. They are hypotheses to calibrate, not measured specifications.
+cut-off linearizing terminals, destination resistance ratios and balance
+trims. The CA3280 population is bounded by its data-sheet output-current
+ratios, but the loaded voltage at U431's PMOD buffer remains unmeasured. RF-5
+therefore retains one explicit 1.2 V/unit bus anchor. A populated-unit PMOD
+voltage measurement can replace it and recalibrate all three destinations
+together without changing their accepted circuit ratios.
 
 The direct filter-envelope cutoff depth is also an isolated candidate. Both
 envelopes now use the CEM3310 true-RC candidate documented in
@@ -55,6 +67,8 @@ envelopes now use the CEM3310 true-RC candidate documented in
 - Poly Mod amount rises monotonically and its two CA3280 modes retain their
   distinct strong-signal ranges;
 - frequency and filter destinations produce distinct renders;
+- all three destination depths retain the populated SD431 resistor ratios and
+  share one replaceable PMOD-bus voltage anchor;
 - both envelopes trigger and release independently;
 - the expanded parameter state round-trips exactly;
 - all workspace tests remain finite and deterministic.
