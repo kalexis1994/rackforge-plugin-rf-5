@@ -12,11 +12,12 @@ two populated 3.3 kohm resistors. Q410 is a grounded-base Fairchild 2N4250 PNP;
 its emitter junction therefore converts CEM3310 voltage to CA3280 IABC current
 rather than passing a normalized envelope value directly.
 
-Five equal 39 kohm input resistors feed the common inverting voice summer. A
-second linearized CA3280 applies the physical volume control, followed by an
-NE5534 buffer and the back-panel output network. Balance trimmers remove OTA
-DC offset and the service procedure separately calibrates final-VCA balance
-and per-voice volume.
+Five equal 39 kohm input resistors feed the high-impedance U480 follower, so
+the common node is a passive one-fifth average of the five low-impedance voice
+outputs. A second linearized CA3280 applies the physical volume control,
+followed by an NE5534 buffer and the back-panel output network. Balance
+trimmers remove OTA DC offset and the service procedure separately calibrates
+final-VCA balance and per-voice volume.
 
 The same OTA family also controls modulation. U378 crossfades common LFO and
 noise in opposite directions, while each voice has a linearized dual-envelope
@@ -62,9 +63,28 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
   before it enters the host-rate common summer. This keeps filter resonance,
   VCA curvature and sync products from folding through the former box-average
   stopband.
-- The five post-VCA voice signals are summed with equal gain.
+- The five post-VCA voice signals cross equal 39 kohm resistors into U480. The
+  resulting common signal is their exact passive average; this replaces the
+  former unexplained 0.18 host gain with the populated one-fifth network.
 - The master CA3280 is distinct from the per-voice VCAs and follows the
-  physical master-volume control.
+  physical master-volume control. PCB1's R113 10 kohm linear pot is loaded by
+  SD430 R4555's 100 kohm and C4184's 0.22 uF before the U480 buffer. Its loaded
+  wiper voltage is smoothed with the position-dependent Thevenin resistance,
+  rather than treating the control as an instantaneous digital multiplier.
+- Q411 is a second grounded-base 2N4250 converter. The buffered volume voltage
+  crosses R4542 and R4541, both 4.7 kohm, before reaching U479 IABC. The same
+  room-temperature junction law used for Q410 reconstructs approximately
+  468 uA at the five-volt endpoint. This turns the physical linear pot into a
+  useful audio taper: the loaded midpoint produces approximately 2.439 V and
+  42.3% of maximum control current.
+- U479 is reconstructed from the Figure 3A centre slope as a separate master
+  signal transfer. Its 68 kohm diode feed produces approximately 212 uA,
+  close to the graph's 200 uA condition. Scaling the approximate 100 uA/V
+  graph slope from 10 kohm/650 uA to the populated 15 kohm/468 uA point and
+  developing current across 20 kohm in parallel with 100 kohm gives
+  approximately 0.80 small-signal voltage gain at full volume. The same
+  rounded sixth-order graph envelope places its source-input asymptote at
+  three internal units.
 - The master-VCA output is AC-coupled by the populated 2.2 uF C4189 into the
   parallel 20 kohm/100 kohm load formed by R4562 and R4541. The resulting
   first-order high-pass corner is approximately 4.34 Hz.
@@ -81,9 +101,10 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
 ## Bounded uncertainty
 
 The device modes, routing, approximate input impedances, waveform-source
-resistors, final-VCA 20 kohm input network, Q410 identity and bias network, the
-2N4250 room-temperature base-emitter curve, equal-resistor summer, linear
-gain-versus-bias law, AC-coupling values and output topology are source-backed.
+resistors, final-VCA 20 kohm input network, Q410/Q411 identities and bias
+networks, R113/R4555/C4184 master-volume network, the 2N4250 room-temperature
+base-emitter curve, equal-resistor summer, linear gain-versus-bias law,
+AC-coupling values and output topology are source-backed.
 The deterministic population is bounded by the published 0.70-1.30
 peak-output-current ratio and kept deliberately narrower. Figure 3A is a
 printed bitmap, so the approximately four-division limit and sixth-order knee
@@ -91,8 +112,11 @@ are explicit bounded interpretations rather than digitized device
 measurements. The one-saw loading normalization, normalized voltage scale,
 Q410 temperature, overload-knee spread, populated-device matching, external
 output load and circuit-volts-to-host-full-scale conversion remain hypotheses.
-Exact THD and overload require recorded sweeps from a serviced reference
-instrument.
+The five-volt volume reference follows the documented analog control domain,
+but its populated rail and R113 end-to-end tolerance are unmeasured. U479's
+approximately 100 uA/V centre slope is read from the printed Figure 3A bitmap,
+not a numerical manufacturer table. Exact THD, gain law and overload require
+recorded sweeps from a serviced reference instrument.
 
 ## Acceptance tests
 
@@ -111,6 +135,14 @@ instrument.
   law;
 - all transfers are finite and odd-symmetric and reject non-finite input;
 - the master stage remains bounded while retaining multi-voice headroom;
+- the loaded linear volume pot reaches zero and five volts, its midpoint is
+  approximately 2.439 V, Q411 reaches 460-475 uA, and the resulting current law
+  is monotonic with an approximately 42% midpoint;
+- C4184 smoothing is monotonic and produces the same elapsed-time response at
+  48 and 96 kHz;
+- five equal 39 kohm paths produce exactly one fifth of the voice sum, U479's
+  diode current remains within 7% of Figure 3A's condition and the populated
+  full-volume small-signal voltage gain remains between 0.79 and 0.81;
 - the 4.34 Hz coupling network rejects steady DC at every supported sample
   rate while retaining the expected approximately 97.7% amplitude at 20 Hz;
 - program changes preserve the physical master volume.

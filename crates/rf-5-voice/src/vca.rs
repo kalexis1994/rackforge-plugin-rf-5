@@ -42,6 +42,38 @@ const Q410_THERMAL_VOLTAGE_VOLTS: f32 = 0.026;
 const Q410_SATURATION_CURRENT_AMPS: f32 = 4.425_527e-14;
 const Q410_NOMINAL_CONTROL_CURRENT_AMPS: f32 = 665.262_1e-6;
 const FINAL_VCA_MAXIMUM_CONTROL_RATIO: f32 = 1.067_936_5;
+// SD430 repeats the grounded-base 2N4250 conversion for the master CA3280,
+// but Q411 uses R4542 + R4541 = 9.4 kohm. PCB1's R113 is driven across the
+// five-volt analog control domain, giving approximately 468 uA at full volume.
+const MASTER_VOLUME_MAXIMUM_CV_VOLTS: f32 = 5.0;
+const MASTER_VCA_CONTROL_SERIES_RESISTANCE_OHMS: f32 = 4_700.0 + 4_700.0;
+const MASTER_VCA_NOMINAL_CONTROL_CURRENT_AMPS: f32 = 468.071_3e-6;
+// U479 is close to the Figure 3A operating point: R4561 supplies about 212 uA
+// to the diode terminal against the plotted 200 uA. Reading the graph's centre
+// gives approximately 100 uA/V with 10 kohm inputs at 650 uA IABC. SD430 uses
+// 15 kohm and the 468 uA Q411 endpoint, then develops output voltage across
+// R4562 || R4541 = 16.667 kohm. The resulting full-volume small-signal voltage
+// gain is approximately 0.8. These graph-derived values remain explicit
+// candidate anchors rather than hidden host normalization.
+const MASTER_VCA_DATASHEET_CONTROL_CURRENT_AMPS: f32 = 650.0e-6;
+const MASTER_VCA_DATASHEET_INPUT_RESISTANCE_OHMS: f32 = 10_000.0;
+const MASTER_VCA_DATASHEET_SLOPE_AMPS_PER_VOLT: f32 = 100.0e-6;
+const MASTER_VCA_INPUT_RESISTANCE_OHMS: f32 = 15_000.0;
+#[cfg(test)]
+const MASTER_VCA_DIODE_RESISTANCE_OHMS: f32 = 68_000.0;
+#[cfg(test)]
+const MASTER_VCA_POSITIVE_RAIL_VOLTS: f32 = 15.0;
+#[cfg(test)]
+const MASTER_VCA_DIODE_DROP_VOLTS: f32 = 0.6;
+const MASTER_VCA_OUTPUT_LOAD_OHMS: f32 = 1.0 / (1.0 / 20_000.0 + 1.0 / 100_000.0);
+const MASTER_VCA_NOMINAL_VOLTAGE_GAIN: f32 = MASTER_VCA_DATASHEET_SLOPE_AMPS_PER_VOLT
+    * (MASTER_VCA_DATASHEET_INPUT_RESISTANCE_OHMS / MASTER_VCA_INPUT_RESISTANCE_OHMS)
+    * (MASTER_VCA_NOMINAL_CONTROL_CURRENT_AMPS / MASTER_VCA_DATASHEET_CONTROL_CURRENT_AMPS)
+    * MASTER_VCA_OUTPUT_LOAD_OHMS;
+pub const MASTER_VCA_VOLTAGE_GAIN: f32 = MASTER_VCA_NOMINAL_VOLTAGE_GAIN;
+const MASTER_VCA_NOMINAL_LIMIT_UNITS: f32 = DATASHEET_LINEARIZED_LIMIT_VOLTS
+    * (MASTER_VCA_INPUT_RESISTANCE_OHMS / DATASHEET_LINEARIZED_INPUT_RESISTANCE_OHMS)
+    / FINAL_VCA_CIRCUIT_VOLTS_PER_UNIT;
 // TM1000D.2 section 2-5 gives approximately 100 kohm for a CA3280 input with
 // its linearizing-diode terminal cut off. SD431 feeds saw/triangle through
 // 150 kohm and pulse through 200 kohm. Conductances are normalized to the
@@ -283,7 +315,8 @@ pub fn amplifier_envelope_control(envelope: f32) -> f32 {
         return 0.0;
     }
     let envelope_volts = (envelope * ENVELOPE_NOMINAL_PEAK_VOLTS).min(ENVELOPE_MAXIMUM_PEAK_VOLTS);
-    q410_collector_current_amps(envelope_volts) / Q410_NOMINAL_CONTROL_CURRENT_AMPS
+    grounded_base_2n4250_collector_current_amps(envelope_volts, VCA_CONTROL_SERIES_RESISTANCE_OHMS)
+        / Q410_NOMINAL_CONTROL_CURRENT_AMPS
 }
 
 /// The diode-linearized and service-calibrated final VCA on one voice card.
@@ -295,9 +328,28 @@ pub fn final_voice(input: f32, control: f32, voice_index: usize) -> f32 {
     )
 }
 
-/// The diode-linearized common VCA driven by the physical volume control.
-pub fn master_output(input: f32, control: f32) -> f32 {
-    ota_transfer(input, control, LINEARIZED_INPUT_DRIVE, MASTER_VCA_PROFILE)
+/// Convert the smoothed R113 wiper voltage through Q411 and the two populated
+/// 4.7 kohm resistors to the master CA3280's normalized IABC current.
+pub fn master_volume_control_from_cv(volume_cv_volts: f32) -> f32 {
+    if !volume_cv_volts.is_finite() || volume_cv_volts <= 0.0 {
+        return 0.0;
+    }
+    grounded_base_2n4250_collector_current_amps(
+        volume_cv_volts.min(MASTER_VOLUME_MAXIMUM_CV_VOLTS),
+        MASTER_VCA_CONTROL_SERIES_RESISTANCE_OHMS,
+    ) / MASTER_VCA_NOMINAL_CONTROL_CURRENT_AMPS
+}
+
+/// The diode-linearized common VCA driven by the reconstructed Q411 current.
+pub fn master_output(input: f32, control_current_ratio: f32) -> f32 {
+    if control_current_ratio <= 0.0 || !control_current_ratio.is_finite() || !input.is_finite() {
+        return 0.0;
+    }
+    let limit = MASTER_VCA_NOMINAL_LIMIT_UNITS / MASTER_VCA_PROFILE.input_drive_ratio;
+    sixth_order_limited(input, limit)
+        * control_current_ratio.clamp(0.0, 1.0)
+        * MASTER_VCA_NOMINAL_VOLTAGE_GAIN
+        * MASTER_VCA_PROFILE.transconductance_ratio
 }
 
 fn ota_transfer(input: f32, control: f32, nominal_drive: f32, profile: OtaHalfProfile) -> f32 {
@@ -329,6 +381,12 @@ fn final_voice_transfer(input: f32, control: f32, profile: OtaHalfProfile) -> f3
     // norm on either side of unity to avoid overflow for arbitrary finite host
     // input while preserving odd symmetry and a finite current asymptote.
     let limit = FINAL_VCA_NOMINAL_LIMIT_UNITS / profile.input_drive_ratio;
+    sixth_order_limited(input, limit)
+        * control.clamp(0.0, FINAL_VCA_MAXIMUM_CONTROL_RATIO)
+        * profile.transconductance_ratio
+}
+
+fn sixth_order_limited(input: f32, limit: f32) -> f32 {
     let magnitude = input.abs();
     let ratio = magnitude / limit;
     let limited_magnitude = if ratio <= 1.0 {
@@ -341,24 +399,27 @@ fn final_voice_transfer(input: f32, control: f32, profile: OtaHalfProfile) -> f3
         let inverse_sixth = inverse_squared * inverse_squared * inverse_squared;
         limit / libm::powf(1.0 + inverse_sixth, 1.0 / FINAL_VCA_SOFT_KNEE_ORDER)
     };
-    input.signum()
-        * limited_magnitude
-        * control.clamp(0.0, FINAL_VCA_MAXIMUM_CONTROL_RATIO)
-        * profile.transconductance_ratio
+    input.signum() * limited_magnitude
 }
 
-fn q410_collector_current_amps(envelope_volts: f32) -> f32 {
-    if !envelope_volts.is_finite() || envelope_volts <= 0.0 {
+fn grounded_base_2n4250_collector_current_amps(
+    drive_volts: f32,
+    series_resistance_ohms: f32,
+) -> f32 {
+    if !drive_volts.is_finite()
+        || drive_volts <= 0.0
+        || !series_resistance_ohms.is_finite()
+        || series_resistance_ohms <= 0.0
+    {
         return 0.0;
     }
 
     // I*R + nVt*ln(I/Is) = V. With x = I*R/nVt this becomes
     // x + ln(x) = V/nVt + ln(R*Is/nVt). Three Newton steps are sufficient
     // over the admitted 0-5.3 V CEM3310 range.
-    let z = envelope_volts / Q410_THERMAL_VOLTAGE_VOLTS
+    let z = drive_volts / Q410_THERMAL_VOLTAGE_VOLTS
         + libm::logf(
-            VCA_CONTROL_SERIES_RESISTANCE_OHMS * Q410_SATURATION_CURRENT_AMPS
-                / Q410_THERMAL_VOLTAGE_VOLTS,
+            series_resistance_ohms * Q410_SATURATION_CURRENT_AMPS / Q410_THERMAL_VOLTAGE_VOLTS,
         );
     let mut normalized_current = if z >= 1.0 {
         (z - libm::logf(z)).max(f32::MIN_POSITIVE)
@@ -370,7 +431,7 @@ fn q410_collector_current_amps(envelope_volts: f32) -> f32 {
         let slope = 1.0 + 1.0 / normalized_current;
         normalized_current = (normalized_current - residual / slope).max(f32::MIN_POSITIVE);
     }
-    normalized_current * Q410_THERMAL_VOLTAGE_VOLTS / VCA_CONTROL_SERIES_RESISTANCE_OHMS
+    normalized_current * Q410_THERMAL_VOLTAGE_VOLTS / series_resistance_ohms
 }
 
 #[cfg(test)]
@@ -412,14 +473,23 @@ mod tests {
         let reconstructed_saturation = Q410_REFERENCE_CURRENT_AMPS
             * libm::expf(-Q410_REFERENCE_VBE_VOLTS / Q410_THERMAL_VOLTAGE_VOLTS);
         assert!((reconstructed_saturation / Q410_SATURATION_CURRENT_AMPS - 1.0).abs() < 1.0e-6);
-        let nominal = q410_collector_current_amps(ENVELOPE_NOMINAL_PEAK_VOLTS);
+        let nominal = grounded_base_2n4250_collector_current_amps(
+            ENVELOPE_NOMINAL_PEAK_VOLTS,
+            VCA_CONTROL_SERIES_RESISTANCE_OHMS,
+        );
         assert!((650.0e-6..=680.0e-6).contains(&nominal));
         assert!((nominal / Q410_NOMINAL_CONTROL_CURRENT_AMPS - 1.0).abs() < 1.0e-6);
-        let maximum = q410_collector_current_amps(ENVELOPE_MAXIMUM_PEAK_VOLTS) / nominal;
+        let maximum = grounded_base_2n4250_collector_current_amps(
+            ENVELOPE_MAXIMUM_PEAK_VOLTS,
+            VCA_CONTROL_SERIES_RESISTANCE_OHMS,
+        ) / nominal;
         assert!((maximum / FINAL_VCA_MAXIMUM_CONTROL_RATIO - 1.0).abs() < 1.0e-6);
 
         for envelope_volts in [0.01, 0.1, 0.5, 1.0, 2.5, 5.0, 5.3] {
-            let current = q410_collector_current_amps(envelope_volts);
+            let current = grounded_base_2n4250_collector_current_amps(
+                envelope_volts,
+                VCA_CONTROL_SERIES_RESISTANCE_OHMS,
+            );
             let junction_voltage =
                 Q410_THERMAL_VOLTAGE_VOLTS * libm::logf(current / Q410_SATURATION_CURRENT_AMPS);
             let reconstructed_voltage =
@@ -444,6 +514,68 @@ mod tests {
         assert!(maximum > 1.06);
         assert!(maximum < 1.08);
         assert_eq!(amplifier_envelope_control(2.0), maximum);
+    }
+
+    #[test]
+    fn q411_reconstructs_the_master_ca3280_control_current() {
+        let maximum = grounded_base_2n4250_collector_current_amps(
+            MASTER_VOLUME_MAXIMUM_CV_VOLTS,
+            MASTER_VCA_CONTROL_SERIES_RESISTANCE_OHMS,
+        );
+        assert!((460.0e-6..=475.0e-6).contains(&maximum));
+        assert!((maximum / MASTER_VCA_NOMINAL_CONTROL_CURRENT_AMPS - 1.0).abs() < 1.0e-6);
+        assert_eq!(master_volume_control_from_cv(0.0), 0.0);
+        assert!((master_volume_control_from_cv(5.0) - 1.0).abs() < 1.0e-6);
+        assert!((master_volume_control_from_cv(10.0) - 1.0).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn master_volume_current_has_the_grounded_base_silicon_knee() {
+        let mut previous = master_volume_control_from_cv(0.0);
+        for step in 1..=500 {
+            let current = master_volume_control_from_cv(step as f32 * 0.01);
+            assert!(current >= previous);
+            previous = current;
+        }
+        assert!(master_volume_control_from_cv(0.5) < 0.01);
+        assert!((0.40..0.45).contains(&master_volume_control_from_cv(2.44)));
+    }
+
+    #[test]
+    fn master_vca_operates_near_the_figure_3a_diode_current() {
+        let diode_current = (MASTER_VCA_POSITIVE_RAIL_VOLTS - MASTER_VCA_DIODE_DROP_VOLTS)
+            / MASTER_VCA_DIODE_RESISTANCE_OHMS;
+        assert!((205.0e-6..=220.0e-6).contains(&diode_current));
+        assert!(
+            (diode_current / 200.0e-6 - 1.0).abs() < 0.07,
+            "diode_current={diode_current}"
+        );
+    }
+
+    #[test]
+    fn populated_master_vca_has_the_graph_derived_voltage_gain() {
+        assert!((0.79..=0.81).contains(&MASTER_VCA_NOMINAL_VOLTAGE_GAIN));
+        let measured = master_output(1.0e-4, 1.0) / 1.0e-4;
+        assert!((measured / MASTER_VCA_NOMINAL_VOLTAGE_GAIN - 1.0).abs() < 1.0e-6);
+        assert_eq!(MASTER_VCA_NOMINAL_LIMIT_UNITS, 3.0);
+    }
+
+    #[test]
+    fn master_vca_transfer_is_odd_monotonic_and_bounded() {
+        let limit = MASTER_VCA_NOMINAL_LIMIT_UNITS / MASTER_VCA_PROFILE.input_drive_ratio;
+        let expected_asymptote = limit * MASTER_VCA_NOMINAL_VOLTAGE_GAIN;
+        let positive = master_output(f32::MAX, 1.0);
+        let negative = master_output(-f32::MAX, 1.0);
+        assert!(positive.is_finite());
+        assert!((positive - expected_asymptote).abs() < 1.0e-5);
+        assert!((positive + negative).abs() < 1.0e-6);
+
+        let mut previous = 0.0;
+        for step in 1..=8_000 {
+            let value = master_output(step as f32 * 0.002, 1.0);
+            assert!(value >= previous);
+            previous = value;
+        }
     }
 
     #[test]
