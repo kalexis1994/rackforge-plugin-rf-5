@@ -61,12 +61,13 @@ normal control loop is approximately 6 ms and extends to roughly 11 ms when
 state changes. The manual treats 0.5 mV of droop over 7 ms as the upper service
 expectation, not as a nominal modulation source.
 
-The DAC buffer's populated 5 kohm output resistor and each cell's 0.01 uF hold
-capacitor establish a 50 us first-order time constant. V8.1 leaves each strobe
-active for 64 CPU T-states, or 25.6 us at 2.5 MHz, so a normal visit acquires
-40.0704% of the remaining difference from the capacitor's current voltage.
-RF-5 applies this finite settling on scheduled CV visits and retains leakage
-as the starting point of the next acquisition.
+The LF356 drives `Vdac` directly; R354's 5 kohm branch belongs to the ADC-gain
+path and is not series output resistance. Each cell's 0.01 uF hold capacitor
+therefore charges principally through its selected 4051 channel. A conservative
+175 ohm switch bound gives at most 1.75 us RC. V8.1 leaves each strobe active
+for 64 CPU T-states, or 25.6 us at 2.5 MHz, so a normal visit acquires more than
+99.9999% of the remaining difference. RF-5 retains the finite boundary and
+leakage without introducing a nonphysical multi-cycle pitch slew.
 
 ## Program memory
 
@@ -107,8 +108,11 @@ the original program data is not part of the product.
   scheduler, separate from audio-rate modulation. One 6 ms unchanged or 11 ms
   changed cycle contains the 24 documented pot reads followed by the exact 40
   V8.1 strobe-address slots; 38 slots refresh real cells and two preserve the
-  timing of unconnected hardware addresses. Connected visits use the populated
-  50 us RC and recovered 25.6 us strobe dwell rather than instantaneous capture.
+  timing of unconnected hardware addresses. Connected visits use the 0.01 uF
+  cell, bounded 4051 resistance and recovered 25.6 us strobe dwell. Fractional
+  audio-sample intervals are distributed across the sweep instead of being
+  clustered at one end, keeping the CPU-relative event time stable from 44.1
+  through 192 kHz while preserving the exact total cycle duration.
 - Panel-pot changes cross the documented 34 mV comparator window and the V8.1
   two-scan same-direction qualifier before entering held state. Program and
   state recalls synchronize held and scanner state directly.
@@ -124,10 +128,23 @@ the performance path. Stored panel controls enter held state through the CPU
 cycle. Master volume bypasses the scheduler because SD430 shows it as a direct
 analog path to the master CA3280, and program changes preserve its value.
 
+The performance gate and pitch-CV paths nevertheless retain their recovered
+relative ordering. V8.1 scans a new key after the current CV pass, asserts its
+gate, and updates only the external sequencer-output S/H immediately. The new
+voice's oscillator A, oscillator B and filter cells update in that order during
+the next CPU pass. RF-5 latches the voice-note table only at that next cycle
+boundary instead of forcing all three cells on MIDI note-on.
+
+In Unison, common destination 21 contains lowest-key keyboard CV rather than
+the switch state. The switch remains a digital latch; individual oscillator
+cells omit their keyboard component, filter keyboard cells are zeroed, and the
+held common CV drives Glide before reaching the oscillator pitch sums.
+
 The physical machine refreshes 38 DAC destinations, including individual
 oscillator and filter sample-and-holds. The active candidate now models all 38
 cells, their exact PCB3-then-PCB4 V8.1 strobe order, both unconnected address
-slots, finite acquisition and bounded leakage. The ten oscillator cells receive independent
+slots, bounded acquisition and leakage, and the recovered gate-before-CV
+ordering. The ten oscillator cells receive independent
 automatic-tune corrections at fourteen-bit resolution; the five filter cells
 retain per-voice keyboard CV. Measured leakage populations remain open and are
 isolated in [`SAMPLE_HOLD_MODEL.md`](SAMPLE_HOLD_MODEL.md).

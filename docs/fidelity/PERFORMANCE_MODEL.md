@@ -32,11 +32,12 @@ ten before it reaches both oscillator master sums.
   1 through 5. Later notes steal the earliest-used voice, while a repeated
   pitch reuses its current physical voice and refreshes its queue age.
 - Unison derives the pitch of all five physical voices from the lowest held
-  key. All five gates occur together.
+  key. All five gates occur together. The lowest-key voltage occupies common
+  sample/hold destination 21; it is not the digital Unison switch state.
 - The first held key triggers both envelopes; overlapping Unison notes only
   retune the voices, preserving the envelope capacitor trajectories.
 - Glide is a linear control-voltage slew through the populated SD334 path. The
-  0-5 V held control crosses R3124/R3125's 100 kohm/2.7 kohm divider and steers
+  held lowest-key CV crosses R3124/R3125's 100 kohm/2.7 kohm divider and steers
   the matched Q309 differential pair. Its collector fraction controls the
   CA3280 current that charges the 0.1 uF C376 timing capacitor.
 - All 128 panel positions therefore follow one bounded transistor law. Panel 6
@@ -45,6 +46,9 @@ ten before it reaches both oscillator master sums.
   or five seconds across five octaves. Panel 0 remains a very fast analog slew
   rather than an invented digital bypass.
 - Glide is exactly bypassed outside Unison.
+- In Unison, V8.1 removes keyboard pitch from the ten individual oscillator
+  S/H cells and zeros the five individual filter-keyboard cells. The common
+  lowest-key S/H and Glide path restore keyboard pitch to both oscillators.
 - MIDI note-on velocity is accepted for protocol correctness but intentionally
   does not scale the sound.
 
@@ -75,6 +79,8 @@ curve is circuit-derived.
   repeated pitch keeps its physical voice;
 - Unison allocates all five voices, follows the lowest held key and preserves
   envelope state across legato pitch changes;
+- Unison's common cell holds the lowest-key voltage while all ten oscillator
+  cells omit that same keyboard component;
 - different nonzero MIDI velocities render identical voice samples.
 - sustain holds released keys and releases them when the pedal rises.
 

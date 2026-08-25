@@ -13,6 +13,7 @@
 | SRC-009 | Intersil, *CA3280/CA3280A Dual 9 MHz Operational Transconductance Amplifier* ([manufacturer data sheet mirror](https://www.rxelectronics.com.ua/datasheet/db/ca3280e.pdf)) | OTA transfer, linearizing diodes, gain control, current output, distortion and operating range | Manufacturer data sheet | Accepted; SHA-256 `05E6CFF9EAE9AB8203E2FA5A75AF03E4BC5FAA1DDEE93AE351EB74190E038B55` |
 | SRC-010 | Curtis Electromusic, *CEM3340/3345 Voltage Controlled Oscillator* ([original data sheet scan](https://electricdruid.net/wp-content/uploads/2020/02/CEM33403345-VCO.pdf)) | Temperature compensation, oscillator drift limits, exponential-scale error, 0-5 V PWM control law and waveform/output behaviour | Manufacturer data sheet | Accepted; SHA-256 `9D23F54FE97114C45BCE7B1B74BABE7FF4EC05AFF6CF5D17206C1EE6649EC82A` |
 | SRC-011 | Vishay Semiconductors, *1N914 Small Signal Fast Switching Diodes*, document 85622, rev. 2.2, Nov. 2024 ([manufacturer data sheet](https://www.vishay.com/docs/85622/1n914.pdf)) | Forward-voltage/current curve and temperature dependence for the SD334 diode-deadband candidate | Manufacturer data sheet | Accepted only to bound the silicon-diode candidate, not as a measurement of the historical D315/D316 pair; SHA-256 `D6BA700D86C6776DE162E065EA8E38380DA27E877F14831B406CE6167616940F` |
+| SRC-012 | Nexperia, *HEF4051B 8-channel analog multiplexer/demultiplexer*, rev. 14, July 2024 ([manufacturer data sheet](https://assets.nexperia.com/documents/data-sheet/HEF4051B.pdf)) | Conservative 4051-class on-resistance bound for CV sample/hold acquisition | Manufacturer data sheet | Accepted only as a conservative modern upper bound: 175 ohm maximum peak at 15 V, not as identification of the historical populated part; SHA-256 `7BEF8EC5FB05C9FEA387E5C8453F41CD78B0242B84725BD394D4A141B3055887` |
 
 ## Private local evidence inventory
 
@@ -49,8 +50,17 @@ interpolation, its lookup-rounding behavior and its 128-writable-code semitone
 scale. The complete output loop at `0x0583-0x05C4` is additionally admitted for
 the five banks of eight S/H strobe addresses and their two unconnected terminal
 slots. Its two `EX (SP),IX` delays, intervening load and inhibit write establish
-a 64-T-state active dwell; SD332-SD333 and SD430 independently anchor that
-dwell to the populated 5 kohm DAC output resistor and 0.01 uF hold capacitors.
+a 64-T-state active dwell. SD332 shows that `Vdac` leaves the LF356 directly;
+R354's 5 kohm branch feeds the ADC-gain stage instead. SD333 and SD430 anchor
+the 0.01 uF hold capacitors, while SRC-012 bounds the intervening 4051 at 175
+ohm for a conservative 1.75 us acquisition constant.
+The main-loop order at `0x025D-0x02A4`, new-key path at `0x0630-0x0674` and CV
+pass at `0x0583-0x05C4` are admitted for gate-before-next-CV sequencing; the
+special immediate `0x1B` strobe is independently identified by SD333 as
+sequencer output. Offsets `0x0336-0x0358`, `0x04D1-0x04F6` and
+`0x0503-0x051F` are admitted for the lowest-key common Unison CV, removal of
+keyboard pitch from individual oscillator cells and suppression of individual
+filter-keyboard CV in Unison.
 Offsets `0x0484-0x04BF` and lookup bytes `0x0BE7-0x0BF2` are
 admitted for the active twelve-note Scale Mode pot map, signed half-semitone
 arithmetic and post-interpolation application. Offsets `0x07C8-0x0813` are

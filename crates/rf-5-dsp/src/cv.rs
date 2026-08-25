@@ -4,9 +4,8 @@ use rf_5_contract::{
     Parameter, Settings,
     hardware::{
         COMMON_AND_PATCH_SAMPLE_HOLD_COUNT, CONTROL_VOLTAGE_DESTINATION_COUNT,
-        ControlVoltageDestination, SAMPLE_HOLD_CAPACITANCE_FARADS,
-        SAMPLE_HOLD_DAC_OUTPUT_RESISTANCE_OHMS, SAMPLE_HOLD_STROBE_T_STATES, TUNE_CPU_CLOCK_HZ,
-        VOICE_COUNT,
+        ControlVoltageDestination, SAMPLE_HOLD_CAPACITANCE_FARADS, SAMPLE_HOLD_STROBE_T_STATES,
+        SAMPLE_HOLD_SWITCH_ON_RESISTANCE_UPPER_BOUND_OHMS, TUNE_CPU_CLOCK_HZ, VOICE_COUNT,
     },
 };
 use rf_5_voice::{
@@ -87,13 +86,16 @@ impl CvTargets {
 
         for (voice, note) in notes.into_iter().enumerate() {
             let scale_offset = scale.offset_semitones(note);
+            let unison = parameter_enabled(settings, Parameter::Unison);
+            let keyboard_semitones = f32::from(note.saturating_sub(tuning::LOWEST_KEY_MIDI_NOTE));
             let pitch_a =
                 tuning::oscillator_a_pitch(note, settings.get(Parameter::OscillatorAFrequency));
+            let oscillator_b_keyboard = parameter_enabled(settings, Parameter::OscillatorBKeyboard);
             let pitch_b = tuning::oscillator_b_pitch(
                 note,
                 settings.get(Parameter::OscillatorBFrequency),
                 settings.get(Parameter::OscillatorBDetune),
-                parameter_enabled(settings, Parameter::OscillatorBKeyboard),
+                oscillator_b_keyboard,
                 parameter_enabled(settings, Parameter::OscillatorBLowFrequency),
             );
             let oscillator_a = ControlVoltageDestination::oscillator(voice, false)
@@ -109,7 +111,8 @@ impl CvTargets {
                     pitch_a.tune_dac_semitones(),
                     pitch_a.tune_table_semitone(),
                 )
-                + scale_offset)
+                + scale_offset
+                - if unison { keyboard_semitones } else { 0.0 })
                 / SEMITONES_PER_CONTROL_VOLT;
             volts[oscillator_b] = (pitch_b.output_semitones()
                 + autotune.residual_semitones(
@@ -118,16 +121,32 @@ impl CvTargets {
                     pitch_b.tune_dac_semitones(),
                     pitch_b.tune_table_semitone(),
                 )
-                + scale_offset)
+                + scale_offset
+                - if unison && oscillator_b_keyboard {
+                    keyboard_semitones
+                } else {
+                    0.0
+                })
                 / SEMITONES_PER_CONTROL_VOLT;
 
             let filter = ControlVoltageDestination::filter(voice)
                 .expect("valid filter CV destination") as usize;
-            volts[filter] = filter_keyboard_octaves(
-                note,
-                parameter_enabled(settings, Parameter::FilterKeyboard),
-            );
+            volts[filter] = if unison {
+                0.0
+            } else {
+                filter_keyboard_octaves(
+                    note,
+                    parameter_enabled(settings, Parameter::FilterKeyboard),
+                )
+            };
         }
+        volts[ControlVoltageDestination::UnisonKeyboard as usize] =
+            if parameter_enabled(settings, Parameter::Unison) {
+                f32::from(notes[0].saturating_sub(tuning::LOWEST_KEY_MIDI_NOTE))
+                    / SEMITONES_PER_CONTROL_VOLT
+            } else {
+                0.0
+            };
         Self { volts }
     }
 
@@ -210,12 +229,17 @@ impl CvDistributor {
             .map(|destination| self.cells[destination as usize].volts())
             .unwrap_or(0.0)
     }
+
+    pub fn unison_keyboard_semitones(self) -> f32 {
+        self.cells[ControlVoltageDestination::UnisonKeyboard as usize].volts()
+            * SEMITONES_PER_CONTROL_VOLT
+    }
 }
 
 fn sample_hold_acquisition_fraction() -> f32 {
     let dwell_seconds = SAMPLE_HOLD_STROBE_T_STATES as f32 / TUNE_CPU_CLOCK_HZ as f32;
     let time_constant_seconds =
-        SAMPLE_HOLD_DAC_OUTPUT_RESISTANCE_OHMS * SAMPLE_HOLD_CAPACITANCE_FARADS;
+        SAMPLE_HOLD_SWITCH_ON_RESISTANCE_UPPER_BOUND_OHMS * SAMPLE_HOLD_CAPACITANCE_FARADS;
     1.0 - libm::expf(-dwell_seconds / time_constant_seconds)
 }
 
@@ -258,7 +282,6 @@ fn common_parameter(destination: ControlVoltageDestination) -> Option<Parameter>
         ControlVoltageDestination::PolyModFilterEnvelopeAmount => {
             Some(Parameter::PolyModFilterEnvelopeAmount)
         }
-        ControlVoltageDestination::Unison => Some(Parameter::Unison),
         _ => None,
     }
 }
@@ -380,24 +403,54 @@ mod tests {
     fn populated_strobe_window_has_the_expected_time_and_fraction() {
         let dwell_microseconds =
             SAMPLE_HOLD_STROBE_T_STATES as f32 / TUNE_CPU_CLOCK_HZ as f32 * 1.0e6;
-        let time_constant_microseconds =
-            SAMPLE_HOLD_DAC_OUTPUT_RESISTANCE_OHMS * SAMPLE_HOLD_CAPACITANCE_FARADS * 1.0e6;
+        let time_constant_microseconds = SAMPLE_HOLD_SWITCH_ON_RESISTANCE_UPPER_BOUND_OHMS
+            * SAMPLE_HOLD_CAPACITANCE_FARADS
+            * 1.0e6;
         assert!((dwell_microseconds - 25.6).abs() < 1.0e-5);
-        assert!((time_constant_microseconds - 50.0).abs() < 1.0e-5);
-        assert!((sample_hold_acquisition_fraction() - 0.400_704_2).abs() < 1.0e-6);
+        assert!((time_constant_microseconds - 1.75).abs() < 1.0e-5);
+        assert!(sample_hold_acquisition_fraction() > 0.999_999);
     }
 
     #[test]
     fn repeated_strobes_converge_monotonically_to_the_target() {
         let mut cell = SampleHoldCell::new(0);
         let mut previous = cell.volts();
-        for _ in 0..12 {
+        for _ in 0..2 {
             cell.acquire(5.0);
             assert!(cell.volts() > previous);
-            assert!(cell.volts() < 5.0);
+            assert!(cell.volts() <= 5.0);
             previous = cell.volts();
         }
-        assert!((5.0 - cell.volts()) < 0.012);
+        assert!((5.0 - cell.volts()) < 1.0e-6);
+    }
+
+    #[test]
+    fn unison_cell_holds_keyboard_cv_while_individual_cells_remove_it() {
+        let mut poly_settings = Settings::default();
+        assert!(poly_settings.set(Parameter::FilterKeyboard as u32, 1.0));
+        let poly = CvTargets::from_state(
+            poly_settings,
+            [60; VOICE_COUNT],
+            AutoTune::calibrated(),
+            ScaleProgram::default(),
+        );
+        let mut unison_settings = poly_settings;
+        assert!(unison_settings.set(Parameter::Unison as u32, 1.0));
+        let unison = CvTargets::from_state(
+            unison_settings,
+            [60; VOICE_COUNT],
+            AutoTune::calibrated(),
+            ScaleProgram::default(),
+        );
+
+        let oscillator_a = ControlVoltageDestination::Oscillator1A as usize;
+        let filter = ControlVoltageDestination::Filter1 as usize;
+        assert!(
+            (unison.get(ControlVoltageDestination::UnisonKeyboard as usize) - 2.0).abs() < 1.0e-6
+        );
+        assert!((poly.get(oscillator_a) - unison.get(oscillator_a) - 2.0).abs() < 1.0e-6);
+        assert_eq!(unison.get(filter), 0.0);
+        assert_eq!(poly.get(filter), 2.0);
     }
 
     #[test]

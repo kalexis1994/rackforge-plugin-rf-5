@@ -62,8 +62,10 @@ magnitude bounds and hypothesized time evolution, is documented in
 The unified CPU service cycle, destination map, finite RC acquisition and
 bounded sample/hold leakage are documented in
 [`fidelity/SAMPLE_HOLD_MODEL.md`](fidelity/SAMPLE_HOLD_MODEL.md).
-The Q309/CA3280/C376 Unison Glide path consumes its held common CV after that
-distribution step and is documented with the other performance controls.
+That model also preserves V8.1's gate-before-next-pitch-sweep ordering. The
+Q309/CA3280/C376 Unison Glide path consumes lowest-key voltage from common S/H
+destination 21 after that distribution step; the digital Unison latch remains
+separate. Both are documented with the other performance controls.
 The shared modulation topology, implemented Wheel Mod routes and remaining
 depth/range uncertainty are recorded in
 [`fidelity/LFO_AND_WHEEL_MOD_MODEL.md`](fidelity/LFO_AND_WHEEL_MOD_MODEL.md).

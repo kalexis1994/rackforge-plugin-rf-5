@@ -56,10 +56,11 @@ pub const INDIVIDUAL_OSCILLATOR_AND_FILTER_SAMPLE_HOLD_COUNT: usize = 15;
 pub const CONTROL_LOOP_IDLE_MICROSECONDS: u32 = 6_000;
 pub const CONTROL_LOOP_CHANGED_MICROSECONDS: u32 = 11_000;
 pub const SAMPLE_HOLD_SERVICE_DROOP_LIMIT_VOLTS_PER_7_MS: f32 = 0.0005;
-/// Populated DAC-buffer output resistor R354 on SD332.
-pub const SAMPLE_HOLD_DAC_OUTPUT_RESISTANCE_OHMS: f32 = 5_000.0;
 /// Populated hold capacitor in each SD333/SD430 CV sample/hold cell.
 pub const SAMPLE_HOLD_CAPACITANCE_FARADS: f32 = 0.01e-6;
+/// Conservative 15 V maximum for a 4051-class analog switch. The original
+/// circuit's larger bipolar supply can only reduce this acquisition bound.
+pub const SAMPLE_HOLD_SWITCH_ON_RESISTANCE_UPPER_BOUND_OHMS: f32 = 175.0;
 /// V8.1 instructions executed while the selected 4051 path remains enabled.
 pub const SAMPLE_HOLD_STROBE_T_STATES: u32 = 64;
 
@@ -91,7 +92,7 @@ pub enum ControlVoltageDestination {
     WheelModSourceMix = 18,
     PolyModOscillatorBAmount = 19,
     PolyModFilterEnvelopeAmount = 20,
-    Unison = 21,
+    UnisonKeyboard = 21,
     SequencerOutput = 22,
     Oscillator1A = 23,
     Oscillator1B = 24,
@@ -139,7 +140,7 @@ pub const CONTROL_VOLTAGE_STROBE_ORDER: [Option<ControlVoltageDestination>;
     Some(ControlVoltageDestination::WheelModSourceMix),
     Some(ControlVoltageDestination::PolyModOscillatorBAmount),
     Some(ControlVoltageDestination::PolyModFilterEnvelopeAmount),
-    Some(ControlVoltageDestination::Unison),
+    Some(ControlVoltageDestination::UnisonKeyboard),
     Some(ControlVoltageDestination::SequencerOutput),
     None,
     Some(ControlVoltageDestination::Oscillator1A),
@@ -186,7 +187,7 @@ impl TryFrom<u8> for ControlVoltageDestination {
             ControlVoltageDestination::WheelModSourceMix,
             ControlVoltageDestination::PolyModOscillatorBAmount,
             ControlVoltageDestination::PolyModFilterEnvelopeAmount,
-            ControlVoltageDestination::Unison,
+            ControlVoltageDestination::UnisonKeyboard,
             ControlVoltageDestination::SequencerOutput,
             ControlVoltageDestination::Oscillator1A,
             ControlVoltageDestination::Oscillator1B,

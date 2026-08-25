@@ -20,6 +20,7 @@ const CONTROL_SERVICE_STEP_COUNT: usize = ANALOG_POT_COUNT + CONTROL_VOLTAGE_STR
 pub struct ControlTick {
     pub settings: Settings,
     pub cv_strobe: Option<usize>,
+    pub cycle_started: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -120,9 +121,11 @@ impl ControlScheduler {
             return ControlTick {
                 settings: self.with_direct_controls(target),
                 cv_strobe: None,
+                cycle_started: false,
             };
         }
 
+        let cycle_started = self.service_index == 0;
         let cv_strobe = if self.service_index < ANALOG_POT_COUNT {
             let pot = AnalogPot::try_from(self.service_index as u8).expect("valid scan position");
             self.scan_panel_parameter(target, pot.parameter());
@@ -147,6 +150,7 @@ impl ControlScheduler {
         ControlTick {
             settings: self.with_direct_controls(target),
             cv_strobe,
+            cycle_started,
         }
     }
 
@@ -226,10 +230,15 @@ fn cycle_samples(sample_rate: f32, microseconds: u32) -> u32 {
 }
 
 fn service_spacing(cycle_samples: u32, service_index: usize) -> u32 {
-    let count = CONTROL_SERVICE_STEP_COUNT as u32;
-    let base = cycle_samples / count;
-    let remainder = cycle_samples % count;
-    base + u32::from((service_index as u32) < remainder)
+    // Place each service event on the nearest lower fractional-cycle boundary.
+    // This is the integer-sample equivalent of the CPU's uniform cadence and
+    // avoids clustering every remainder sample at the start of the sweep.
+    let count = CONTROL_SERVICE_STEP_COUNT as u64;
+    let cycle_samples = u64::from(cycle_samples);
+    let index = service_index as u64;
+    let boundary = (index + 1) * cycle_samples / count;
+    let previous_boundary = index * cycle_samples / count;
+    (boundary - previous_boundary) as u32
 }
 
 #[cfg(test)]
@@ -247,6 +256,37 @@ mod tests {
             assert_eq!(scheduler.next(settings, 48_000.0).settings, settings);
         }
         assert_eq!(scheduler.service_index, 0);
+    }
+
+    #[test]
+    fn cycle_boundary_is_reported_only_on_the_first_service_position() {
+        let settings = Settings::default();
+        let mut scheduler = ControlScheduler::default();
+        scheduler.prepare(settings, 48_000.0);
+        let mut starts = 0;
+        for _ in 0..288 {
+            starts += usize::from(scheduler.next(settings, 48_000.0).cycle_started);
+        }
+        assert_eq!(starts, 1);
+    }
+
+    #[test]
+    fn fractional_service_intervals_are_distributed_across_the_cycle() {
+        let mut total = 0;
+        let mut four_sample_intervals = 0;
+        let mut five_sample_intervals = 0;
+        let mut previous = None;
+        for index in 0..CONTROL_SERVICE_STEP_COUNT {
+            let interval = service_spacing(288, index);
+            total += interval;
+            four_sample_intervals += usize::from(interval == 4);
+            five_sample_intervals += usize::from(interval == 5);
+            assert_ne!(previous, Some(interval));
+            previous = Some(interval);
+        }
+        assert_eq!(total, 288);
+        assert_eq!(four_sample_intervals, 32);
+        assert_eq!(five_sample_intervals, 32);
     }
 
     #[test]

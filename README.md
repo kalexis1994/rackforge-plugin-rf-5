@@ -52,8 +52,11 @@ to stable 0/100% DC and distinct audio versus Poly Mod polarity. A unified 6/11
 ms CPU cycle drives 38 independent sample-and-hold cells through the exact
 five-bank V8.1 address order, including both physically unconnected timing
 slots, for common, oscillator and per-voice filter CVs. Scheduled visits use
-the populated 50 us RC and recovered 25.6 us firmware dwell, acquiring 40.0704%
-of the remaining voltage error instead of replacing held voltage instantly.
+the populated 0.01 uF cell, a conservative 4051 resistance bound and the
+recovered 25.6 us firmware dwell, settling by more than 99.9999% per visit.
+New gates precede their A/B/filter CV refreshes exactly as in the V8.1 loop,
+while Unison keyboard pitch now travels through its dedicated common S/H and
+Glide path rather than being mistaken for the digital switch state.
 The five filter ICs now
 form a serviced CEM3320 population with 440/880 Hz scale calibration, bounded
 warm-up motion,
