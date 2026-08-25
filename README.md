@@ -13,7 +13,8 @@ content.
 ## Current status
 
 The active candidate now contains dual oversampled oscillators, hard sync,
-shared LFO and noise, audio-rate Poly Mod, a four-pole CEM3320-class filter,
+one shared LFO, independent pink Wheel-Mod and white audio-noise generators,
+audio-rate Poly Mod, a four-pole CEM3320-class filter,
 separate CEM3310-class RC envelopes, five-voice Unison, Glide and both
 performance wheels. The global programmable Release switch now drives both
 envelopes, and every original RF-5 patch is packed through the recovered V8.1

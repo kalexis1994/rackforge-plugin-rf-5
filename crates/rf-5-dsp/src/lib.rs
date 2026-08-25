@@ -12,7 +12,7 @@ mod wheel_mod;
 
 use allocation::PolyAllocator;
 use lfo::{Lfo, LfoWaveSelection};
-use noise::PinkNoise;
+use noise::{PinkNoise, WhiteNoise};
 use rf_5_contract::{
     PARAMETER_COUNT, Parameter, Settings,
     hardware::{decode_program, encode_program, quantize_analog_pot},
@@ -104,7 +104,8 @@ pub struct Engine {
     sample_rate: f32,
     poly_allocator: PolyAllocator,
     lfo: Lfo,
-    noise: PinkNoise,
+    wheel_noise: PinkNoise,
+    audio_noise: WhiteNoise,
     mod_wheel: f32,
     audition_mod_wheel: Option<f32>,
     pitch_wheel: f32,
@@ -137,7 +138,8 @@ impl Default for Engine {
             sample_rate: 48_000.0,
             poly_allocator: PolyAllocator::default(),
             lfo: Lfo::default(),
-            noise: PinkNoise::default(),
+            wheel_noise: PinkNoise::default(),
+            audio_noise: WhiteNoise::default(),
             mod_wheel: 0.0,
             audition_mod_wheel: None,
             pitch_wheel: 0.0,
@@ -168,7 +170,8 @@ impl Engine {
         self.reset_voices();
         self.cv.prepare(self.cv_targets(self.settings));
         self.lfo.reset();
-        self.noise.reset();
+        self.wheel_noise.reset();
+        self.audio_noise.reset();
         self.output.reset();
         self.mod_wheel = 0.0;
         self.pitch_wheel = 0.0;
@@ -348,9 +351,10 @@ impl Engine {
                 square: parameter_enabled(applied_settings, Parameter::LfoSquare),
             },
         );
-        let noise_sample = self.noise.next(self.sample_rate);
+        let wheel_noise_sample = self.wheel_noise.next(self.sample_rate);
+        let audio_noise_sample = self.audio_noise.next(self.sample_rate);
         let source_mix = quantize_analog_pot(applied_settings.get(Parameter::WheelModSourceMix));
-        let wheel_source = vca::wheel_mod_source(lfo_sample, noise_sample, source_mix);
+        let wheel_source = vca::wheel_mod_source(lfo_sample, wheel_noise_sample, source_mix);
         let effective_mod_wheel = self.audition_mod_wheel.unwrap_or(self.mod_wheel);
         let wheel_destinations = wheel_mod::destinations(wheel_source, effective_mod_wheel);
         let modulation = VoiceModulation {
@@ -382,7 +386,7 @@ impl Engine {
                 wheel_destinations.filter_octaves,
             ),
             noise: vca::common_noise(
-                noise_sample,
+                audio_noise_sample,
                 quantize_analog_pot(applied_settings.get(Parameter::NoiseLevel)),
             ),
         };
@@ -1079,17 +1083,22 @@ mod tests {
     }
 
     #[test]
-    fn shared_noise_free_runs_and_note_events_do_not_reset_it() {
+    fn both_noise_sources_free_run_and_note_events_do_not_reset_them() {
         let mut engine = Engine::default();
         assert!(engine.prepare(48_000.0));
-        let initial_state = engine.noise.state();
+        let initial_wheel_state = engine.wheel_noise.state();
+        let initial_audio_state = engine.audio_noise.state();
         for _ in 0..257 {
             assert_eq!(engine.next_sample(), 0.0);
         }
-        let free_running_state = engine.noise.state();
-        assert_ne!(free_running_state, initial_state);
+        let free_running_wheel_state = engine.wheel_noise.state();
+        let free_running_audio_state = engine.audio_noise.state();
+        assert_ne!(free_running_wheel_state, initial_wheel_state);
+        assert_ne!(free_running_audio_state, initial_audio_state);
+        assert_ne!(free_running_wheel_state, free_running_audio_state);
         engine.note_on(0, 60, 100);
-        assert_eq!(engine.noise.state(), free_running_state);
+        assert_eq!(engine.wheel_noise.state(), free_running_wheel_state);
+        assert_eq!(engine.audio_noise.state(), free_running_audio_state);
     }
 
     #[test]
