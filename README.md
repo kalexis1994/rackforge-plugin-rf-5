@@ -52,6 +52,13 @@ measured component populations, overload/output levels and original-instrument
 measurements still pass through the evidence gates in
 [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
 
+The first native RF-5 control surface is now active. It is rendered by a Rust
+WebAssembly module, binds every one of the sixty public parameters exactly once,
+keeps both program banks below the hardware panel and reorganizes its five
+sections at phone, tablet and desktop widths. Pointer capture gives knobs the
+same relative vertical drag on mouse and touch, while RackForge parameter
+attributes keep host-owned context menus and MIDI Link available.
+
 Until the graphical panel is added, the `RF-5 Audition` factory bank provides
 twenty-three immediately playable listening programs for Wheel/Poly Mod, LFO range,
 Sync, filter drive, resonance, fast/slow envelope behaviour, CA3280 drive and
@@ -67,6 +74,7 @@ crates/rf-5-voice/     Per-voice synthesis path
 crates/rf-5-dsp/       Five-voice allocator, MIDI and audio engine
 crates/rf-5-audition/  Deterministic WAV renderer for evaluation without UI
 plugin/                RackForge wasm-v1 adapter and package resources
+plugin-ui/             Rust/WebAssembly responsive control surface
 docs/                  Architecture, evidence and implementation gates
 tools/                 Reproducible package builders
 ```
@@ -82,6 +90,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --release --workspace
 cargo run --release -p rf-5-audition
 rustup target add wasm32-unknown-unknown
+powershell -ExecutionPolicy Bypass -File tools/build-web-ui.ps1
 bash tools/build-package.sh
 ```
 

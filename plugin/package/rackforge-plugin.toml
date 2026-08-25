@@ -23,6 +23,13 @@ program_change = "ignore"
 id = "main"
 name = "Main"
 
+[web_ui]
+api_version = 1
+
+[[web_ui.surfaces]]
+kind = "play"
+entry = "web/play.html"
+
 [api]
 major = 1
 minor = 8

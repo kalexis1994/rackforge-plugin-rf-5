@@ -29,6 +29,9 @@ if (-not (Get-Command gcc -ErrorAction SilentlyContinue) -and (Test-Path -Litera
 
 Push-Location $rfRepoRoot
 try {
+    & (Join-Path $rfRepoRoot "tools\build-web-ui.ps1")
+    if ($LASTEXITCODE -ne 0) { throw "RF-5 web UI build failed" }
+
     cargo build --locked --release -p rackforge-rf-5 --target wasm32-unknown-unknown
     if ($LASTEXITCODE -ne 0) { throw "RF-5 WebAssembly build failed" }
 

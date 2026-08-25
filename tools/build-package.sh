@@ -25,6 +25,7 @@ if [[ ! -f "$rackforge_root/Cargo.toml" ]]; then
 fi
 
 cd "$repo_root"
+bash "$repo_root/tools/build-web-ui.sh"
 cargo build --locked --release -p rackforge-rf-5 --target wasm32-unknown-unknown
 mkdir -p "$(dirname "$output")"
 stage="$(mktemp -d "${TMPDIR:-/tmp}/rf-5-package.XXXXXX")"
