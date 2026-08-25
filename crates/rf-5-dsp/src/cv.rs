@@ -4,7 +4,9 @@ use rf_5_contract::{
     Parameter, Settings,
     hardware::{
         COMMON_AND_PATCH_SAMPLE_HOLD_COUNT, CONTROL_VOLTAGE_DESTINATION_COUNT,
-        ControlVoltageDestination, VOICE_COUNT,
+        ControlVoltageDestination, SAMPLE_HOLD_CAPACITANCE_FARADS,
+        SAMPLE_HOLD_DAC_OUTPUT_RESISTANCE_OHMS, SAMPLE_HOLD_STROBE_T_STATES, TUNE_CPU_CLOCK_HZ,
+        VOICE_COUNT,
     },
 };
 use rf_5_voice::{
@@ -41,8 +43,15 @@ impl SampleHoldCell {
             self.leakage_volts_per_second / f64::from(sample_rate.max(1.0));
     }
 
-    fn sample(&mut self, volts: f32) {
+    fn force(&mut self, volts: f32) {
         self.sampled_volts = if volts.is_finite() { volts } else { 0.0 };
+        self.accumulated_leakage_volts = 0.0;
+    }
+
+    fn acquire(&mut self, volts: f32) {
+        let target = if volts.is_finite() { volts } else { 0.0 };
+        let held = self.volts();
+        self.sampled_volts = held + (target - held) * sample_hold_acquisition_fraction();
         self.accumulated_leakage_volts = 0.0;
     }
 
@@ -143,7 +152,7 @@ impl Default for CvDistributor {
 impl CvDistributor {
     pub fn prepare(&mut self, targets: CvTargets) {
         for (index, cell) in self.cells.iter_mut().enumerate() {
-            cell.sample(targets.get(index));
+            cell.force(targets.get(index));
         }
     }
 
@@ -155,7 +164,7 @@ impl CvDistributor {
 
     pub fn strobe(&mut self, destination: usize, targets: CvTargets) {
         if let Some(cell) = self.cells.get_mut(destination) {
-            cell.sample(targets.get(destination));
+            cell.acquire(targets.get(destination));
         }
     }
 
@@ -168,7 +177,8 @@ impl CvDistributor {
         .into_iter()
         .flatten()
         {
-            self.strobe(destination as usize, targets);
+            let destination = destination as usize;
+            self.cells[destination].force(targets.get(destination));
         }
     }
 
@@ -200,6 +210,13 @@ impl CvDistributor {
             .map(|destination| self.cells[destination as usize].volts())
             .unwrap_or(0.0)
     }
+}
+
+fn sample_hold_acquisition_fraction() -> f32 {
+    let dwell_seconds = SAMPLE_HOLD_STROBE_T_STATES as f32 / TUNE_CPU_CLOCK_HZ as f32;
+    let time_constant_seconds =
+        SAMPLE_HOLD_DAC_OUTPUT_RESISTANCE_OHMS * SAMPLE_HOLD_CAPACITANCE_FARADS;
+    1.0 - libm::expf(-dwell_seconds / time_constant_seconds)
 }
 
 fn common_cv_span_volts(destination: ControlVoltageDestination) -> f32 {
@@ -330,29 +347,71 @@ mod tests {
     }
 
     #[test]
-    fn strobe_reacquires_the_target_exactly() {
-        let settings = Settings::default();
+    fn scheduled_strobe_obeys_the_populated_rc_acquisition() {
+        let mut initial_settings = Settings::default();
+        assert!(initial_settings.set(Parameter::FilterCutoff as u32, 0.0));
+        let initial_targets = CvTargets::from_state(
+            initial_settings,
+            [60; VOICE_COUNT],
+            AutoTune::calibrated(),
+            ScaleProgram::default(),
+        );
+        let mut target_settings = initial_settings;
+        assert!(target_settings.set(Parameter::FilterCutoff as u32, 1.0));
         let targets = CvTargets::from_state(
-            settings,
+            target_settings,
             [60; VOICE_COUNT],
             AutoTune::calibrated(),
             ScaleProgram::default(),
         );
         let mut distributor = CvDistributor::default();
-        distributor.prepare(targets);
-        for _ in 0..528 {
-            distributor.age(48_000.0);
-        }
-        let destination = ControlVoltageDestination::Oscillator3B as usize;
-        assert_ne!(
-            distributor.cells[destination].volts(),
-            targets.get(destination)
-        );
+        distributor.prepare(initial_targets);
+        let destination = ControlVoltageDestination::FilterCutoff as usize;
         distributor.strobe(destination, targets);
-        assert_eq!(
-            distributor.cells[destination].volts(),
-            targets.get(destination)
+        let expected = targets.get(destination) * sample_hold_acquisition_fraction();
+        assert!(
+            (distributor.cells[destination].volts() - expected).abs() < 1.0e-6,
+            "{} != {expected}",
+            distributor.cells[destination].volts()
         );
+    }
+
+    #[test]
+    fn populated_strobe_window_has_the_expected_time_and_fraction() {
+        let dwell_microseconds =
+            SAMPLE_HOLD_STROBE_T_STATES as f32 / TUNE_CPU_CLOCK_HZ as f32 * 1.0e6;
+        let time_constant_microseconds =
+            SAMPLE_HOLD_DAC_OUTPUT_RESISTANCE_OHMS * SAMPLE_HOLD_CAPACITANCE_FARADS * 1.0e6;
+        assert!((dwell_microseconds - 25.6).abs() < 1.0e-5);
+        assert!((time_constant_microseconds - 50.0).abs() < 1.0e-5);
+        assert!((sample_hold_acquisition_fraction() - 0.400_704_2).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn repeated_strobes_converge_monotonically_to_the_target() {
+        let mut cell = SampleHoldCell::new(0);
+        let mut previous = cell.volts();
+        for _ in 0..12 {
+            cell.acquire(5.0);
+            assert!(cell.volts() > previous);
+            assert!(cell.volts() < 5.0);
+            previous = cell.volts();
+        }
+        assert!((5.0 - cell.volts()) < 0.012);
+    }
+
+    #[test]
+    fn acquisition_continues_from_the_leaked_voltage() {
+        let mut cell = SampleHoldCell::new(1);
+        cell.force(2.0);
+        for _ in 0..336 {
+            cell.age(48_000.0);
+        }
+        let held = cell.volts();
+        cell.acquire(4.0);
+        let expected = held + (4.0 - held) * sample_hold_acquisition_fraction();
+        assert!((cell.volts() - expected).abs() < 1.0e-6);
+        assert_eq!(cell.accumulated_leakage_volts, 0.0);
     }
 
     #[test]

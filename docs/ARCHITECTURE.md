@@ -59,8 +59,8 @@ The ten-channel counter, DAC search and runtime bias tables are documented in
 The independent post-tune motion of all ten VCOs, including its published
 magnitude bounds and hypothesized time evolution, is documented in
 [`fidelity/VCO_DRIFT_MODEL.md`](fidelity/VCO_DRIFT_MODEL.md).
-The unified CPU service cycle, destination map and bounded sample/hold leakage
-are documented in
+The unified CPU service cycle, destination map, finite RC acquisition and
+bounded sample/hold leakage are documented in
 [`fidelity/SAMPLE_HOLD_MODEL.md`](fidelity/SAMPLE_HOLD_MODEL.md).
 The Q309/CA3280/C376 Unison Glide path consumes its held common CV after that
 distribution step and is documented with the other performance controls.

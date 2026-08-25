@@ -56,6 +56,12 @@ pub const INDIVIDUAL_OSCILLATOR_AND_FILTER_SAMPLE_HOLD_COUNT: usize = 15;
 pub const CONTROL_LOOP_IDLE_MICROSECONDS: u32 = 6_000;
 pub const CONTROL_LOOP_CHANGED_MICROSECONDS: u32 = 11_000;
 pub const SAMPLE_HOLD_SERVICE_DROOP_LIMIT_VOLTS_PER_7_MS: f32 = 0.0005;
+/// Populated DAC-buffer output resistor R354 on SD332.
+pub const SAMPLE_HOLD_DAC_OUTPUT_RESISTANCE_OHMS: f32 = 5_000.0;
+/// Populated hold capacitor in each SD333/SD430 CV sample/hold cell.
+pub const SAMPLE_HOLD_CAPACITANCE_FARADS: f32 = 0.01e-6;
+/// V8.1 instructions executed while the selected 4051 path remains enabled.
+pub const SAMPLE_HOLD_STROBE_T_STATES: u32 = 64;
 
 /// Logical sample/hold destinations grouped as shown on SD333 and SD430.
 /// The numeric order is RF-5's stable control-plane vocabulary. Physical V8.1

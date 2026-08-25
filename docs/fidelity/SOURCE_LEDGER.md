@@ -48,7 +48,10 @@ write paths at `0x0155-0x01DB` are admitted for the signed runtime
 interpolation, its lookup-rounding behavior and its 128-writable-code semitone
 scale. The complete output loop at `0x0583-0x05C4` is additionally admitted for
 the five banks of eight S/H strobe addresses and their two unconnected terminal
-slots. Offsets `0x0484-0x04BF` and lookup bytes `0x0BE7-0x0BF2` are
+slots. Its two `EX (SP),IX` delays, intervening load and inhibit write establish
+a 64-T-state active dwell; SD332-SD333 and SD430 independently anchor that
+dwell to the populated 5 kohm DAC output resistor and 0.01 uF hold capacitors.
+Offsets `0x0484-0x04BF` and lookup bytes `0x0BE7-0x0BF2` are
 admitted for the active twelve-note Scale Mode pot map, signed half-semitone
 arithmetic and post-interpolation application. Offsets `0x07C8-0x0813` are
 admitted for the 24-byte program pack/unpack loops, `0x0563-0x056E` for their

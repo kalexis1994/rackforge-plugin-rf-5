@@ -61,6 +61,13 @@ normal control loop is approximately 6 ms and extends to roughly 11 ms when
 state changes. The manual treats 0.5 mV of droop over 7 ms as the upper service
 expectation, not as a nominal modulation source.
 
+The DAC buffer's populated 5 kohm output resistor and each cell's 0.01 uF hold
+capacitor establish a 50 us first-order time constant. V8.1 leaves each strobe
+active for 64 CPU T-states, or 25.6 us at 2.5 MHz, so a normal visit acquires
+40.0704% of the remaining difference from the capacitor's current voltage.
+RF-5 applies this finite settling on scheduled CV visits and retains leakage
+as the starting point of the next acquisition.
+
 ## Program memory
 
 The documented machine holds 40 programs of 24 bytes. Each byte combines the
@@ -100,7 +107,8 @@ the original program data is not part of the product.
   scheduler, separate from audio-rate modulation. One 6 ms unchanged or 11 ms
   changed cycle contains the 24 documented pot reads followed by the exact 40
   V8.1 strobe-address slots; 38 slots refresh real cells and two preserve the
-  timing of unconnected hardware addresses.
+  timing of unconnected hardware addresses. Connected visits use the populated
+  50 us RC and recovered 25.6 us strobe dwell rather than instantaneous capture.
 - Panel-pot changes cross the documented 34 mV comparator window and the V8.1
   two-scan same-direction qualifier before entering held state. Program and
   state recalls synchronize held and scanner state directly.
@@ -119,7 +127,7 @@ analog path to the master CA3280, and program changes preserve its value.
 The physical machine refreshes 38 DAC destinations, including individual
 oscillator and filter sample-and-holds. The active candidate now models all 38
 cells, their exact PCB3-then-PCB4 V8.1 strobe order, both unconnected address
-slots and bounded leakage. The ten oscillator cells receive independent
+slots, finite acquisition and bounded leakage. The ten oscillator cells receive independent
 automatic-tune corrections at fourteen-bit resolution; the five filter cells
 retain per-voice keyboard CV. Measured leakage populations remain open and are
 isolated in [`SAMPLE_HOLD_MODEL.md`](SAMPLE_HOLD_MODEL.md).
