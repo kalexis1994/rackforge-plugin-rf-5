@@ -139,9 +139,10 @@ fn low_frequency_code(value: f32) -> u8 {
 }
 
 /// OSC B FINE enters the common analog sum after the tune-table calculation.
-/// The admitted documents bound it to approximately one semitone end to end.
+/// The owner's manual specifies zero as no detuning and a one-semitone upward
+/// range from the coarse frequency setting.
 fn fine_semitones(value: f32) -> f32 {
-    (f32::from(normalized_pot_code(value)) - 64.0) / 127.0
+    f32::from(normalized_pot_code(value)) / 127.0
 }
 
 fn frequency_from_c0(semitones: f32) -> f32 {
@@ -164,7 +165,7 @@ mod tests {
     fn concert_coarse_controls_track_the_keyboard() {
         let concert = 48.0 / 127.0;
         let a = oscillator_a_frequency(60, concert);
-        let b = oscillator_b_frequency(60, concert, 64.0 / 127.0, true, false);
+        let b = oscillator_b_frequency(60, concert, 0.0, true, false);
         assert!((a - b).abs() < 0.001);
         assert!((oscillator_a_frequency(72, concert) / a - 2.0).abs() < 0.001);
     }
@@ -173,7 +174,7 @@ mod tests {
     fn tune_coordinates_share_the_frequency_control_law() {
         let concert = 48.0 / 127.0;
         let a_coordinate = oscillator_a_tuning_semitones(60, concert);
-        let b_coordinate = oscillator_b_tuning_semitones(60, concert, 64.0 / 127.0, true, false);
+        let b_coordinate = oscillator_b_tuning_semitones(60, concert, 0.0, true, false);
         assert!((a_coordinate - b_coordinate).abs() < 1.0e-6);
         assert!((a_coordinate - 48.0).abs() < 0.1);
     }
@@ -208,8 +209,8 @@ mod tests {
 
     #[test]
     fn low_frequency_control_uses_nine_octaves_then_analog_offset() {
-        let bottom = oscillator_b_pitch(LOWEST_KEY_MIDI_NOTE, 0.0, 64.0 / 127.0, false, true);
-        let top = oscillator_b_pitch(LOWEST_KEY_MIDI_NOTE, 1.0, 64.0 / 127.0, false, true);
+        let bottom = oscillator_b_pitch(LOWEST_KEY_MIDI_NOTE, 0.0, 0.0, false, true);
+        let top = oscillator_b_pitch(LOWEST_KEY_MIDI_NOTE, 1.0, 0.0, false, true);
         assert_eq!(bottom.tune_table_semitone(), 0);
         assert_eq!(top.tune_table_semitone(), 108);
         assert_eq!(bottom.output_semitones(), -90.0);
@@ -222,5 +223,26 @@ mod tests {
         let sharp = oscillator_b_pitch(60, 48.0 / 127.0, 1.0, true, false);
         assert_eq!(flat.tune_table_semitone(), sharp.tune_table_semitone());
         assert!((sharp.tune_dac_semitones() - flat.tune_dac_semitones() - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn b_fine_starts_at_unison_and_rises_one_semitone() {
+        assert_eq!(fine_semitones(0.0), 0.0);
+        assert_eq!(fine_semitones(1.0), 1.0);
+
+        let concert = 48.0 / 127.0;
+        let a = oscillator_a_frequency(60, concert);
+        let b_flat = oscillator_b_frequency(60, concert, 0.0, true, false);
+        let b_sharp = oscillator_b_frequency(60, concert, 1.0, true, false);
+        assert!((b_flat / a - 1.0).abs() < 1.0e-6);
+        assert!((b_sharp / b_flat - libm::exp2f(1.0 / 12.0)).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn b_fine_exposes_all_128_one_sided_hardware_steps() {
+        let values: [f32; 128] = core::array::from_fn(|code| fine_semitones(code as f32 / 127.0));
+        assert_eq!(values[0], 0.0);
+        assert_eq!(values[127], 1.0);
+        assert!(values.windows(2).all(|pair| pair[0] < pair[1]));
     }
 }

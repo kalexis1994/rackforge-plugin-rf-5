@@ -173,7 +173,7 @@ impl Default for Settings {
             values: [
                 0.72,
                 0.72,
-                0.54,
+                5.0 / 127.0,
                 0.72,
                 0.08,
                 0.01,

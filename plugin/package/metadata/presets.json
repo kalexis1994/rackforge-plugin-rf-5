@@ -25,7 +25,9 @@
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-lfo-slow", "name": "Audition - LFO Slow Range", "order": 14, "tags": ["rf5", "audition", "lfo", "slow"] },
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-lfo-fast", "name": "Audition - LFO Fast Range", "order": 15, "tags": ["rf5", "audition", "lfo", "fast"] },
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-unison-glide", "name": "Audition - Unison Glide Circuit", "order": 16, "tags": ["rf5", "audition", "unison", "glide", "ca3280"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-release-switch-off", "name": "Audition - Release Switch Off", "order": 17, "tags": ["rf5", "audition", "envelope", "release", "program-memory"] }
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-release-switch-off", "name": "Audition - Release Switch Off", "order": 17, "tags": ["rf5", "audition", "envelope", "release", "program-memory"] },
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-oscillator-b-fine-zero", "name": "Audition - Oscillator B Fine Zero", "order": 18, "tags": ["rf5", "audition", "oscillator-b", "fine", "unison"] },
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-oscillator-b-fine-semitone", "name": "Audition - Oscillator B Fine Semitone", "order": 19, "tags": ["rf5", "audition", "oscillator-b", "fine", "semitone"] }
   ],
   "schema_version": 1
 }

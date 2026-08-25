@@ -30,7 +30,9 @@ Oscillator B LO FREQ follows the separate ROM and analog paths. Its undivided
 hardware then inserts the documented -7.5 V (-90 semitone) analog offset. This
 preserves the full nine-octave control range without pretending that the analog
 offset belongs to the automatic-tune table. B FINE is likewise a separate
-common analog sum and does not move the table coordinate. With B KEYBOARD
+common analog sum and does not move the table coordinate. The original owner's
+manual fixes its physical law: code 0 adds no detuning and the 127-step endpoint
+raises oscillator B by one semitone. With B KEYBOARD
 disabled, keyboard CV is omitted while the coarse, fine and tune-bias sources
 remain active.
 
@@ -42,13 +44,12 @@ in [`SCALE_MODE.md`](SCALE_MODE.md).
 
 ## Explicit hypotheses
 
-Two values cannot yet be proven from the admitted documents alone:
+One value cannot yet be proven from the admitted documents alone:
 
-- MIDI note 36 is used for the keyboard's zero-volt, lowest-C reference;
-- oscillator B fine currently spans approximately +/-50 cents.
+- MIDI note 36 is used for the keyboard's zero-volt, lowest-C reference.
 
-These are isolated in `tuning.rs` and covered by tests, so later measurements
-can replace them without changing oscillator topology or host parameter IDs.
+This is isolated in `tuning.rs` and covered by tests, so later measurements can
+replace it without changing oscillator topology or host parameter IDs.
 
 ## Automatic tune
 

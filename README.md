@@ -32,9 +32,9 @@ interpolation, including the operating ROM's exact C4-C3 extrapolation for its
 three lower octaves and its discrete twelve-position runtime arithmetic. Each
 oscillator also uses the recovered 7-bit coarse-pitch assembly, including its
 49 normal semitone positions and oscillator B's distinct nine-octave LO FREQ,
-keyboard and analog fine paths. Each of those ten oscillators now has an
-independent, sample-rate-stable post-tune drift path bounded by the CEM3340 data
-sheet, and the engine exposes non-serialized retuning. Its original programmable
+keyboard and one-sided 0-to-1-semitone FINE paths. Each of those ten oscillators
+now has an independent, sample-rate-stable post-tune drift path bounded by the
+CEM3340 data sheet, and the engine exposes non-serialized retuning. Its original programmable
 Scale Mode adds twelve global, patch-independent chromatic offsets with exact
 V8.1 code steps. Their saw, triangle and pulse
 outputs also retain the published voltage/symmetry ranges, populated-board
@@ -52,9 +52,10 @@ measurements still pass through the evidence gates in
 [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
 
 Until the graphical panel is added, the `RF-5 Audition` factory bank provides
-eighteen immediately playable listening programs for Wheel/Poly Mod, LFO range,
+twenty immediately playable listening programs for Wheel/Poly Mod, LFO range,
 Sync, filter drive, resonance, fast/slow envelope behaviour, CA3280 drive and
-common noise, including an explicit global-Release override. They require no UI; see
+common noise, including explicit global-Release and oscillator-B FINE endpoint
+comparisons. They require no UI; see
 [`docs/AUDITION_PROGRAMS.md`](docs/AUDITION_PROGRAMS.md).
 
 ## Repository layout
@@ -85,7 +86,7 @@ bash tools/build-package.sh
 
 The package is written to `artifacts/rf-5-0.1.0.rfplugin`. GitHub Actions tests
 x86-64 and ARM64 before publishing the portable package as a workflow artifact.
-The audition command writes twenty-two unnormalized listening files and their metrics
+The audition command writes twenty-four unnormalized listening files and their metrics
 to `artifacts/auditions`; see
 [`docs/AUDITION_RENDERER.md`](docs/AUDITION_RENDERER.md).
 

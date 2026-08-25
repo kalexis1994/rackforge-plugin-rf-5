@@ -412,6 +412,20 @@ fn scenes() -> Vec<Scene> {
             scale_codes: EQUAL_TEMPERAMENT,
             events: pitch_wheel_sequence(),
         },
+        Scene {
+            id: "23_oscillator_b_fine_zero",
+            program: "audition-oscillator-b-fine-zero",
+            description: "Oscillators A and B share the same coarse pitch with OSC B FINE at physical zero",
+            scale_codes: EQUAL_TEMPERAMENT,
+            events: chord_sequence(&[(0.20, 5.20, &[57])]),
+        },
+        Scene {
+            id: "24_oscillator_b_fine_semitone",
+            program: "audition-oscillator-b-fine-semitone",
+            description: "OSC B FINE reaches the documented one-semitone upper endpoint from the same coarse pitch",
+            scale_codes: EQUAL_TEMPERAMENT,
+            events: chord_sequence(&[(0.20, 5.20, &[57])]),
+        },
     ]
 }
 

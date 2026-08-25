@@ -14,7 +14,7 @@ use rf_5_contract::{
 const BASELINE_INIT: [f32; PATCH_PARAMETER_COUNT] = [
     0.72,
     0.72,
-    0.54,
+    5.0 / 127.0,
     0.72,
     0.08,
     0.01,
@@ -65,7 +65,7 @@ const BASELINE_INIT: [f32; PATCH_PARAMETER_COUNT] = [
 const BASELINE_WARM: [f32; PATCH_PARAMETER_COUNT] = [
     0.76,
     0.76,
-    0.58,
+    10.0 / 127.0,
     0.46,
     0.12,
     0.01,
@@ -116,7 +116,7 @@ const BASELINE_WARM: [f32; PATCH_PARAMETER_COUNT] = [
 const BASELINE_PAD: [f32; PATCH_PARAMETER_COUNT] = [
     0.68,
     0.62,
-    0.62,
+    15.0 / 127.0,
     0.38,
     0.04,
     0.54,
@@ -167,7 +167,7 @@ const BASELINE_PAD: [f32; PATCH_PARAMETER_COUNT] = [
 const BASELINE_LEAD: [f32; PATCH_PARAMETER_COUNT] = [
     0.64,
     0.72,
-    0.67,
+    21.0 / 127.0,
     0.82,
     0.18,
     0.01,
@@ -445,6 +445,26 @@ impl Program {
         program
     }
 
+    fn oscillator_b_fine(fine: f32) -> Self {
+        let mut values = BASELINE_INIT;
+        values[Parameter::OscillatorALevel as usize] = 0.62;
+        values[Parameter::OscillatorBLevel as usize] = 0.62;
+        values[Parameter::OscillatorASaw as usize] = 1.0;
+        values[Parameter::OscillatorAPulse as usize] = 0.0;
+        values[Parameter::OscillatorBSaw as usize] = 1.0;
+        values[Parameter::OscillatorBTriangle as usize] = 0.0;
+        values[Parameter::OscillatorBPulse as usize] = 0.0;
+        values[Parameter::OscillatorBDetune as usize] = fine;
+        values[Parameter::FilterCutoff as usize] = 0.78;
+        values[Parameter::FilterResonance as usize] = 0.08;
+        values[Parameter::FilterEnvelopeAmount as usize] = 0.0;
+        values[Parameter::AmpAttack as usize] = 0.0;
+        values[Parameter::AmpDecay as usize] = 0.20;
+        values[Parameter::AmpSustain as usize] = 0.90;
+        values[Parameter::AmpRelease as usize] = 0.18;
+        Self::normal(values)
+    }
+
     fn hard_sync() -> Self {
         let mut values = BASELINE_LEAD;
         values[Parameter::OscillatorAFrequency as usize] = OSCILLATOR_FREQUENCY_CONCERT_NORMALIZED;
@@ -453,7 +473,9 @@ impl Program {
         values[Parameter::OscillatorAPulse as usize] = 0.0;
         values[Parameter::OscillatorBLevel as usize] = 0.0;
         values[Parameter::OscillatorBFrequency as usize] = 74.0 / 127.0;
-        values[Parameter::OscillatorBDetune as usize] = 0.68;
+        // Preserve the former program's 22/127-semitone musical offset after
+        // correcting OSC B FINE from a centred guess to the physical 0..+1 law.
+        values[Parameter::OscillatorBDetune as usize] = 22.0 / 127.0;
         values[Parameter::OscillatorBKeyboard as usize] = 1.0;
         values[Parameter::OscillatorBLowFrequency as usize] = 0.0;
         // The hardware sync tap precedes B's waveform-selection switches, so
@@ -524,6 +546,8 @@ pub(crate) fn find(id: &str) -> Option<Program> {
         "audition-unison-glide" => Program::unison_glide(),
         "audition-lfo-slow" => Program::lfo_rate(0.10),
         "audition-lfo-fast" => Program::lfo_rate(0.82),
+        "audition-oscillator-b-fine-zero" => Program::oscillator_b_fine(0.0),
+        "audition-oscillator-b-fine-semitone" => Program::oscillator_b_fine(1.0),
         _ => return None,
     })
 }
@@ -557,11 +581,47 @@ mod tests {
             "audition-unison-glide",
             "audition-lfo-slow",
             "audition-lfo-fast",
+            "audition-oscillator-b-fine-zero",
+            "audition-oscillator-b-fine-semitone",
         ] {
             let program = find(id).expect("catalog program exists");
             let mut settings = Settings::default();
             assert!(settings.apply_patch_array(program.values));
         }
+    }
+
+    #[test]
+    fn oscillator_b_fine_auditions_reach_both_physical_endpoints() {
+        let flat = find("audition-oscillator-b-fine-zero").unwrap();
+        let sharp = find("audition-oscillator-b-fine-semitone").unwrap();
+        assert_eq!(flat.values[Parameter::OscillatorBDetune as usize], 0.0);
+        assert_eq!(sharp.values[Parameter::OscillatorBDetune as usize], 1.0);
+    }
+
+    #[test]
+    fn baseline_program_migration_preserves_their_musical_fine_offsets() {
+        for (id, expected_code) in [
+            ("baseline-init", 5),
+            ("baseline-warm", 10),
+            ("baseline-pad", 15),
+            ("baseline-lead", 21),
+        ] {
+            let program = find(id).unwrap();
+            assert_eq!(
+                rf_5_contract::hardware::analog_pot_code(
+                    program.values[Parameter::OscillatorBDetune as usize]
+                ),
+                expected_code
+            );
+        }
+
+        let pad = find("baseline-pad").unwrap();
+        assert_eq!(
+            rf_5_contract::hardware::analog_pot_code(
+                pad.values[Parameter::OscillatorALevel as usize]
+            ),
+            79
+        );
     }
 
     #[test]

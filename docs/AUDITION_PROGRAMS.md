@@ -43,6 +43,9 @@ program in RackForge's program browser and play normally:
 - `Audition - LFO Slow Range` and `Audition - LFO Fast Range` expose two
   widely separated points of the circuit-derived common-LFO sweep with the
   same restrained vibrato routing.
+- `Audition - Oscillator B Fine Zero` and `Audition - Oscillator B Fine
+  Semitone` use the same two-saw setup at both documented FINE endpoints, so
+  the unison start and one-semitone rise can be compared directly.
 
 These are diagnostic listening conditions rather than emulated factory
 patches. Each one temporarily places the modulation wheel at a documented
@@ -52,7 +55,7 @@ or alter the serialized patch format, is cleared by loading a normal program
 or state, survives audio-device preparation order, and is replaced by the
 first physical MIDI CC1 message.
 
-All eighteen audition programs are covered by deterministic render probes for
+All twenty audition programs are covered by deterministic render probes for
 finite output, usable level and bounded headroom. All catalog programs are
 also contract-validated, and the filter population is swept at every supported
 sample rate.

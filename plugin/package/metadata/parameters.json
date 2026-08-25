@@ -23,8 +23,8 @@
       "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
     },
     {
-      "index": 2, "id": "oscillator-b-detune", "name": "Oscillator B Detune", "page": "oscillators", "order": 1,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.54, "step": 0.007874015748031496 },
+      "index": 2, "id": "oscillator-b-detune", "name": "Oscillator B Fine", "page": "oscillators", "order": 1,
+      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.03937007874015748, "step": 0.007874015748031496 },
       "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
     },
     {
