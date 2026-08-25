@@ -27,7 +27,10 @@
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-unison-glide", "name": "Audition - Unison Glide Circuit", "order": 16, "tags": ["rf5", "audition", "unison", "glide", "ca3280"] },
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-release-switch-off", "name": "Audition - Release Switch Off", "order": 17, "tags": ["rf5", "audition", "envelope", "release", "program-memory"] },
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-oscillator-b-fine-zero", "name": "Audition - Oscillator B Fine Zero", "order": 18, "tags": ["rf5", "audition", "oscillator-b", "fine", "unison"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-oscillator-b-fine-semitone", "name": "Audition - Oscillator B Fine Semitone", "order": 19, "tags": ["rf5", "audition", "oscillator-b", "fine", "semitone"] }
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-oscillator-b-fine-semitone", "name": "Audition - Oscillator B Fine Semitone", "order": 19, "tags": ["rf5", "audition", "oscillator-b", "fine", "semitone"] },
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-pulse-width-minimum", "name": "Audition - Pulse Width 1%", "order": 20, "tags": ["rf5", "audition", "oscillator-a", "pulse-width", "minimum"] },
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-pulse-width-square", "name": "Audition - Pulse Width 50%", "order": 21, "tags": ["rf5", "audition", "oscillator-a", "pulse-width", "square"] },
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-pulse-width-maximum", "name": "Audition - Pulse Width 99%", "order": 22, "tags": ["rf5", "audition", "oscillator-a", "pulse-width", "maximum"] }
   ],
   "schema_version": 1
 }

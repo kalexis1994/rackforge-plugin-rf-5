@@ -38,7 +38,8 @@ CEM3340 data sheet, and the engine exposes non-serialized retuning. Its original
 Scale Mode adds twelve global, patch-independent chromatic offsets with exact
 V8.1 code steps. Their saw, triangle and pulse
 outputs also retain the published voltage/symmetry ranges, populated-board
-resistor weighting and distinct audio versus Poly Mod polarity. A unified 6/11
+resistor weighting, 128-step 1-99% panel pulse-width law, modulation overtravel
+to stable 0/100% DC and distinct audio versus Poly Mod polarity. A unified 6/11
 ms CPU cycle drives 38 independent sample-and-hold cells through the exact
 five-bank V8.1 address order, including both physically unconnected timing
 slots, for common, oscillator and per-voice filter CVs. The five filter ICs now
@@ -52,10 +53,10 @@ measurements still pass through the evidence gates in
 [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
 
 Until the graphical panel is added, the `RF-5 Audition` factory bank provides
-twenty immediately playable listening programs for Wheel/Poly Mod, LFO range,
+twenty-three immediately playable listening programs for Wheel/Poly Mod, LFO range,
 Sync, filter drive, resonance, fast/slow envelope behaviour, CA3280 drive and
 common noise, including explicit global-Release and oscillator-B FINE endpoint
-comparisons. They require no UI; see
+comparisons plus pulse-width endpoints. They require no UI; see
 [`docs/AUDITION_PROGRAMS.md`](docs/AUDITION_PROGRAMS.md).
 
 ## Repository layout
@@ -86,7 +87,7 @@ bash tools/build-package.sh
 
 The package is written to `artifacts/rf-5-0.1.0.rfplugin`. GitHub Actions tests
 x86-64 and ARM64 before publishing the portable package as a workflow artifact.
-The audition command writes twenty-four unnormalized listening files and their metrics
+The audition command writes twenty-seven unnormalized listening files and their metrics
 to `artifacts/auditions`; see
 [`docs/AUDITION_RENDERER.md`](docs/AUDITION_RENDERER.md).
 

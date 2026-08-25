@@ -426,6 +426,27 @@ fn scenes() -> Vec<Scene> {
             scale_codes: EQUAL_TEMPERAMENT,
             events: chord_sequence(&[(0.20, 5.20, &[57])]),
         },
+        Scene {
+            id: "25_pulse_width_one_percent",
+            program: "audition-pulse-width-minimum",
+            description: "Oscillator A pulse at the documented one-percent panel endpoint",
+            scale_codes: EQUAL_TEMPERAMENT,
+            events: chord_sequence(&[(0.20, 5.20, &[45, 52, 57])]),
+        },
+        Scene {
+            id: "26_pulse_width_fifty_percent",
+            program: "audition-pulse-width-square",
+            description: "Oscillator A pulse at the nearest stored code to a fifty-percent square wave",
+            scale_codes: EQUAL_TEMPERAMENT,
+            events: chord_sequence(&[(0.20, 5.20, &[45, 52, 57])]),
+        },
+        Scene {
+            id: "27_pulse_width_ninety_nine_percent",
+            program: "audition-pulse-width-maximum",
+            description: "Oscillator A pulse at the documented ninety-nine-percent panel endpoint",
+            scale_codes: EQUAL_TEMPERAMENT,
+            events: chord_sequence(&[(0.20, 5.20, &[45, 52, 57])]),
+        },
     ]
 }
 

@@ -28,6 +28,13 @@ path runs at four times the host sample rate and is averaged back to the audio
 rate. Triangle is generated directly from phase because it is continuous,
 while its remaining corner-bandwidth error is tracked below.
 
+Each seven-bit PULSE WIDTH pot maps monotonically to the owner's manual's
+approximately 1-99% duty-cycle span, with the nearest code to 50% at the
+physical midpoint. Wheel Mod and Poly Mod are summed after that panel law at
+the shared board CV node. They may therefore overdrive a pulse to exactly 0%
+or 100%, where the CEM3340 output becomes steady DC and stops generating sync
+edges until modulation returns it to a finite pulse.
+
 Hard sync is resolved at the same four-times internal rate but is not a generic
 phase reset. The Revision 3 voice board takes oscillator B's pulse output before
 its audio-selection switch, gates it through a 4016 and capacitively couples
@@ -57,9 +64,9 @@ pulse modulation.
 - oscillator B low-frequency and keyboard tracking switches;
 - oscillator sync.
 
-The state schema is now version 2 because oscillator A's former baseline
-crossfade parameter has become its physical level and thirteen hardware controls
-were added.
+No public parameter was added in this block. The runtime state schema is
+version 11 because the existing normalized PULSE WIDTH values now drive the
+source-backed 1-99% panel law instead of the former protective 2-98% clamp.
 
 ## Residual uncertainty
 
@@ -67,7 +74,8 @@ This candidate does not yet claim final CEM3340 waveform equivalence. Open
 items are:
 
 - waveform curvature and high-frequency rounding at the actual board nodes;
-- pulse-width transfer limits and behavior at both extremes;
+- exact populated-chip PWM threshold, control-current loading and transition
+  behavior at the 0/100% DC boundaries;
 - sub-sample placement and analog bandwidth of hard-sync discontinuities;
 - final calibration of the frequency-knob and B fine-control laws;
 - measured component populations, exact drift time evolution and exact

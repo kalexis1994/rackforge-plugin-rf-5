@@ -32,7 +32,8 @@ validation population, not measurements from one particular instrument.
 
 One oscillator evaluation now produces two related signals:
 
-- `audio` is a host-safe AC representation for the oscillator mixer;
+- `audio` removes the fixed electrical midpoint for the oscillator mixer while
+  retaining the duty-dependent mean and DC endpoints;
 - `modulation` preserves the board-level polarity entering oscillator-B Poly
   Mod.
 
@@ -48,6 +49,13 @@ relationships are:
 - saw modulation is positive-going;
 - pulse modulation spans approximately -0.09 to +2.115 normalized units;
 - triangle modulation is bipolar and equals its audio-domain waveform.
+
+The public pulse-width pot is first quantized to the physical 128 codes and
+then mapped to approximately 1-99% duty cycle. Modulation is added at the
+common CV node afterwards and may reach the data sheet's 0% and 100% limits.
+At either limit the numerical pulse is stable DC and produces no false
+hard-sync transitions; the modeled output coupling rejects that DC at the host
+boundary.
 
 Selected waveforms still add before the oscillator amount VCA. Oscillator B's
 `modulation` sum feeds Poly Mod independently of its audio mixer level, exactly
@@ -67,6 +75,8 @@ any particular unit. The deterministic profile order is therefore a
 hypothesis. The following remain open:
 
 - exact pulse clamp voltage, rise/fall asymmetry and loading through the 4016;
+- exact populated PWM threshold and transient behavior at modulation
+  overtravel;
 - high-frequency rounding and output-buffer impedance at the populated board;
 - static DC propagation through the mixer and filter before the now-modeled
   final 4.34 Hz output coupling network;
@@ -87,4 +97,6 @@ replaceable when full-path measurements become available.
 - pulse is slightly hotter than saw after the board resistor ratio;
 - saw/pulse Poly Mod remain one-sided while triangle remains bipolar;
 - every waveform combination stays finite at the oversampled rate;
+- all 128 panel codes are monotonic from 1% to 99%, while modulation can reach
+  stable 0/100% DC without emitting sync edges;
 - complete engine renders remain finite at 44.1, 48, 96 and 192 kHz.

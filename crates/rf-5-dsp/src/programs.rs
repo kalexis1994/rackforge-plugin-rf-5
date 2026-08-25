@@ -465,6 +465,23 @@ impl Program {
         Self::normal(values)
     }
 
+    fn oscillator_a_pulse_width(pulse_width: f32) -> Self {
+        let mut values = BASELINE_INIT;
+        values[Parameter::OscillatorALevel as usize] = 0.78;
+        values[Parameter::OscillatorBLevel as usize] = 0.0;
+        values[Parameter::OscillatorASaw as usize] = 0.0;
+        values[Parameter::OscillatorAPulse as usize] = 1.0;
+        values[Parameter::OscillatorAPulseWidth as usize] = pulse_width;
+        values[Parameter::FilterCutoff as usize] = 0.92;
+        values[Parameter::FilterResonance as usize] = 0.0;
+        values[Parameter::FilterEnvelopeAmount as usize] = 0.0;
+        values[Parameter::AmpAttack as usize] = 0.0;
+        values[Parameter::AmpDecay as usize] = 0.2;
+        values[Parameter::AmpSustain as usize] = 0.9;
+        values[Parameter::AmpRelease as usize] = 0.18;
+        Self::normal(values)
+    }
+
     fn hard_sync() -> Self {
         let mut values = BASELINE_LEAD;
         values[Parameter::OscillatorAFrequency as usize] = OSCILLATOR_FREQUENCY_CONCERT_NORMALIZED;
@@ -548,6 +565,9 @@ pub(crate) fn find(id: &str) -> Option<Program> {
         "audition-lfo-fast" => Program::lfo_rate(0.82),
         "audition-oscillator-b-fine-zero" => Program::oscillator_b_fine(0.0),
         "audition-oscillator-b-fine-semitone" => Program::oscillator_b_fine(1.0),
+        "audition-pulse-width-minimum" => Program::oscillator_a_pulse_width(0.0),
+        "audition-pulse-width-square" => Program::oscillator_a_pulse_width(64.0 / 127.0),
+        "audition-pulse-width-maximum" => Program::oscillator_a_pulse_width(1.0),
         _ => return None,
     })
 }
@@ -583,6 +603,9 @@ mod tests {
             "audition-lfo-fast",
             "audition-oscillator-b-fine-zero",
             "audition-oscillator-b-fine-semitone",
+            "audition-pulse-width-minimum",
+            "audition-pulse-width-square",
+            "audition-pulse-width-maximum",
         ] {
             let program = find(id).expect("catalog program exists");
             let mut settings = Settings::default();
@@ -596,6 +619,20 @@ mod tests {
         let sharp = find("audition-oscillator-b-fine-semitone").unwrap();
         assert_eq!(flat.values[Parameter::OscillatorBDetune as usize], 0.0);
         assert_eq!(sharp.values[Parameter::OscillatorBDetune as usize], 1.0);
+    }
+
+    #[test]
+    fn pulse_width_auditions_reach_both_panel_limits_and_nearest_square_code() {
+        let minimum = find("audition-pulse-width-minimum").unwrap();
+        let square = find("audition-pulse-width-square").unwrap();
+        let maximum = find("audition-pulse-width-maximum").unwrap();
+        let index = Parameter::OscillatorAPulseWidth as usize;
+        assert_eq!(minimum.values[index], 0.0);
+        assert_eq!(
+            rf_5_contract::hardware::analog_pot_code(square.values[index]),
+            64
+        );
+        assert_eq!(maximum.values[index], 1.0);
     }
 
     #[test]

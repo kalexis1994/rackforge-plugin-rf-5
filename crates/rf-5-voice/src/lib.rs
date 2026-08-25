@@ -9,6 +9,7 @@ pub mod autotune;
 pub mod drift;
 pub mod envelope;
 pub mod filter;
+mod pulse_width;
 pub mod scale;
 pub mod tuning;
 pub mod vca;
@@ -172,11 +173,14 @@ impl Voice {
             triangle: parameter_enabled(settings, Parameter::OscillatorBTriangle),
             pulse: parameter_enabled(settings, Parameter::OscillatorBPulse),
         };
-        let pulse_width_a = quantize_analog_pot(settings.get(Parameter::OscillatorAPulseWidth))
-            + modulation.oscillator_a_pulse_width;
-        let pulse_width_b = (quantize_analog_pot(settings.get(Parameter::OscillatorBPulseWidth))
-            + modulation.oscillator_b_pulse_width)
-            .clamp(0.02, 0.98);
+        let pulse_width_a = pulse_width::add_modulation(
+            pulse_width::panel_duty_cycle(settings.get(Parameter::OscillatorAPulseWidth)),
+            modulation.oscillator_a_pulse_width,
+        );
+        let pulse_width_b = pulse_width::add_modulation(
+            pulse_width::panel_duty_cycle(settings.get(Parameter::OscillatorBPulseWidth)),
+            modulation.oscillator_b_pulse_width,
+        );
         let level_a = quantize_analog_pot(settings.get(Parameter::OscillatorALevel));
         let level_b = quantize_analog_pot(settings.get(Parameter::OscillatorBLevel));
         let sync = parameter_enabled(settings, Parameter::OscillatorSync);
@@ -244,7 +248,7 @@ impl Voice {
             let sample_a = self.oscillator_a.next(
                 frequency_a * semitone_ratio(modulation.oscillator_a_semitones + poly_pitch),
                 internal_rate,
-                (pulse_width_a + poly_pulse_width).clamp(0.02, 0.98),
+                pulse_width::add_modulation(pulse_width_a, poly_pulse_width),
                 waves_a,
             );
             let poly_filter_octaves = if poly_filter {

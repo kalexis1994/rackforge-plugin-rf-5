@@ -116,7 +116,7 @@ impl Vco {
         waves: WaveSelection,
     ) -> OscillatorSample {
         let increment = (frequency.max(0.0) / sample_rate.max(1.0)).clamp(0.0, 0.49);
-        let pulse_width = pulse_width.clamp(0.02, 0.98);
+        let pulse_width = pulse_width.clamp(0.0, 1.0);
         let phase = self.phase;
         let profile = self.profile_index;
         let mut audio = 0.0;
@@ -157,6 +157,9 @@ impl Vco {
 }
 
 fn pulse_edges(phase: f32, advanced: f32, pulse_width: f32) -> [HardSyncPulse; 2] {
+    if pulse_width <= 0.0 || pulse_width >= 1.0 {
+        return [HardSyncPulse::None; 2];
+    }
     let mut pulses = [HardSyncPulse::None; 2];
     let mut count = 0;
     let mut push = |pulse| {
@@ -186,6 +189,12 @@ fn band_limited_saw(phase: f32, increment: f32) -> f32 {
 }
 
 fn band_limited_pulse(phase: f32, increment: f32, pulse_width: f32) -> f32 {
+    if pulse_width <= 0.0 {
+        return -1.0;
+    }
+    if pulse_width >= 1.0 {
+        return 1.0;
+    }
     let naive = if phase < pulse_width { 1.0 } else { -1.0 };
     let falling_phase = if phase >= pulse_width {
         phase - pulse_width
@@ -253,6 +262,32 @@ mod tests {
             wide_positive += (wide.next(100.0, 10_000.0, 0.75, PULSE).audio > 0.0) as usize;
         }
         assert!(narrow_positive < wide_positive);
+    }
+
+    #[test]
+    fn pulse_dc_endpoints_are_stable_and_emit_no_sync_edges() {
+        for (width, expected) in [(0.0, -PULSE_AC_GAIN), (1.0, PULSE_AC_GAIN)] {
+            let mut oscillator = Vco::default();
+            for _ in 0..2_000 {
+                let sample = oscillator.next(440.0, 48_000.0, width, PULSE);
+                assert!((sample.audio - expected).abs() < 1.0e-6);
+                assert_eq!(sample.sync_pulses, [HardSyncPulse::None; 2]);
+            }
+        }
+    }
+
+    #[test]
+    fn one_and_ninety_nine_percent_remain_complementary_pulses() {
+        let mut narrow = Vco::default();
+        let mut wide = Vco::default();
+        let mut narrow_positive = 0;
+        let mut wide_positive = 0;
+        for _ in 0..10_000 {
+            narrow_positive += (narrow.next(100.0, 10_000.0, 0.01, PULSE).audio > 0.0) as usize;
+            wide_positive += (wide.next(100.0, 10_000.0, 0.99, PULSE).audio > 0.0) as usize;
+        }
+        assert!((narrow_positive as isize - 100).abs() < 25);
+        assert!((wide_positive as isize - 9_900).abs() < 25);
     }
 
     #[test]
