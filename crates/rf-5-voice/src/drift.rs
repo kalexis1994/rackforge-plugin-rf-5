@@ -110,6 +110,26 @@ impl VcoDriftBank {
         ppm_to_semitones(self.correction_ppm(voice_index, oscillator, character))
     }
 
+    /// Largest current correction as a fraction of the selected data-sheet
+    /// drift bound. The TUNE controller uses this only to reproduce the
+    /// original operation's error-dependent two-to-eight-second duration.
+    pub fn normalized_tune_error(self, character: f32) -> f32 {
+        let limit =
+            TYPICAL_DRIFT_PPM + character.clamp(0.0, 1.0) * (MAXIMUM_DRIFT_PPM - TYPICAL_DRIFT_PPM);
+        let maximum = (0..VCO_COUNT)
+            .map(|channel| {
+                let oscillator = if channel % 2 == 0 {
+                    Oscillator::A
+                } else {
+                    Oscillator::B
+                };
+                self.correction_ppm(channel / 2, oscillator, character)
+                    .abs()
+            })
+            .fold(0.0_f32, f32::max);
+        (maximum / limit).clamp(0.0, 1.0)
+    }
+
     fn step_control_rate(&mut self) {
         if self.common_target_steps == 0 {
             self.common_target = signed_unit(&mut self.common_seed);
@@ -270,5 +290,16 @@ mod tests {
                 .into_iter()
                 .any(|ppm| ppm.abs() > 0.1)
         );
+    }
+
+    #[test]
+    fn tune_error_is_zero_after_capture_and_always_normalized() {
+        let mut bank = VcoDriftBank::default();
+        assert_eq!(bank.normalized_tune_error(1.0), 0.0);
+        advance_control_steps(&mut bank, 40_000);
+        assert!((0.0..=1.0).contains(&bank.normalized_tune_error(0.0)));
+        assert!((0.0..=1.0).contains(&bank.normalized_tune_error(1.0)));
+        bank.retune();
+        assert_eq!(bank.normalized_tune_error(1.0), 0.0);
     }
 }

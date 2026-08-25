@@ -9,7 +9,7 @@ pub mod hardware;
 
 pub const PATCH_PARAMETER_COUNT: usize = 48;
 pub const SCALE_NOTE_COUNT: usize = 12;
-pub const PARAMETER_COUNT: usize = PATCH_PARAMETER_COUNT + SCALE_NOTE_COUNT + 1;
+pub const PARAMETER_COUNT: usize = PATCH_PARAMETER_COUNT + SCALE_NOTE_COUNT + 3;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]
@@ -75,6 +75,8 @@ pub enum Parameter {
     ScaleASharp = 58,
     ScaleB = 59,
     MasterTune = 60,
+    A440 = 61,
+    Tune = 62,
 }
 
 pub const SCALE_PARAMETERS: [Parameter; SCALE_NOTE_COUNT] = [
@@ -158,6 +160,8 @@ impl TryFrom<u32> for Parameter {
             58 => Ok(Self::ScaleASharp),
             59 => Ok(Self::ScaleB),
             60 => Ok(Self::MasterTune),
+            61 => Ok(Self::A440),
+            62 => Ok(Self::Tune),
             _ => Err(()),
         }
     }
@@ -234,6 +238,8 @@ impl Default for Settings {
                 hardware::SCALE_EQUAL_TEMPERAMENT_NORMALIZED,
                 hardware::SCALE_EQUAL_TEMPERAMENT_NORMALIZED,
                 0.5,
+                0.0,
+                0.0,
             ],
         }
     }

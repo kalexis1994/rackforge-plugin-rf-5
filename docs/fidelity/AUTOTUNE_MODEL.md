@@ -72,6 +72,12 @@ tune architecture and the admitted operating ROM. Remaining uncertainty begins
 at the physical VCO population and any revision-specific difference outside
 this target.
 
+The public momentary TUNE control now occupies the engine for the documented
+two-to-eight-second interval, reports its busy state without becoming stored
+patch data and commits the recalibration only when that interval completes.
+Its output-path boundary and the adjacent A-440 reference are documented in
+[`A440_AND_TUNE_MODEL.md`](A440_AND_TUNE_MODEL.md).
+
 Temperature motion after this measurement is deliberately outside the held
 DAC table, because it originates inside the compensated VCO at a given control
 voltage. Pressing the engine's momentary Tune action captures the current

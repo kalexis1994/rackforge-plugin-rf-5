@@ -320,8 +320,13 @@ mod browser {
         fn render_button(&self, parameter: &Parameter, value: f64) -> String {
             let active = value >= 0.5;
             let symbol = waveform_symbol(&parameter.id);
+            let action = if parameter.id == "tune" {
+                "momentary"
+            } else {
+                "toggle"
+            };
             format!(
-                "<div class=\"parameter-control button-control\"><span class=\"control-label\">{}</span>{symbol}<span class=\"led{}\" aria-hidden=\"true\"></span><button type=\"button\" class=\"hardware-button{}\" data-action=\"toggle\" data-index=\"{}\" data-rackforge-parameter-index=\"{}\" aria-label=\"{}\" aria-pressed=\"{}\"></button><output data-output-index=\"{}\">{}</output></div>",
+                "<div class=\"parameter-control button-control\"><span class=\"control-label\">{}</span>{symbol}<span class=\"led{}\" aria-hidden=\"true\"></span><button type=\"button\" class=\"hardware-button{}\" data-action=\"{action}\" data-index=\"{}\" data-rackforge-parameter-index=\"{}\" aria-label=\"{}\" aria-pressed=\"{}\"></button><output data-output-index=\"{}\">{}</output></div>",
                 panel_label(&parameter.id, &parameter.name),
                 if active { " on" } else { "" },
                 if active { " active" } else { "" },
@@ -472,6 +477,9 @@ mod browser {
             return format!("{cents:+.1}¢");
         }
         if parameter.kind.kind == "boolean" {
+            if parameter.id == "tune" {
+                return if value >= 0.5 { "TUNING" } else { "READY" }.to_owned();
+            }
             return if value >= 0.5 { "ON" } else { "OFF" }.to_owned();
         }
         format!("{:.1}", value * 10.0)
@@ -769,6 +777,28 @@ mod browser {
                         };
                         send_parameter(&click_app, index, value);
                         update_parameter_dom(&click_app, index);
+                    }
+                }
+                Some("momentary") => {
+                    if let Some(index) = element
+                        .get_attribute("data-index")
+                        .and_then(|value| value.parse().ok())
+                    {
+                        send_parameter(&click_app, index, 1.0);
+                        update_parameter_dom(&click_app, index);
+                        let weak = Rc::downgrade(&click_app);
+                        let refresh = Closure::once_into_js(move || {
+                            if let Some(app) = weak.upgrade() {
+                                refresh_parameters(&app);
+                            }
+                        });
+                        let _ = click_app
+                            .borrow()
+                            .window
+                            .set_timeout_with_callback_and_timeout_and_arguments_0(
+                                refresh.unchecked_ref(),
+                                8_100,
+                            );
                     }
                 }
                 Some("sound") => {

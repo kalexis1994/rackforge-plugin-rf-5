@@ -1,5 +1,6 @@
 #![no_std]
 
+mod a440;
 mod allocation;
 mod control;
 mod cv;
@@ -10,6 +11,7 @@ mod noise;
 mod output;
 mod pitch_wheel;
 mod programs;
+mod tune_cycle;
 mod wheel_mod;
 
 use allocation::PolyAllocator;
@@ -35,6 +37,8 @@ const PRE_RELEASE_PARAMETER_COUNT: usize = 59;
 const PRE_RELEASE_STATE_BYTES: usize = PRE_RELEASE_PARAMETER_COUNT * 4;
 const PRE_MASTER_TUNE_PARAMETER_COUNT: usize = 60;
 const PRE_MASTER_TUNE_STATE_BYTES: usize = PRE_MASTER_TUNE_PARAMETER_COUNT * 4;
+const PRE_MACHINE_OPERATIONS_PARAMETER_COUNT: usize = 61;
+const PRE_MACHINE_OPERATIONS_STATE_BYTES: usize = PRE_MACHINE_OPERATIONS_PARAMETER_COUNT * 4;
 
 #[derive(Clone, Copy, Debug, Default)]
 struct HeldNote {
@@ -121,6 +125,8 @@ pub struct Engine {
     autotune: AutoTune,
     vco_drift: VcoDriftBank,
     cv: cv::CvDistributor,
+    reference_tone: a440::ReferenceTone,
+    tune_cycle: tune_cycle::TuneCycle,
     output: output::OutputStage,
 }
 
@@ -155,6 +161,8 @@ impl Default for Engine {
             autotune,
             vco_drift: VcoDriftBank::default(),
             cv,
+            reference_tone: a440::ReferenceTone::default(),
+            tune_cycle: tune_cycle::TuneCycle::default(),
             output: output::OutputStage::default(),
         }
     }
@@ -175,6 +183,8 @@ impl Engine {
         self.lfo.reset();
         self.wheel_noise.reset();
         self.audio_noise.reset();
+        self.reference_tone.reset();
+        self.tune_cycle = tune_cycle::TuneCycle::default();
         self.output.reset();
         self.mod_wheel = 0.0;
         self.pitch_wheel = 0.0;
@@ -198,18 +208,48 @@ impl Engine {
         self.refresh_all_voice_cvs();
     }
 
+    /// Starts the front-panel TUNE operation. A second press is ignored while
+    /// the CPU is already occupied by its ten-VCO measurement pass.
+    pub fn request_tune(&mut self) -> bool {
+        let character = self.settings.get(Parameter::VintageSpread);
+        self.tune_cycle.start(
+            self.sample_rate,
+            self.vco_drift.normalized_tune_error(character),
+        )
+    }
+
+    pub fn is_tuning(&self) -> bool {
+        self.tune_cycle.is_active()
+    }
+
+    pub fn tune_duration_seconds(&self) -> f32 {
+        self.tune_cycle.duration_seconds(self.sample_rate)
+    }
+
     pub fn settings(&self) -> Settings {
         self.settings
     }
 
     pub fn set_parameter(&mut self, index: u32, value: f64) -> bool {
+        if index == Parameter::Tune as u32 {
+            if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+                return false;
+            }
+            if value >= 0.5 && !self.is_tuning() {
+                return self.request_tune();
+            }
+            return true;
+        }
         let was_unison = self.unison_enabled();
         if !self.settings.set(index, value) {
             return false;
         }
         if !matches!(
             Parameter::try_from(index),
-            Ok(Parameter::MasterVolume | Parameter::MasterTune | Parameter::VintageSpread)
+            Ok(Parameter::MasterVolume
+                | Parameter::MasterTune
+                | Parameter::VintageSpread
+                | Parameter::A440)
         ) {
             self.controls.notify_change(self.sample_rate);
         }
@@ -220,6 +260,9 @@ impl Engine {
     }
 
     pub fn parameter(&self, index: u32) -> Option<f64> {
+        if index == Parameter::Tune as u32 {
+            return Some(f64::from(self.is_tuning()));
+        }
         self.settings.get_index(index).map(f64::from)
     }
 
@@ -334,6 +377,7 @@ impl Engine {
     }
 
     pub fn next_sample(&mut self) -> f32 {
+        let tuning = self.is_tuning();
         let control_tick = self.controls.next(self.settings, self.sample_rate);
         let targets = self.cv_targets(control_tick.settings);
         self.cv.age(self.sample_rate);
@@ -343,11 +387,18 @@ impl Engine {
         let applied_settings = self.cv.apply_common(control_tick.settings);
         self.vco_drift.advance(self.sample_rate);
         let drift_character = applied_settings.get(Parameter::VintageSpread);
-        let glide_offset = self.advance_glide(applied_settings);
-        let performance_pitch =
+        let glide_offset = if tuning {
+            0.0
+        } else {
+            self.advance_glide(applied_settings)
+        };
+        let performance_pitch = if tuning {
+            0.0
+        } else {
             master_tune::offset_semitones(applied_settings.get(Parameter::MasterTune))
                 + self.pitch_wheel * pitch_wheel::RANGE_SEMITONES
-                + glide_offset;
+                + glide_offset
+        };
         let lfo_sample = self.lfo.next(
             self.sample_rate,
             applied_settings.get(Parameter::LfoFrequency),
@@ -433,11 +484,19 @@ impl Engine {
                 self.cv.filter_keyboard_octaves(voice_index) - filter_keyboard;
             sample += voice.next(self.sample_rate, applied_settings, calibrated_modulation);
         }
-        self.output.next(
-            sample,
+        let a440 = self.reference_tone.next(
+            !tuning && parameter_enabled(applied_settings, Parameter::A440),
+            self.sample_rate,
+        );
+        let output = self.output.next(
+            if tuning { 0.0 } else { sample + a440 },
             applied_settings.get(Parameter::MasterVolume),
             self.sample_rate,
-        )
+        );
+        if self.tune_cycle.advance() {
+            self.tune_oscillators();
+        }
+        output
     }
 
     pub fn load_program(&mut self, id: &str) -> bool {
@@ -521,6 +580,23 @@ impl Engine {
             self.install_loaded_settings(settings);
             return true;
         }
+        if state.len() == PRE_MACHINE_OPERATIONS_STATE_BYTES {
+            let mut old = [0.0_f32; PRE_MACHINE_OPERATIONS_PARAMETER_COUNT];
+            let (chunks, remainder) = state.as_chunks::<4>();
+            if !remainder.is_empty() {
+                return false;
+            }
+            for (value, chunk) in old.iter_mut().zip(chunks) {
+                *value = f32::from_le_bytes(*chunk);
+            }
+            let mut values = Settings::default().as_array();
+            values[..PRE_MACHINE_OPERATIONS_PARAMETER_COUNT].copy_from_slice(&old);
+            let Some(settings) = Settings::from_array(values) else {
+                return false;
+            };
+            self.install_loaded_settings(settings);
+            return true;
+        }
         if state.len() != STATE_BYTES {
             return false;
         }
@@ -539,8 +615,11 @@ impl Engine {
         true
     }
 
-    fn install_loaded_settings(&mut self, settings: Settings) {
+    fn install_loaded_settings(&mut self, mut settings: Settings) {
+        let cleared = settings.set(Parameter::Tune as u32, 0.0);
+        debug_assert!(cleared);
         self.settings = settings;
+        self.tune_cycle = tune_cycle::TuneCycle::default();
         self.audition_mod_wheel = None;
         self.controls.notify_recall(self.settings, self.sample_rate);
         self.rebuild_allocation_for_mode();
@@ -907,6 +986,29 @@ mod tests {
     }
 
     #[test]
+    fn pre_machine_operation_state_defaults_a440_off_and_tune_ready() {
+        let mut old_values = Settings::default().as_array();
+        old_values[Parameter::MasterTune as usize] = 0.31;
+        let mut state = [0_u8; PRE_MACHINE_OPERATIONS_STATE_BYTES];
+        for (chunk, value) in state
+            .as_chunks_mut::<4>()
+            .0
+            .iter_mut()
+            .zip(old_values[..PRE_MACHINE_OPERATIONS_PARAMETER_COUNT].iter())
+        {
+            chunk.copy_from_slice(&value.to_le_bytes());
+        }
+
+        let mut engine = Engine::default();
+        assert!(engine.set_parameter(Parameter::A440 as u32, 1.0));
+        assert!(engine.request_tune());
+        assert!(engine.load_state(&state));
+        assert_eq!(engine.settings.get(Parameter::MasterTune), 0.31);
+        assert_eq!(engine.settings.get(Parameter::A440), 0.0);
+        assert_eq!(engine.parameter(Parameter::Tune as u32), Some(0.0));
+    }
+
+    #[test]
     fn audition_wheel_is_temporary_machine_state() {
         let mut engine = Engine::default();
         assert!(engine.prepare(48_000.0));
@@ -1026,10 +1128,56 @@ mod tests {
     }
 
     #[test]
+    fn momentary_tune_reports_busy_then_completes_without_entering_state() {
+        let mut engine = Engine::default();
+        assert!(engine.prepare(100.0));
+        let expected = engine.settings();
+        assert!(engine.set_parameter(Parameter::Tune as u32, 1.0));
+        assert!(engine.is_tuning());
+        assert_eq!(engine.tune_duration_seconds(), 2.0);
+        assert_eq!(engine.parameter(Parameter::Tune as u32), Some(1.0));
+        assert_eq!(engine.settings.get(Parameter::Tune), 0.0);
+        for _ in 0..199 {
+            assert_eq!(engine.next_sample(), 0.0);
+            assert!(engine.is_tuning());
+        }
+        assert_eq!(engine.next_sample(), 0.0);
+        assert!(!engine.is_tuning());
+        assert_eq!(engine.parameter(Parameter::Tune as u32), Some(0.0));
+        assert_eq!(engine.settings(), expected);
+
+        let mut state = [0_u8; STATE_BYTES];
+        assert_eq!(engine.save_state(&mut state), Some(STATE_BYTES));
+        let tune_offset = Parameter::Tune as usize * 4;
+        assert_eq!(&state[tune_offset..tune_offset + 4], &0.0_f32.to_le_bytes());
+    }
+
+    #[test]
+    fn a440_is_audible_without_midi_and_obeys_master_volume() {
+        let mut open = Engine::default();
+        let mut closed = Engine::default();
+        for engine in [&mut open, &mut closed] {
+            assert!(engine.prepare(48_000.0));
+            assert!(engine.set_parameter(Parameter::A440 as u32, 1.0));
+        }
+        assert!(closed.set_parameter(Parameter::MasterVolume as u32, 0.0));
+
+        let mut open_energy = 0.0;
+        for _ in 0..8_192 {
+            let sample = open.next_sample();
+            assert!(sample.is_finite());
+            open_energy += sample * sample;
+            assert_eq!(closed.next_sample(), 0.0);
+        }
+        assert!(open_energy > 1.0);
+    }
+
+    #[test]
     fn loading_a_program_preserves_the_physical_master_volume() {
         let mut engine = Engine::default();
         assert!(engine.set_parameter(Parameter::MasterVolume as u32, 0.31));
         assert!(engine.set_parameter(Parameter::MasterTune as u32, 0.73));
+        assert!(engine.set_parameter(Parameter::A440 as u32, 1.0));
         assert!(engine.load_program("baseline-pad"));
         assert_eq!(
             engine.parameter(Parameter::MasterVolume as u32),
@@ -1039,6 +1187,7 @@ mod tests {
             engine.parameter(Parameter::MasterTune as u32),
             Some(0.73_f32 as f64)
         );
+        assert_eq!(engine.parameter(Parameter::A440 as u32), Some(1.0));
     }
 
     #[test]

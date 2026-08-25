@@ -36,7 +36,10 @@ oscillator also uses the recovered 7-bit coarse-pitch assembly, including its
 49 normal semitone positions and oscillator B's distinct nine-octave LO FREQ,
 keyboard and one-sided 0-to-1-semitone FINE paths. Each of those ten oscillators
 now has an independent, sample-rate-stable post-tune drift path bounded by the
-CEM3340 data sheet, and the engine exposes non-serialized retuning. Its original programmable
+CEM3340 data sheet, and the engine exposes the original momentary two-to-eight-second
+retuning operation. The exact 2.5 MHz/5682 A-440 counter now crosses its
+grounded-off 4016 switch and populated output RC network before joining the
+five-voice pre-volume summer. Its original programmable
 Scale Mode adds twelve global, patch-independent chromatic offsets with exact
 V8.1 code steps. Their saw, triangle and pulse
 outputs also retain the published voltage/symmetry ranges, populated-board
@@ -55,7 +58,7 @@ measurements still pass through the evidence gates in
 [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
 
 The first native RF-5 control surface is now active. It is rendered by a Rust
-WebAssembly module, binds every one of the sixty-one public parameters exactly once,
+WebAssembly module, binds every one of the sixty-three public controls exactly once,
 keeps both program banks below the hardware panel and reorganizes its five
 sections at phone, tablet and desktop widths. Pointer capture gives knobs the
 same relative vertical drag on mouse and touch, while RackForge parameter

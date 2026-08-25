@@ -187,6 +187,8 @@ impl ControlScheduler {
             Parameter::MasterVolume,
             Parameter::MasterTune,
             Parameter::VintageSpread,
+            Parameter::A440,
+            Parameter::Tune,
         ] {
             copy_parameter(&mut result, target, parameter);
         }
@@ -210,7 +212,11 @@ fn is_scanned_pot(parameter: Parameter) -> bool {
 fn is_direct_control(parameter: Parameter) -> bool {
     matches!(
         parameter,
-        Parameter::MasterVolume | Parameter::MasterTune | Parameter::VintageSpread
+        Parameter::MasterVolume
+            | Parameter::MasterTune
+            | Parameter::VintageSpread
+            | Parameter::A440
+            | Parameter::Tune
     )
 }
 
