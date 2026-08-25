@@ -33,7 +33,10 @@ validation population, not measurements from one particular instrument.
 One oscillator evaluation now produces two related signals:
 
 - `audio` removes the fixed electrical midpoint for the oscillator mixer while
-  retaining the duty-dependent mean and DC endpoints;
+  retaining the duty-dependent mean and DC endpoints, and carries the
+  conductance-weighted sum of the selected 150/200 kohm waveform paths;
+- `mixer_source_conductance` reports the parallel conductance of those active
+  paths relative to one 150 kohm resistor;
 - `modulation` preserves the board-level polarity entering oscillator-B Poly
   Mod.
 
@@ -44,8 +47,9 @@ relationships are:
 - saw audio excursion is the 1.0 reference;
 - triangle is approximately 0.5 because its voltage excursion and input
   resistor differ from neither side of that ratio;
-- pulse is approximately 1.1025 times saw after its larger voltage excursion
-  and 200/150 kohm resistor ratio are combined;
+- pulse is approximately 1.1025 times saw before finite CA3280 input loading,
+  after its larger voltage excursion and 200/150 kohm resistor ratio are
+  combined; its 200 kohm source is then loaded independently at the mixer;
 - saw modulation is positive-going;
 - pulse modulation spans approximately -0.09 to +2.115 normalized units;
 - triangle modulation is bipolar and equals its audio-domain waveform.
@@ -57,9 +61,12 @@ At either limit the numerical pulse is stable DC and produces no false
 hard-sync transitions; the modeled output coupling rejects that DC at the host
 boundary.
 
-Selected waveforms still add before the oscillator amount VCA. Oscillator B's
-`modulation` sum feeds Poly Mod independently of its audio mixer level, exactly
-as the separate board routing requires.
+Selected waveforms still add before the oscillator amount VCA. The audio
+boundary now retains their total source conductance so the approximately
+100 kohm unlinearized CA3280 input loads one selected waveform differently
+from two or three parallel paths. Oscillator B's `modulation` sum feeds Poly
+Mod independently of its audio mixer level, exactly as the separate board
+routing requires.
 
 ## Numerical treatment
 
@@ -95,6 +102,7 @@ replaceable when full-path measurements become available.
 - all ten profiles remain inside every published endpoint and symmetry limit;
 - triangle is bipolar and approximately half the saw excursion;
 - pulse is slightly hotter than saw after the board resistor ratio;
+- every waveform selection reports its exact populated relative conductance;
 - saw/pulse Poly Mod remain one-sided while triangle remains bipolar;
 - every waveform combination stays finite at the oversampled rate;
 - all 128 panel codes are monotonic from 1% to 99%, while modulation can reach

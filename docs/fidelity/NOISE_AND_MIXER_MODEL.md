@@ -39,6 +39,9 @@ and destination switches.
 - U427 passes through SD430's 0.1uF / 200k / 10k AC-coupling network and a
   profiled common unlinearized CA3280; its buffered output reaches all five
   filters.
+- Per-voice oscillator waveform paths retain their populated conductances:
+  saw/triangle are 150k, pulse is 200k, and simultaneous selections load the
+  approximately 100k unlinearized CA3280 input before its nonlinear transfer.
 - Noise level and source mix follow the original 128-position panel storage.
 - Source mix is a complementary linear crossfade: zero is LFO, one is noise.
 - Noise joins the two-OTA oscillator mix only at each filter input, matching
@@ -57,9 +60,10 @@ distinct fixed seeds so tests, saved sessions and live renders are reproducible.
 The output gain after the pinking network and the exact CA3280 drive at the
 populated board are not numerically established by the service manual. The
 current noise gain and normalized OTA drive are therefore isolated candidates.
-Oscillator waveform voltage, 150/200 kohm input weighting and the common-noise
-routing are source-bounded, but this block does not claim measured mixer
-saturation fidelity.
+Oscillator waveform voltage, 150/200 kohm input weighting, the manual's
+approximate 100 kohm unlinearized input and the common-noise routing are
+source-bounded, but this block does not claim measured mixer saturation
+fidelity.
 
 ## Acceptance tests
 

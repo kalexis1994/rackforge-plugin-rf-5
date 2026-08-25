@@ -9,6 +9,15 @@
 
 const UNLINEARIZED_INPUT_DRIVE: f32 = 0.55;
 const LINEARIZED_INPUT_DRIVE: f32 = 0.05;
+// TM1000D.2 section 2-5 gives approximately 100 kohm for a CA3280 input with
+// its linearizing-diode terminal cut off. SD431 feeds saw/triangle through
+// 150 kohm and pulse through 200 kohm. Conductances are normalized to the
+// populated 150 kohm path so the existing single-saw calibration remains the
+// sole circuit-to-host level anchor.
+const UNLINEARIZED_INPUT_RESISTANCE_OHMS: f32 = 100_000.0;
+const MIXER_REFERENCE_SOURCE_RESISTANCE_OHMS: f32 = 150_000.0;
+const MIXER_INPUT_CONDUCTANCE_RATIO: f32 =
+    MIXER_REFERENCE_SOURCE_RESISTANCE_OHMS / UNLINEARIZED_INPUT_RESISTANCE_OHMS;
 #[cfg(test)]
 const DATASHEET_MINIMUM_PEAK_CURRENT_RATIO: f32 = 0.70;
 #[cfg(test)]
@@ -142,6 +151,33 @@ pub fn oscillator_mixer(
         MixerChannel::OscillatorB => profile.oscillator_b,
     };
     ota_transfer(input, control, UNLINEARIZED_INPUT_DRIVE, half)
+}
+
+/// One oscillator mixer half including the finite CA3280 input loading shared
+/// by every simultaneously selected waveform resistor.
+///
+/// `source_conductance` is relative to one 150 kohm path: saw and triangle are
+/// 1.0 each, while the populated 200 kohm pulse path is 0.75. The normalization
+/// deliberately leaves one selected saw unchanged, avoiding a second unknown
+/// circuit-volts-to-host calibration.
+pub fn oscillator_mixer_loaded(
+    input: f32,
+    source_conductance: f32,
+    control: f32,
+    voice_index: usize,
+    channel: MixerChannel,
+) -> f32 {
+    if !input.is_finite() || !source_conductance.is_finite() || source_conductance <= 0.0 {
+        return 0.0;
+    }
+    let reference_loaded_conductance = MIXER_INPUT_CONDUCTANCE_RATIO + 1.0;
+    let selected_loaded_conductance = MIXER_INPUT_CONDUCTANCE_RATIO + source_conductance;
+    oscillator_mixer(
+        input * reference_loaded_conductance / selected_loaded_conductance,
+        control,
+        voice_index,
+        channel,
+    )
 }
 
 /// The single common noise-level OTA before noise reaches all five filters.
@@ -320,6 +356,51 @@ mod tests {
             assert_ne!(
                 profile.oscillator_a.transconductance_ratio,
                 profile.oscillator_b.transconductance_ratio
+            );
+        }
+    }
+
+    #[test]
+    fn mixer_loading_preserves_the_single_150k_path_anchor() {
+        for voice in 0..5 {
+            for channel in [MixerChannel::OscillatorA, MixerChannel::OscillatorB] {
+                assert_eq!(
+                    oscillator_mixer_loaded(0.75, 1.0, 0.6, voice, channel),
+                    oscillator_mixer(0.75, 0.6, voice, channel)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn parallel_waveform_paths_load_the_finite_mixer_input() {
+        let one_path = oscillator_mixer_loaded(0.5, 1.0, 1.0, 2, MixerChannel::OscillatorA);
+        let two_equal_paths = oscillator_mixer_loaded(1.0, 2.0, 1.0, 2, MixerChannel::OscillatorA);
+        let unloaded_linear_sum = one_path * 2.0;
+        assert!(two_equal_paths > one_path);
+        assert!(two_equal_paths < unloaded_linear_sum);
+
+        let expected_input_ratio =
+            2.0 * (MIXER_INPUT_CONDUCTANCE_RATIO + 1.0) / (MIXER_INPUT_CONDUCTANCE_RATIO + 2.0);
+        let small_one = oscillator_mixer_loaded(0.001, 1.0, 1.0, 2, MixerChannel::OscillatorA);
+        let small_two = oscillator_mixer_loaded(0.002, 2.0, 1.0, 2, MixerChannel::OscillatorA);
+        assert!((small_two / small_one - expected_input_ratio).abs() < 1.0e-5);
+    }
+
+    #[test]
+    fn pulse_path_uses_its_populated_200k_conductance() {
+        let loaded = oscillator_mixer_loaded(0.75, 0.75, 1.0, 2, MixerChannel::OscillatorA);
+        let reference = oscillator_mixer(0.75, 1.0, 2, MixerChannel::OscillatorA);
+        assert!(loaded > reference);
+        assert!(loaded < reference * 1.12);
+    }
+
+    #[test]
+    fn absent_or_invalid_mixer_sources_are_silent() {
+        for source in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+            assert_eq!(
+                oscillator_mixer_loaded(1.0, source, 1.0, 0, MixerChannel::OscillatorA),
+                0.0
             );
         }
     }

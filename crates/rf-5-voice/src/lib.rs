@@ -265,13 +265,15 @@ impl Voice {
                 filter_keyboard,
                 common_filter_octaves + poly_filter_octaves,
             );
-            let mixer = vca::oscillator_mixer(
+            let mixer = vca::oscillator_mixer_loaded(
                 sample_a.audio,
+                sample_a.mixer_source_conductance,
                 level_a,
                 self.voice_index,
                 vca::MixerChannel::OscillatorA,
-            ) + vca::oscillator_mixer(
+            ) + vca::oscillator_mixer_loaded(
                 sample_b.audio,
+                sample_b.mixer_source_conductance,
                 level_b,
                 self.voice_index,
                 vca::MixerChannel::OscillatorB,

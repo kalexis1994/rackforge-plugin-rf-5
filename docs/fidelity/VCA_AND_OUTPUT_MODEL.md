@@ -24,6 +24,11 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
 - Each voice has one deterministic dual-OTA mixer profile. Its oscillator A
   and B halves retain close but non-identical transconductance and overload
   knees inside the CA3280 data-sheet output-current bounds.
+- Each oscillator mix reconstructs the manual's approximately 100 kohm
+  unlinearized input impedance against the selected 150 kohm saw/triangle and
+  200 kohm pulse paths. A single saw remains the level anchor; parallel
+  waveform selections produce the source-backed passive loading before the
+  nonlinear current transfer.
 - One separate unlinearized CA3280 sets common noise level before the result is
   distributed to the five CEM3320 noise inputs; noise does not pass through a
   fictitious third mixer OTA on every voice card.
@@ -53,11 +58,12 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
 
 ## Bounded uncertainty
 
-The device modes, routing, equal-resistor summer, linear gain-versus-bias law,
-AC-coupling values and output topology are source-backed. The deterministic
-population is bounded by the published 0.70-1.30 peak-output-current ratio and
-kept deliberately narrower. Normalized voltage scale, overload-knee spread,
-populated-device matching, external output load and
+The device modes, routing, approximate input impedances, waveform-source
+resistors, equal-resistor summer, linear gain-versus-bias law, AC-coupling
+values and output topology are source-backed. The deterministic population is
+bounded by the published 0.70-1.30 peak-output-current ratio and kept
+deliberately narrower. The one-saw loading normalization, normalized voltage
+scale, overload-knee spread, populated-device matching, external output load and
 circuit-volts-to-host-full-scale conversion remain hypotheses. Exact THD and
 overload require recorded sweeps from a serviced reference instrument.
 
@@ -68,6 +74,9 @@ overload require recorded sweeps from a serviced reference instrument.
 - the linearized transfer retains more strong-signal range than the mixer VCA;
 - all mixer profiles remain inside published output bounds, paired halves stay
   close but distinct, and serviced final-voice small-signal gains match;
+- a single 150 kohm mixer path preserves the existing level anchor, while
+  parallel paths and the 200 kohm pulse path follow the finite-input loading
+  law;
 - all transfers are finite and odd-symmetric and reject non-finite input;
 - the master stage remains bounded while retaining multi-voice headroom;
 - the 4.34 Hz coupling network rejects steady DC at every supported sample

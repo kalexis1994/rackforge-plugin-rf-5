@@ -13,8 +13,13 @@ pub struct WaveSelection {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct OscillatorSample {
-    /// AC representation delivered to the oscillator mixer.
+    /// Conductance-weighted AC representation delivered to the oscillator
+    /// mixer. One unit of conductance is one populated 150 kohm path.
     pub audio: f32,
+    /// Sum of the selected waveform-input conductances relative to 150 kohm.
+    /// The CA3280 mixer uses this to recover the loading of its approximately
+    /// 100 kohm unlinearized input when more than one waveform is selected.
+    pub mixer_source_conductance: f32,
     /// Board-level polarity delivered to oscillator-B Poly Mod.
     pub modulation: f32,
     pub wrapped: bool,
@@ -73,8 +78,14 @@ const TRIANGLE_SYMMETRY: [f32; OUTPUT_PROFILE_COUNT] = [
 // The voice board uses 150 kohm inputs for saw/triangle and 200 kohm for
 // pulse. With +15/-5 V supplies, the data-sheet pulse formulas and the 4016
 // negative clamp give approximately -0.6 V and +14.1 V after selection.
-// Values below are expressed relative to a nominal 5 V saw half-excursion.
-const PULSE_AC_GAIN: f32 = 1.1025;
+// Values below are expressed relative to a nominal 5 V saw half-excursion
+// and one 150 kohm input conductance. Loading by the CA3280 input itself is
+// applied at the VCA boundary, where all simultaneously selected paths are
+// known.
+const SAW_TRIANGLE_MIXER_CONDUCTANCE: f32 = 1.0;
+const PULSE_MIXER_CONDUCTANCE: f32 = 150_000.0 / 200_000.0;
+const PULSE_RAW_AC_GAIN: f32 = 1.47;
+const PULSE_AC_GAIN: f32 = PULSE_RAW_AC_GAIN * PULSE_MIXER_CONDUCTANCE;
 const PULSE_MODULATION_OFFSET: f32 = 1.0125;
 // The correction spans two host samples at the four-times internal rate. A
 // wider polynomial transition is necessary when the 1%/99% hardware pulse
@@ -150,6 +161,7 @@ impl Vco {
         let profile = self.profile_index;
         let mut audio = 0.0;
         let mut modulation = 0.0;
+        let mut mixer_source_conductance = 0.0;
 
         if waves.saw {
             let centered = band_limited_saw(phase, increment);
@@ -157,6 +169,7 @@ impl Vco {
             let midpoint = (SAW_UPPER_VOLTS[profile] + SAW_LOWER_VOLTS[profile]) / 10.0;
             audio += centered * half_range;
             modulation += centered * half_range + midpoint;
+            mixer_source_conductance += SAW_TRIANGLE_MIXER_CONDUCTANCE;
         }
         if waves.triangle {
             let centered = triangle(phase, TRIANGLE_SYMMETRY[profile]);
@@ -164,11 +177,13 @@ impl Vco {
             let shifted = centered * half_range;
             audio += shifted;
             modulation += shifted;
+            mixer_source_conductance += SAW_TRIANGLE_MIXER_CONDUCTANCE;
         }
         if waves.pulse {
             let centered = band_limited_pulse(phase, increment, pulse_width) * PULSE_AC_GAIN;
             audio += centered;
             modulation += centered + PULSE_MODULATION_OFFSET;
+            mixer_source_conductance += PULSE_MIXER_CONDUCTANCE;
         }
 
         let sync_events = pulse_edges(phase, increment, pulse_width);
@@ -176,6 +191,7 @@ impl Vco {
 
         OscillatorSample {
             audio,
+            mixer_source_conductance,
             modulation,
             wrapped,
             sync_events,
@@ -554,6 +570,29 @@ mod tests {
         let saw_peak = (SAW_UPPER_VOLTS[4] - SAW_LOWER_VOLTS[4]) / 10.0;
         assert!(PULSE_AC_GAIN > saw_peak);
         assert!(PULSE_AC_GAIN / saw_peak < 1.11);
+    }
+
+    #[test]
+    fn selected_waveforms_report_their_populated_mixer_conductances() {
+        let mut oscillator = Vco::default();
+        let saw = oscillator.next(0.0, 48_000.0, 0.5, SAW);
+        let pulse = oscillator.next(0.0, 48_000.0, 0.5, PULSE);
+        let all = oscillator.next(
+            0.0,
+            48_000.0,
+            0.5,
+            WaveSelection {
+                saw: true,
+                triangle: true,
+                pulse: true,
+            },
+        );
+        let disconnected = oscillator.next(0.0, 48_000.0, 0.5, WaveSelection::default());
+
+        assert_eq!(saw.mixer_source_conductance, 1.0);
+        assert_eq!(pulse.mixer_source_conductance, 0.75);
+        assert_eq!(all.mixer_source_conductance, 2.75);
+        assert_eq!(disconnected.mixer_source_conductance, 0.0);
     }
 
     #[test]
