@@ -506,8 +506,8 @@ pub fn encode_program(settings: crate::Settings) -> [ProgramByte; PROGRAM_BYTES]
 
 /// Decode a 24-byte program over existing machine state.
 ///
-/// Master volume, RF-5's machine-character control and Scale Mode remain
-/// untouched because none of them belongs to a Rev 3 patch record.
+/// Master volume, MASTER TUNE, RF-5's machine-character control and Scale Mode
+/// remain untouched because none of them belongs to a Rev 3 patch record.
 pub fn decode_program(
     raw: [ProgramByte; PROGRAM_BYTES],
     mut settings: crate::Settings,

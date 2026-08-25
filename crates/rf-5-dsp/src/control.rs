@@ -183,7 +183,11 @@ impl ControlScheduler {
 
     fn with_direct_controls(&self, target: Settings) -> Settings {
         let mut result = self.applied;
-        for parameter in [Parameter::MasterVolume, Parameter::VintageSpread] {
+        for parameter in [
+            Parameter::MasterVolume,
+            Parameter::MasterTune,
+            Parameter::VintageSpread,
+        ] {
             copy_parameter(&mut result, target, parameter);
         }
         result
@@ -206,7 +210,7 @@ fn is_scanned_pot(parameter: Parameter) -> bool {
 fn is_direct_control(parameter: Parameter) -> bool {
     matches!(
         parameter,
-        Parameter::MasterVolume | Parameter::VintageSpread
+        Parameter::MasterVolume | Parameter::MasterTune | Parameter::VintageSpread
     )
 }
 
@@ -337,19 +341,16 @@ mod tests {
     }
 
     #[test]
-    fn master_volume_is_a_direct_analog_control() {
+    fn non_programmable_knobs_are_direct_analog_controls() {
         let initial = Settings::default();
         let mut target = initial;
         assert!(target.set(Parameter::MasterVolume as u32, 0.1));
+        assert!(target.set(Parameter::MasterTune as u32, 0.9));
         let mut scheduler = ControlScheduler::default();
         scheduler.prepare(initial, 48_000.0);
-        assert_eq!(
-            scheduler
-                .next(target, 48_000.0)
-                .settings
-                .get(Parameter::MasterVolume),
-            0.1
-        );
+        let applied = scheduler.next(target, 48_000.0).settings;
+        assert_eq!(applied.get(Parameter::MasterVolume), 0.1);
+        assert_eq!(applied.get(Parameter::MasterTune), 0.9);
     }
 
     #[test]

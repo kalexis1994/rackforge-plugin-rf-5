@@ -49,6 +49,8 @@ and modulation domains are documented in
 [`fidelity/VCO_OUTPUT_MODEL.md`](fidelity/VCO_OUTPUT_MODEL.md).
 Its control-voltage law and calibration hypotheses are isolated in
 [`fidelity/TUNING_MODEL.md`](fidelity/TUNING_MODEL.md).
+The direct, non-programmable R104 path shared by oscillator A and B is isolated
+in [`fidelity/MASTER_TUNE_MODEL.md`](fidelity/MASTER_TUNE_MODEL.md).
 The ten-channel counter, DAC search and runtime bias tables are documented in
 [`fidelity/AUTOTUNE_MODEL.md`](fidelity/AUTOTUNE_MODEL.md).
 The independent post-tune motion of all ten VCOs, including its published

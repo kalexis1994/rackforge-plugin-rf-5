@@ -64,7 +64,6 @@ owns an explicit oscillator-tune operation. They are not yet public parameters
 or web-bridge commands. A complete front panel still needs an append-only,
 non-patch control boundary for:
 
-- master tune;
 - the momentary automatic-tune trigger;
 - visible/on-screen pitch and modulation wheel positions.
 

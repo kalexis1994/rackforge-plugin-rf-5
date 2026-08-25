@@ -5,6 +5,7 @@ mod control;
 mod cv;
 mod glide;
 mod lfo;
+mod master_tune;
 mod noise;
 mod output;
 mod pitch_wheel;
@@ -32,6 +33,8 @@ const PRE_SCALE_PATCH_PARAMETER_COUNT: usize = 47;
 const PRE_SCALE_STATE_BYTES: usize = PRE_SCALE_PATCH_PARAMETER_COUNT * 4;
 const PRE_RELEASE_PARAMETER_COUNT: usize = 59;
 const PRE_RELEASE_STATE_BYTES: usize = PRE_RELEASE_PARAMETER_COUNT * 4;
+const PRE_MASTER_TUNE_PARAMETER_COUNT: usize = 60;
+const PRE_MASTER_TUNE_STATE_BYTES: usize = PRE_MASTER_TUNE_PARAMETER_COUNT * 4;
 
 #[derive(Clone, Copy, Debug, Default)]
 struct HeldNote {
@@ -206,7 +209,7 @@ impl Engine {
         }
         if !matches!(
             Parameter::try_from(index),
-            Ok(Parameter::MasterVolume | Parameter::VintageSpread)
+            Ok(Parameter::MasterVolume | Parameter::MasterTune | Parameter::VintageSpread)
         ) {
             self.controls.notify_change(self.sample_rate);
         }
@@ -341,7 +344,10 @@ impl Engine {
         self.vco_drift.advance(self.sample_rate);
         let drift_character = applied_settings.get(Parameter::VintageSpread);
         let glide_offset = self.advance_glide(applied_settings);
-        let performance_pitch = self.pitch_wheel * pitch_wheel::RANGE_SEMITONES + glide_offset;
+        let performance_pitch =
+            master_tune::offset_semitones(applied_settings.get(Parameter::MasterTune))
+                + self.pitch_wheel * pitch_wheel::RANGE_SEMITONES
+                + glide_offset;
         let lfo_sample = self.lfo.next(
             self.sample_rate,
             applied_settings.get(Parameter::LfoFrequency),
@@ -490,8 +496,25 @@ impl Engine {
             let mut values = Settings::default().as_array();
             values[..PRE_SCALE_PATCH_PARAMETER_COUNT]
                 .copy_from_slice(&old[..PRE_SCALE_PATCH_PARAMETER_COUNT]);
-            values[Parameter::ScaleC as usize..]
+            values[Parameter::ScaleC as usize..Parameter::MasterTune as usize]
                 .copy_from_slice(&old[PRE_SCALE_PATCH_PARAMETER_COUNT..]);
+            let Some(settings) = Settings::from_array(values) else {
+                return false;
+            };
+            self.install_loaded_settings(settings);
+            return true;
+        }
+        if state.len() == PRE_MASTER_TUNE_STATE_BYTES {
+            let mut old = [0.0_f32; PRE_MASTER_TUNE_PARAMETER_COUNT];
+            let (chunks, remainder) = state.as_chunks::<4>();
+            if !remainder.is_empty() {
+                return false;
+            }
+            for (value, chunk) in old.iter_mut().zip(chunks) {
+                *value = f32::from_le_bytes(*chunk);
+            }
+            let mut values = Settings::default().as_array();
+            values[..PRE_MASTER_TUNE_PARAMETER_COUNT].copy_from_slice(&old);
             let Some(settings) = Settings::from_array(values) else {
                 return false;
             };
@@ -848,7 +871,7 @@ mod tests {
         old_values[..PRE_SCALE_PATCH_PARAMETER_COUNT]
             .copy_from_slice(&current[..PRE_SCALE_PATCH_PARAMETER_COUNT]);
         old_values[PRE_SCALE_PATCH_PARAMETER_COUNT..]
-            .copy_from_slice(&current[Parameter::ScaleC as usize..]);
+            .copy_from_slice(&current[Parameter::ScaleC as usize..Parameter::MasterTune as usize]);
         old_values[Parameter::ScaleE as usize - 1] = 0.31;
         let mut state = [0_u8; PRE_RELEASE_STATE_BYTES];
         for (chunk, value) in state.as_chunks_mut::<4>().0.iter_mut().zip(old_values) {
@@ -860,6 +883,27 @@ mod tests {
         assert!(engine.load_state(&state));
         assert_eq!(engine.settings.get(Parameter::ReleaseSwitch), 1.0);
         assert_eq!(engine.settings.get(Parameter::ScaleE), 0.31);
+    }
+
+    #[test]
+    fn pre_master_tune_state_migrates_to_the_centre_detent() {
+        let mut old_values = Settings::default().as_array();
+        old_values[Parameter::ScaleE as usize] = 0.31;
+        let mut state = [0_u8; PRE_MASTER_TUNE_STATE_BYTES];
+        for (chunk, value) in state
+            .as_chunks_mut::<4>()
+            .0
+            .iter_mut()
+            .zip(old_values[..PRE_MASTER_TUNE_PARAMETER_COUNT].iter())
+        {
+            chunk.copy_from_slice(&value.to_le_bytes());
+        }
+
+        let mut engine = Engine::default();
+        assert!(engine.set_parameter(Parameter::MasterTune as u32, 1.0));
+        assert!(engine.load_state(&state));
+        assert_eq!(engine.settings.get(Parameter::ScaleE), 0.31);
+        assert_eq!(engine.settings.get(Parameter::MasterTune), 0.5);
     }
 
     #[test]
@@ -985,10 +1029,15 @@ mod tests {
     fn loading_a_program_preserves_the_physical_master_volume() {
         let mut engine = Engine::default();
         assert!(engine.set_parameter(Parameter::MasterVolume as u32, 0.31));
+        assert!(engine.set_parameter(Parameter::MasterTune as u32, 0.73));
         assert!(engine.load_program("baseline-pad"));
         assert_eq!(
             engine.parameter(Parameter::MasterVolume as u32),
             Some(0.31_f32 as f64)
+        );
+        assert_eq!(
+            engine.parameter(Parameter::MasterTune as u32),
+            Some(0.73_f32 as f64)
         );
     }
 

@@ -17,6 +17,8 @@ one shared LFO, independent pink Wheel-Mod and white audio-noise generators,
 audio-rate Poly Mod, a four-pole CEM3320-class filter,
 separate CEM3310-class RC envelopes, five-voice Unison, Glide and both
 performance wheels, including the pitch wheel's SD334 diode deadband. The
+direct R104 Master Tune path now reaches both VCO master summers continuously,
+outside the scanned and programmable control domain. The
 global programmable Release switch now drives both
 envelopes, and every original RF-5 patch is packed through the recovered V8.1
 24-byte program format with 24 seven-bit pots and 22 mapped switches. Separate
@@ -53,13 +55,13 @@ measurements still pass through the evidence gates in
 [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
 
 The first native RF-5 control surface is now active. It is rendered by a Rust
-WebAssembly module, binds every one of the sixty public parameters exactly once,
+WebAssembly module, binds every one of the sixty-one public parameters exactly once,
 keeps both program banks below the hardware panel and reorganizes its five
 sections at phone, tablet and desktop widths. Pointer capture gives knobs the
 same relative vertical drag on mouse and touch, while RackForge parameter
 attributes keep host-owned context menus and MIDI Link available.
 
-Until the graphical panel is added, the `RF-5 Audition` factory bank provides
+The `RF-5 Audition` factory bank provides
 twenty-three immediately playable listening programs for Wheel/Poly Mod, LFO range,
 Sync, filter drive, resonance, fast/slow envelope behaviour, CA3280 drive and
 common noise, including explicit global-Release and oscillator-B FINE endpoint

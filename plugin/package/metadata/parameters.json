@@ -311,6 +311,11 @@
       "index": 59, "id": "scale-b", "name": "B", "page": "temperament", "order": 11,
       "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5039370078740157, "step": 0.007874015748031496 },
       "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
+    },
+    {
+      "index": 60, "id": "master-tune", "name": "Master Tune", "page": "output", "order": 1,
+      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5, "step": 0.0001 },
+      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
     }
   ]
 }

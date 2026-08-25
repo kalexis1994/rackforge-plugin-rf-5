@@ -92,7 +92,7 @@ const PERFORMANCE: ControlGroup = ControlGroup {
 };
 const OUTPUT: ControlGroup = ControlGroup {
     title: "OUTPUT",
-    parameter_ids: &["master-volume", "vintage-spread"],
+    parameter_ids: &["master-tune", "master-volume", "vintage-spread"],
 };
 const SCALE: ControlGroup = ControlGroup {
     title: "SCALE MODE",
