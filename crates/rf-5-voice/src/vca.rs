@@ -9,6 +9,22 @@
 
 const UNLINEARIZED_INPUT_DRIVE: f32 = 0.55;
 const LINEARIZED_INPUT_DRIVE: f32 = 0.05;
+// Intersil Figure 3A plots the diode-linearized transfer at IABC = 650 uA,
+// ID = 200 uA and 10 kohm in each input. Its 1 V/div horizontal scale shows
+// the rounded current limit at approximately +/-4 V source drive. SD431 uses
+// 20 kohm at both final-VCA inputs, doubling that source-voltage span. The
+// filter candidate's explicit 2 V/internal-unit conversion therefore places
+// the final VCA asymptote at four internal units. A sixth-order norm follows
+// the graph's long linear centre and rounded knee without claiming that the
+// bitmap is a precision transfer measurement.
+const DATASHEET_LINEARIZED_INPUT_RESISTANCE_OHMS: f32 = 10_000.0;
+const FINAL_VCA_INPUT_RESISTANCE_OHMS: f32 = 20_000.0;
+const DATASHEET_LINEARIZED_LIMIT_VOLTS: f32 = 4.0;
+const FINAL_VCA_CIRCUIT_VOLTS_PER_UNIT: f32 = 2.0;
+const FINAL_VCA_SOFT_KNEE_ORDER: f32 = 6.0;
+const FINAL_VCA_NOMINAL_LIMIT_UNITS: f32 = DATASHEET_LINEARIZED_LIMIT_VOLTS
+    * (FINAL_VCA_INPUT_RESISTANCE_OHMS / DATASHEET_LINEARIZED_INPUT_RESISTANCE_OHMS)
+    / FINAL_VCA_CIRCUIT_VOLTS_PER_UNIT;
 // SD431 converts the nominal 0-5 V CEM3310 amplifier-envelope output to the
 // final CA3280 IABC current through R4495 + R4533 and grounded-base PNP Q410.
 // Fairchild's 2N4250 curve is approximately 0.56 V at 100 uA and rises by one
@@ -272,12 +288,10 @@ pub fn amplifier_envelope_control(envelope: f32) -> f32 {
 
 /// The diode-linearized and service-calibrated final VCA on one voice card.
 pub fn final_voice(input: f32, control: f32, voice_index: usize) -> f32 {
-    ota_transfer_limited(
+    final_voice_transfer(
         input,
         control,
-        LINEARIZED_INPUT_DRIVE,
         FINAL_VCA_PROFILES[voice_index % FINAL_VCA_PROFILES.len()],
-        FINAL_VCA_MAXIMUM_CONTROL_RATIO,
     )
 }
 
@@ -303,6 +317,34 @@ fn ota_transfer_limited(
     let drive = nominal_drive * profile.input_drive_ratio;
     let current = libm::tanhf(input * drive) / drive;
     current * control.clamp(0.0, maximum_control) * profile.transconductance_ratio
+}
+
+fn final_voice_transfer(input: f32, control: f32, profile: OtaHalfProfile) -> f32 {
+    if control <= 0.0 || !control.is_finite() || !input.is_finite() {
+        return 0.0;
+    }
+
+    // A larger drive ratio means an earlier knee, matching the population
+    // convention used by the other OTA profiles. Evaluate the sixth-order
+    // norm on either side of unity to avoid overflow for arbitrary finite host
+    // input while preserving odd symmetry and a finite current asymptote.
+    let limit = FINAL_VCA_NOMINAL_LIMIT_UNITS / profile.input_drive_ratio;
+    let magnitude = input.abs();
+    let ratio = magnitude / limit;
+    let limited_magnitude = if ratio <= 1.0 {
+        let ratio_squared = ratio * ratio;
+        let ratio_sixth = ratio_squared * ratio_squared * ratio_squared;
+        magnitude / libm::powf(1.0 + ratio_sixth, 1.0 / FINAL_VCA_SOFT_KNEE_ORDER)
+    } else {
+        let inverse = 1.0 / ratio;
+        let inverse_squared = inverse * inverse;
+        let inverse_sixth = inverse_squared * inverse_squared * inverse_squared;
+        limit / libm::powf(1.0 + inverse_sixth, 1.0 / FINAL_VCA_SOFT_KNEE_ORDER)
+    };
+    input.signum()
+        * limited_magnitude
+        * control.clamp(0.0, FINAL_VCA_MAXIMUM_CONTROL_RATIO)
+        * profile.transconductance_ratio
 }
 
 fn q410_collector_current_amps(envelope_volts: f32) -> f32 {
@@ -424,8 +466,67 @@ mod tests {
         let final_small_signal = final_voice(0.001, 1.0, 2).abs() / 0.001;
         let mixer_retained = unlinearized / (input * mixer_small_signal);
         let final_retained = linearized / (input * final_small_signal);
-        assert!(final_retained > 0.99);
+        assert!(final_retained > 0.97);
         assert!(mixer_retained < 0.65);
+    }
+
+    #[test]
+    fn populated_input_resistors_scale_the_datasheet_voltage_span() {
+        let populated_limit_volts = DATASHEET_LINEARIZED_LIMIT_VOLTS
+            * FINAL_VCA_INPUT_RESISTANCE_OHMS
+            / DATASHEET_LINEARIZED_INPUT_RESISTANCE_OHMS;
+        assert_eq!(populated_limit_volts, 8.0);
+        assert_eq!(FINAL_VCA_NOMINAL_LIMIT_UNITS, 4.0);
+    }
+
+    #[test]
+    fn final_vca_knee_overlaps_the_cem3320_output_range() {
+        fn retained_at_vpp(circuit_vpp: f32) -> f32 {
+            let peak_internal = circuit_vpp * 0.5 / FINAL_VCA_CIRCUIT_VOLTS_PER_UNIT;
+            final_voice(peak_internal, 1.0, 2) / peak_internal
+        }
+
+        // The CEM3320 population clips between 10 and 14 Vpp. Figure 3A's
+        // scaled knee remains nearly linear at the low end but has begun
+        // compressing before the high end, rather than sitting outside it.
+        let at_10_vpp = retained_at_vpp(10.0);
+        let at_14_vpp = retained_at_vpp(14.0);
+        assert!(at_10_vpp > 0.98);
+        assert!((0.90..0.97).contains(&at_14_vpp));
+        assert!(at_14_vpp < at_10_vpp);
+    }
+
+    #[test]
+    fn final_vca_preserves_small_signal_gain_and_has_a_finite_asymptote() {
+        for (voice, profile) in FINAL_VCA_PROFILES.iter().copied().enumerate() {
+            let small_signal_gain = final_voice(1.0e-4, 1.0, voice) / 1.0e-4;
+            assert!((small_signal_gain - 1.0).abs() < 1.0e-6);
+
+            let expected_limit = FINAL_VCA_NOMINAL_LIMIT_UNITS / profile.input_drive_ratio;
+            let positive = final_voice(f32::MAX, 1.0, voice);
+            let negative = final_voice(-f32::MAX, 1.0, voice);
+            assert!(positive.is_finite());
+            assert!((positive - expected_limit).abs() < 1.0e-5);
+            assert!((positive + negative).abs() < 1.0e-6);
+        }
+    }
+
+    #[test]
+    fn final_vca_transfer_is_monotonic_odd_and_profiled() {
+        let mut profiled = [0.0; 5];
+        for (voice, output) in profiled.iter_mut().enumerate() {
+            let mut previous = final_voice(0.0, 1.0, voice);
+            for step in 1..=8_000 {
+                let input = step as f32 * 0.002;
+                let positive = final_voice(input, 1.0, voice);
+                let negative = final_voice(-input, 1.0, voice);
+                assert!(positive >= previous);
+                assert!((positive + negative).abs() < 1.0e-6);
+                previous = positive;
+            }
+            *output = final_voice(6.0, 1.0, voice);
+        }
+        assert!(profiled.windows(2).any(|pair| pair[0] != pair[1]));
     }
 
     #[test]

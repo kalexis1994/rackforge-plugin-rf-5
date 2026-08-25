@@ -39,6 +39,14 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
   are evaluated inside the same four-times-oversampled loop as the filters.
   Their small-signal gain is equal after the documented per-voice service
   adjustment, while their strong-signal knees remain distinct.
+- The final-VCA signal transfer is separate from the generic linearized
+  modulation OTA. Intersil Figure 3A supplies two bounded landmarks at 650 uA
+  IABC and 200 uA diode current: a long linear centre and rounded current limit
+  at approximately four horizontal 1 V divisions with 10 kohm inputs. SD431's
+  populated 20 kohm/20 kohm inputs double the source-voltage span. With the
+  filter candidate's explicit 2 V/internal-unit conversion, a sixth-order
+  smooth norm places the asymptote at four internal units and starts measurable
+  compression inside the CEM3320 population's 10-14 Vpp output range.
 - The nominal 0-5 V amplifier envelope is converted once per host sample by
   the populated R4495/Q410/R4533 network. A Fairchild 2N4250 junction fit uses
   the original approximately 0.56 V at 100 uA and 26 mV thermal slope, solving
@@ -73,15 +81,18 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
 ## Bounded uncertainty
 
 The device modes, routing, approximate input impedances, waveform-source
-resistors, Q410 identity and bias network, the 2N4250 room-temperature
-base-emitter curve, equal-resistor summer, linear gain-versus-bias law,
-AC-coupling values and output topology are source-backed. The deterministic population is
-bounded by the published 0.70-1.30 peak-output-current ratio and kept
-deliberately narrower. The one-saw loading normalization, normalized voltage
-scale, Q410 temperature, overload-knee spread, populated-device matching,
-external output load and circuit-volts-to-host-full-scale conversion remain
-hypotheses. Exact THD and overload require recorded sweeps from a serviced
-reference instrument.
+resistors, final-VCA 20 kohm input network, Q410 identity and bias network, the
+2N4250 room-temperature base-emitter curve, equal-resistor summer, linear
+gain-versus-bias law, AC-coupling values and output topology are source-backed.
+The deterministic population is bounded by the published 0.70-1.30
+peak-output-current ratio and kept deliberately narrower. Figure 3A is a
+printed bitmap, so the approximately four-division limit and sixth-order knee
+are explicit bounded interpretations rather than digitized device
+measurements. The one-saw loading normalization, normalized voltage scale,
+Q410 temperature, overload-knee spread, populated-device matching, external
+output load and circuit-volts-to-host-full-scale conversion remain hypotheses.
+Exact THD and overload require recorded sweeps from a serviced reference
+instrument.
 
 ## Acceptance tests
 
@@ -90,6 +101,9 @@ reference instrument.
 - the 5 V envelope reconstructs 650-680 uA IABC, has a silicon-junction knee,
   and accepts the complete bounded 4.7-5.3 V CEM3310 population;
 - the linearized transfer retains more strong-signal range than the mixer VCA;
+- the populated 20 kohm inputs double Figure 3A's 10 kohm source-voltage span,
+  preserve calibrated small-signal gain and put the final-VCA knee inside the
+  CEM3320's 10-14 Vpp output range;
 - all mixer profiles remain inside published output bounds, paired halves stay
   close but distinct, and serviced final-voice small-signal gains match;
 - a single 150 kohm mixer path preserves the existing level anchor, while
