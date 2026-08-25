@@ -221,6 +221,7 @@ impl Voice {
         let filter_cutoff = quantize_analog_pot(settings.get(Parameter::FilterCutoff));
         let filter_keyboard = parameter_enabled(settings, Parameter::FilterKeyboard);
         let common_filter_octaves = direct_filter_envelope + modulation.filter_octaves;
+        let amplifier_vca_control = vca::amplifier_envelope_control(amplifier_envelope);
 
         for _ in 0..OSCILLATOR_OVERSAMPLING {
             let sample_b =
@@ -287,7 +288,7 @@ impl Voice {
             );
             output = self.decimator.push(vca::final_voice(
                 filtered,
-                amplifier_envelope,
+                amplifier_vca_control,
                 self.voice_index,
             ));
         }

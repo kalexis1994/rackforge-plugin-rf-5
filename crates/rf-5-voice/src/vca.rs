@@ -9,6 +9,23 @@
 
 const UNLINEARIZED_INPUT_DRIVE: f32 = 0.55;
 const LINEARIZED_INPUT_DRIVE: f32 = 0.05;
+// SD431 converts the nominal 0-5 V CEM3310 amplifier-envelope output to the
+// final CA3280 IABC current through R4495 + R4533 and grounded-base PNP Q410.
+// Fairchild's 2N4250 curve is approximately 0.56 V at 100 uA and rises by one
+// silicon thermal slope per e-fold. The implicit diode-plus-resistor equation
+// is solved as x + ln(x) = z (the logarithmic Lambert-W form) without adding a
+// sample-rate-dependent smoothing approximation.
+const ENVELOPE_NOMINAL_PEAK_VOLTS: f32 = 5.0;
+const ENVELOPE_MAXIMUM_PEAK_VOLTS: f32 = 5.3;
+const VCA_CONTROL_SERIES_RESISTANCE_OHMS: f32 = 3_300.0 + 3_300.0;
+#[cfg(test)]
+const Q410_REFERENCE_CURRENT_AMPS: f32 = 100.0e-6;
+#[cfg(test)]
+const Q410_REFERENCE_VBE_VOLTS: f32 = 0.56;
+const Q410_THERMAL_VOLTAGE_VOLTS: f32 = 0.026;
+const Q410_SATURATION_CURRENT_AMPS: f32 = 4.425_527e-14;
+const Q410_NOMINAL_CONTROL_CURRENT_AMPS: f32 = 665.262_1e-6;
+const FINAL_VCA_MAXIMUM_CONTROL_RATIO: f32 = 1.067_936_5;
 // TM1000D.2 section 2-5 gives approximately 100 kohm for a CA3280 input with
 // its linearizing-diode terminal cut off. SD431 feeds saw/triangle through
 // 150 kohm and pulse through 200 kohm. Conductances are normalized to the
@@ -240,13 +257,27 @@ pub fn poly_mod_oscillator_b(input: f32, control: f32, voice_index: usize) -> f3
     )
 }
 
+/// Convert the CEM3310 amplifier-envelope voltage into the IABC ratio applied
+/// to the final CA3280 by Q410 and the two populated 3.3 kohm resistors.
+///
+/// The returned value is normalized to the current produced by the nominal
+/// 5 V envelope peak, so the existing serviced voice-level anchor is retained.
+pub fn amplifier_envelope_control(envelope: f32) -> f32 {
+    if !envelope.is_finite() || envelope <= 0.0 {
+        return 0.0;
+    }
+    let envelope_volts = (envelope * ENVELOPE_NOMINAL_PEAK_VOLTS).min(ENVELOPE_MAXIMUM_PEAK_VOLTS);
+    q410_collector_current_amps(envelope_volts) / Q410_NOMINAL_CONTROL_CURRENT_AMPS
+}
+
 /// The diode-linearized and service-calibrated final VCA on one voice card.
 pub fn final_voice(input: f32, control: f32, voice_index: usize) -> f32 {
-    ota_transfer(
+    ota_transfer_limited(
         input,
         control,
         LINEARIZED_INPUT_DRIVE,
         FINAL_VCA_PROFILES[voice_index % FINAL_VCA_PROFILES.len()],
+        FINAL_VCA_MAXIMUM_CONTROL_RATIO,
     )
 }
 
@@ -256,12 +287,48 @@ pub fn master_output(input: f32, control: f32) -> f32 {
 }
 
 fn ota_transfer(input: f32, control: f32, nominal_drive: f32, profile: OtaHalfProfile) -> f32 {
+    ota_transfer_limited(input, control, nominal_drive, profile, 1.0)
+}
+
+fn ota_transfer_limited(
+    input: f32,
+    control: f32,
+    nominal_drive: f32,
+    profile: OtaHalfProfile,
+    maximum_control: f32,
+) -> f32 {
     if control <= 0.0 || !control.is_finite() || !input.is_finite() {
         return 0.0;
     }
     let drive = nominal_drive * profile.input_drive_ratio;
     let current = libm::tanhf(input * drive) / drive;
-    current * control.clamp(0.0, 1.0) * profile.transconductance_ratio
+    current * control.clamp(0.0, maximum_control) * profile.transconductance_ratio
+}
+
+fn q410_collector_current_amps(envelope_volts: f32) -> f32 {
+    if !envelope_volts.is_finite() || envelope_volts <= 0.0 {
+        return 0.0;
+    }
+
+    // I*R + nVt*ln(I/Is) = V. With x = I*R/nVt this becomes
+    // x + ln(x) = V/nVt + ln(R*Is/nVt). Three Newton steps are sufficient
+    // over the admitted 0-5.3 V CEM3310 range.
+    let z = envelope_volts / Q410_THERMAL_VOLTAGE_VOLTS
+        + libm::logf(
+            VCA_CONTROL_SERIES_RESISTANCE_OHMS * Q410_SATURATION_CURRENT_AMPS
+                / Q410_THERMAL_VOLTAGE_VOLTS,
+        );
+    let mut normalized_current = if z >= 1.0 {
+        (z - libm::logf(z)).max(f32::MIN_POSITIVE)
+    } else {
+        libm::expf(z).max(f32::MIN_POSITIVE)
+    };
+    for _ in 0..3 {
+        let residual = normalized_current + libm::logf(normalized_current) - z;
+        let slope = 1.0 + 1.0 / normalized_current;
+        normalized_current = (normalized_current - residual / slope).max(f32::MIN_POSITIVE);
+    }
+    normalized_current * Q410_THERMAL_VOLTAGE_VOLTS / VCA_CONTROL_SERIES_RESISTANCE_OHMS
 }
 
 #[cfg(test)]
@@ -296,6 +363,55 @@ mod tests {
         let middle = oscillator_mixer(0.5, 0.5, 2, MixerChannel::OscillatorA).abs();
         let high = oscillator_mixer(0.5, 1.0, 2, MixerChannel::OscillatorA).abs();
         assert!(low < middle && middle < high);
+    }
+
+    #[test]
+    fn q410_reconstructs_the_ca3280_datasheet_operating_current() {
+        let reconstructed_saturation = Q410_REFERENCE_CURRENT_AMPS
+            * libm::expf(-Q410_REFERENCE_VBE_VOLTS / Q410_THERMAL_VOLTAGE_VOLTS);
+        assert!((reconstructed_saturation / Q410_SATURATION_CURRENT_AMPS - 1.0).abs() < 1.0e-6);
+        let nominal = q410_collector_current_amps(ENVELOPE_NOMINAL_PEAK_VOLTS);
+        assert!((650.0e-6..=680.0e-6).contains(&nominal));
+        assert!((nominal / Q410_NOMINAL_CONTROL_CURRENT_AMPS - 1.0).abs() < 1.0e-6);
+        let maximum = q410_collector_current_amps(ENVELOPE_MAXIMUM_PEAK_VOLTS) / nominal;
+        assert!((maximum / FINAL_VCA_MAXIMUM_CONTROL_RATIO - 1.0).abs() < 1.0e-6);
+
+        for envelope_volts in [0.01, 0.1, 0.5, 1.0, 2.5, 5.0, 5.3] {
+            let current = q410_collector_current_amps(envelope_volts);
+            let junction_voltage =
+                Q410_THERMAL_VOLTAGE_VOLTS * libm::logf(current / Q410_SATURATION_CURRENT_AMPS);
+            let reconstructed_voltage =
+                current * VCA_CONTROL_SERIES_RESISTANCE_OHMS + junction_voltage;
+            assert!((reconstructed_voltage - envelope_volts).abs() < 1.0e-5);
+        }
+    }
+
+    #[test]
+    fn amplifier_envelope_to_iabc_is_monotonic_and_has_a_silicon_knee() {
+        let mut previous = amplifier_envelope_control(0.0);
+        assert_eq!(previous, 0.0);
+        for code in 1..=1_060 {
+            let current = amplifier_envelope_control(code as f32 / 1_000.0);
+            assert!(current > previous);
+            previous = current;
+        }
+        assert_eq!(amplifier_envelope_control(1.0), 1.0);
+        assert!(amplifier_envelope_control(0.5) < 0.45);
+        assert!(amplifier_envelope_control(0.1) < 0.01);
+        let maximum = amplifier_envelope_control(1.06);
+        assert!(maximum > 1.06);
+        assert!(maximum < 1.08);
+        assert_eq!(amplifier_envelope_control(2.0), maximum);
+    }
+
+    #[test]
+    fn final_vca_accepts_the_full_bounded_cem3310_population() {
+        let maximum = FINAL_VCA_MAXIMUM_CONTROL_RATIO;
+        let at_maximum = final_voice(0.25, maximum, 2);
+        let at_nominal = final_voice(0.25, 1.0, 2);
+        assert!(at_maximum > at_nominal);
+        assert!(at_maximum < at_nominal * 1.08);
+        assert_eq!(final_voice(0.25, maximum * 2.0, 2), at_maximum);
     }
 
     #[test]
