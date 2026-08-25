@@ -6,6 +6,7 @@
 use rf_5_contract::{Parameter, Settings, hardware::quantize_analog_pot};
 
 pub mod autotune;
+mod decimator;
 pub mod drift;
 pub mod envelope;
 pub mod filter;
@@ -60,6 +61,7 @@ pub struct Voice {
     amplifier_envelope: AdsrEnvelope,
     filter_envelope: AdsrEnvelope,
     filter: Cem3320Filter,
+    decimator: decimator::Decimator4x,
 }
 
 impl Voice {
@@ -196,7 +198,7 @@ impl Voice {
             parameter_enabled(settings, Parameter::OscillatorBLowFrequency),
         ) * semitone_ratio(modulation.oscillator_b_semitones);
         let internal_rate = sample_rate.max(1.0) * OSCILLATOR_OVERSAMPLING as f32;
-        let mut output = 0.0;
+        let mut output = None;
         let poly_filter_envelope = -vca::poly_mod_filter_envelope(
             filter_envelope,
             quantize_analog_pot(settings.get(Parameter::PolyModFilterEnvelopeAmount)),
@@ -280,10 +282,14 @@ impl Voice {
                 internal_rate,
                 settings.get(Parameter::VintageSpread),
             );
-            output += vca::final_voice(filtered, amplifier_envelope, self.voice_index);
+            output = self.decimator.push(vca::final_voice(
+                filtered,
+                amplifier_envelope,
+                self.voice_index,
+            ));
         }
 
-        output / OSCILLATOR_OVERSAMPLING as f32
+        output.unwrap_or(0.0)
     }
 }
 

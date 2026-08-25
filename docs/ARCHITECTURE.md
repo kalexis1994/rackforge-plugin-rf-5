@@ -28,7 +28,7 @@ The active per-voice routing is:
 ```text
 VCO A ----\
            dual OTA mixer --\
-VCO B ----/                    four-pole VCF -> final VCA -> voice output
+VCO B ----/                    four-pole VCF -> final VCA -> FIR decimator -> voice output
 common noise OTA ------------/       ^               ^
   |                                  |               |
   +-- sync / Poly Mod ---------------+       amplifier envelope
@@ -78,5 +78,8 @@ documented in
 [`fidelity/PERFORMANCE_MODEL.md`](fidelity/PERFORMANCE_MODEL.md).
 The distinct mixer, per-voice, master and output stages are documented in
 [`fidelity/VCA_AND_OUTPUT_MODEL.md`](fidelity/VCA_AND_OUTPUT_MODEL.md).
+The four-times nonlinear processing boundary and its host-rate reconstruction
+filter are documented in
+[`fidelity/OVERSAMPLING_AND_DECIMATION.md`](fidelity/OVERSAMPLING_AND_DECIMATION.md).
 Deterministic listening scenes that exercise this architecture without a UI
 are documented in [`AUDITION_RENDERER.md`](AUDITION_RENDERER.md).

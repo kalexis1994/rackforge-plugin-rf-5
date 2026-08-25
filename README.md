@@ -12,7 +12,9 @@ content.
 
 ## Current status
 
-The active candidate now contains dual oversampled oscillators, hard sync,
+The active candidate now contains dual four-times-oversampled oscillators,
+hard sync and a 127-tap anti-alias decimator after the nonlinear per-voice
+filter/VCA path,
 one shared LFO, independent pink Wheel-Mod and white audio-noise generators,
 audio-rate Poly Mod, a four-pole CEM3320-class filter,
 separate CEM3310-class RC envelopes, five-voice Unison, Glide and both

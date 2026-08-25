@@ -23,10 +23,14 @@ different phases, are not reset by note-on, and continue advancing after the
 amplifier envelope becomes inactive. This preserves the free-running behaviour
 of analog VCOs and avoids deterministic, phase-locked attacks.
 
-Saw and pulse discontinuities use PolyBLEP correction. The complete dual-VCO
-path runs at four times the host sample rate and is averaged back to the audio
-rate. Triangle is generated directly from phase because it is continuous,
-while its remaining corner-bandwidth error is tracked below.
+Saw and pulse discontinuities use PolyBLEP correction. The complete dual-VCO,
+mixer, nonlinear filter and final-VCA path runs at four times the host sample
+rate. A unity-DC, 127-tap low-pass then reconstructs one host-rate sample
+instead of using the former four-sample box average. Triangle is generated
+directly from phase because it is continuous, while its remaining
+corner-bandwidth error is tracked below. The reconstruction boundary and its
+measured numerical response are isolated in
+[`OVERSAMPLING_AND_DECIMATION.md`](OVERSAMPLING_AND_DECIMATION.md).
 
 Each seven-bit PULSE WIDTH pot maps monotonically to the owner's manual's
 approximately 1-99% duty-cycle span, with the nearest code to 50% at the

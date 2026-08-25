@@ -31,6 +31,10 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
   are evaluated inside the same four-times-oversampled loop as the filters.
   Their small-signal gain is equal after the documented per-voice service
   adjustment, while their strong-signal knees remain distinct.
+- Each complete nonlinear voice path crosses a 127-tap anti-alias low-pass
+  before it enters the host-rate common summer. This keeps filter resonance,
+  VCA curvature and sync products from folding through the former box-average
+  stopband.
 - The five post-VCA voice signals are summed with equal gain.
 - The master CA3280 is distinct from the per-voice VCAs and follows the
   physical master-volume control.
@@ -69,6 +73,9 @@ overload require recorded sweeps from a serviced reference instrument.
 - the 4.34 Hz coupling network rejects steady DC at every supported sample
   rate while retaining the expected approximately 97.7% amplitude at 20 Hz;
 - program changes preserve the physical master volume.
+- the decimator preserves DC gain, produces exactly one output per four
+  internal samples, passes 10 kHz essentially flat and rejects a 60 kHz
+  internal tone below -80 dB relative to its input RMS.
 
 Primary evidence: TM1000D.2 sections 2-5 and 2-8, schematics SD431-SD435 and
 SD430, service adjustments 4-21 and 4-22, and the CA3280 data sheet. Provenance
