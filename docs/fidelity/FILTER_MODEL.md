@@ -12,6 +12,10 @@ procedure expects resonance to begin self-oscillating between panel positions
 ## Active candidate
 
 - Four topology-preserving trapezoidal-integrator one-pole cells are cascaded.
+  The fourth-cell resonance return is closed inside the current internal
+  sample with two bounded Newton steps and an analytic slope through every
+  nonlinear cell. It no longer feeds back the previous digital state as though
+  the analog path contained an extra sample delay.
 - SD431's four 150 pF polystyrene pole capacitors are now admitted explicitly.
   Each 100 kohm feedback resistor sees the nominal 1 megohm buffer impedance
   in parallel, producing 90.909 kohm against the populated 91 kohm coupling
@@ -67,6 +71,12 @@ replaceable hypotheses because no admitted source publishes those trajectories.
 - a low cutoff rejects substantially more 6 kHz energy than a high cutoff;
 - resonance extends an impulse tail and remains stable at supported rates;
 - self-oscillation is absent below the service window and sustained inside it;
+- a 1 kHz self-oscillation target remains within 0.1% from 44.1 through 192 kHz
+  instead of rising from 966 Hz to 991 Hz with the former delayed return;
+- self-oscillation reproduces the 440/880 Hz service-calibration pair within
+  1 Hz at both 48 and 192 kHz;
+- the nonlinear instantaneous-loop residual remains below 0.0002 internal
+  units across cutoff, resonance, drive and clipping stress cases;
 - full resonance CV produces 50 uA through the populated 200 kohm resistor;
 - the Gm fit hits the published 100 uA point and has decreasing incremental
   slope;

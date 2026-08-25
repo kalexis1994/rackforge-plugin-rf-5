@@ -75,7 +75,9 @@ boundary are recorded in
 The per-voice Poly Mod bus, independent filter envelope, destination routing
 and bounded depth uncertainty are recorded in
 [`fidelity/POLY_MOD_MODEL.md`](fidelity/POLY_MOD_MODEL.md).
-The active five-profile four-pole filter and ten-profile true-RC envelope candidates are documented in
+The active five-profile four-pole filter uses an instantaneous nonlinear
+feedback solve rather than a delayed digital return. It and the ten-profile
+true-RC envelope candidates are documented in
 [`fidelity/FILTER_MODEL.md`](fidelity/FILTER_MODEL.md) and
 [`fidelity/ENVELOPE_MODEL.md`](fidelity/ENVELOPE_MODEL.md).
 Unison, Glide, pitch wheel and the explicit absence of velocity response are

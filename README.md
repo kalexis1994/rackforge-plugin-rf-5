@@ -60,7 +60,10 @@ Glide path rather than being mistaken for the digital switch state.
 The five filter ICs now
 form a serviced CEM3320 population with 440/880 Hz scale calibration, bounded
 warm-up motion,
-physical resonance gain, clipping span and second-harmonic character. Its ten
+physical resonance gain, clipping span and second-harmonic character. Their
+nonlinear four-pole feedback loops are solved without inserting a digital
+sample of delay, so self-oscillation follows the calibrated cutoff consistently
+from 44.1 through 192 kHz. Its ten
 CEM3310 envelope generators also retain bounded device-specific peak,
 asymptote and RC timing curves. It remains a reverse-engineering candidate:
 measured component populations, overload/output levels and original-instrument

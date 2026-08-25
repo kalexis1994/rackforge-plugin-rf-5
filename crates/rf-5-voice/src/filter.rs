@@ -42,6 +42,7 @@ const RESONANCE_GM_LIMIT_MHOS: f32 = 2.2e-3;
 const RESONANCE_GM_CURRENT_SCALE_AMPS: f32 = 164.979_53e-6;
 const SERVICE_NOMINAL_OSCILLATION_PANEL: f32 = 0.8;
 const FOUR_POLE_OSCILLATION_FEEDBACK: f32 = 4.0;
+const FEEDBACK_SOLVER_ITERATIONS: usize = 2;
 
 // The normalized signal path is not yet calibrated to circuit volts. Two
 // circuit volts per internal unit places the data-sheet 10-14 Vpp output swing
@@ -107,6 +108,12 @@ impl TptStage {
         self.state = output + delta;
         cell_output(output, profile)
     }
+
+    fn predict(self, input: f32, coefficient: f32, profile: FilterProfile) -> (f32, f32) {
+        let output = (input - self.state) * coefficient + self.state;
+        let (shaped, shaping_slope) = cell_output_with_slope(output, profile);
+        (shaped, coefficient * shaping_slope)
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -116,6 +123,7 @@ pub struct Cem3320Filter {
     profile_index: usize,
     warmup_position: f32,
     warmup_sample_phase: f64,
+    last_output: f32,
 }
 
 impl Default for Cem3320Filter {
@@ -126,6 +134,7 @@ impl Default for Cem3320Filter {
             profile_index: 2,
             warmup_position: 0.0,
             warmup_sample_phase: 0.0,
+            last_output: 0.0,
         }
     }
 }
@@ -161,10 +170,9 @@ impl Cem3320Filter {
         let coefficient = g / (1.0 + g);
         let feedback = resonance_feedback(resonance, profile);
         let thermal_noise = self.next_thermal_noise();
-        let mut signal = cell_output(
-            input + thermal_noise - self.stages[3].state * feedback,
-            profile,
-        );
+        let open_input = input + thermal_noise;
+        let feedback_output = self.solve_feedback(open_input, coefficient, feedback, profile);
+        let mut signal = cell_output(open_input - feedback_output * feedback, profile);
         for (index, stage) in self.stages.iter_mut().enumerate() {
             if index > 0 {
                 signal *= interstage_passband_gain();
@@ -172,11 +180,49 @@ impl Cem3320Filter {
             signal = stage.next(signal, coefficient, profile);
         }
         if signal.is_finite() {
+            self.last_output = signal;
             signal
         } else {
             self.stages = [TptStage::default(); STAGE_COUNT];
+            self.last_output = 0.0;
             0.0
         }
+    }
+
+    fn solve_feedback(
+        &self,
+        input: f32,
+        coefficient: f32,
+        feedback: f32,
+        profile: FilterProfile,
+    ) -> f32 {
+        if feedback <= 0.0 {
+            return 0.0;
+        }
+        let ceiling = output_ceiling(profile);
+        let mut estimate = self.last_output.clamp(-ceiling, ceiling);
+        for _ in 0..FEEDBACK_SOLVER_ITERATIONS {
+            let (predicted, path_slope) =
+                self.predict_path(input - estimate * feedback, coefficient, profile);
+            let residual = estimate - predicted;
+            let derivative = 1.0 + feedback * path_slope.max(0.0);
+            estimate = (estimate - residual / derivative.max(1.0)).clamp(-ceiling, ceiling);
+        }
+        estimate
+    }
+
+    fn predict_path(&self, input: f32, coefficient: f32, profile: FilterProfile) -> (f32, f32) {
+        let (mut signal, mut slope) = cell_output_with_slope(input, profile);
+        for (index, stage) in self.stages.into_iter().enumerate() {
+            if index > 0 {
+                signal *= interstage_passband_gain();
+                slope *= interstage_passband_gain();
+            }
+            let (output, stage_slope) = stage.predict(signal, coefficient, profile);
+            signal = output;
+            slope *= stage_slope;
+        }
+        (signal, slope)
     }
 
     fn advance_warmup(&mut self, sample_rate: f32) {
@@ -259,13 +305,32 @@ fn service_trimmed_cutoff_hz(cutoff_hz: f32, profile: FilterProfile) -> f32 {
 }
 
 fn cell_output(value: f32, profile: FilterProfile) -> f32 {
-    let ceiling = profile.output_clip_vpp * 0.5 / CANDIDATE_CIRCUIT_VOLTS_PER_UNIT;
+    cell_output_with_slope(value, profile).0
+}
+
+fn output_ceiling(profile: FilterProfile) -> f32 {
+    profile.output_clip_vpp * 0.5 / CANDIDATE_CIRCUIT_VOLTS_PER_UNIT
+}
+
+fn cell_output_with_slope(value: f32, profile: FilterProfile) -> (f32, f32) {
+    let ceiling = output_ceiling(profile);
+    let unclamped = value / ceiling;
     let normalized = (value / ceiling).clamp(-64.0, 64.0);
     // A sixteenth-order soft knee remains nearly linear at the data sheet's
     // distortion test level, then approaches the published clipping swing.
     // Unlike tanh, it does not inject a large third harmonic before clipping.
-    let symmetric =
-        ceiling * normalized / libm::powf(1.0 + libm::powf(normalized.abs(), 16.0), 1.0 / 16.0);
+    let squared = normalized * normalized;
+    let fourth = squared * squared;
+    let eighth = fourth * fourth;
+    let sixteenth = eighth * eighth;
+    let soft_base = 1.0 + sixteenth;
+    let reciprocal_root = 1.0 / libm::powf(soft_base, 1.0 / 16.0);
+    let symmetric = ceiling * normalized * reciprocal_root;
+    let symmetric_slope = if unclamped == normalized {
+        reciprocal_root / soft_base
+    } else {
+        0.0
+    };
     // y = x + k*x^2 has H2/fundamental ~= k*A/2. Calibrate k at the specified
     // signal amplitude (3 dB below clipping), so each profile's value maps to
     // the stated 0.1-0.3% passband measurement rather than to an arbitrary
@@ -273,7 +338,14 @@ fn cell_output(value: f32, profile: FilterProfile) -> f32 {
     let reference_amplitude = ceiling * SPECIFIED_SIGNAL_FRACTION_OF_CLIP;
     let even_coefficient = 2.0 * profile.passband_second_harmonic / reference_amplitude;
     let even_harmonic = even_coefficient * symmetric * symmetric;
-    (symmetric + even_harmonic).clamp(-ceiling, ceiling)
+    let curved = symmetric + even_harmonic;
+    let output = curved.clamp(-ceiling, ceiling);
+    let slope = if output == curved {
+        symmetric_slope * (1.0 + 2.0 * even_coefficient * symmetric)
+    } else {
+        0.0
+    };
+    (output, slope.max(0.0))
 }
 
 #[cfg(test)]
@@ -445,6 +517,33 @@ mod tests {
     }
 
     #[test]
+    fn nonlinear_feedback_solver_closes_the_instantaneous_loop() {
+        let mut filter = Cem3320Filter::default();
+        for index in 0..4_096 {
+            let input = libm::sinf(index as f32 * 0.071) * 2.0;
+            let _ = filter.next(input, 1_700.0, 0.92, 192_000.0);
+        }
+        let profile = FILTER_PROFILES[filter.profile_index];
+        for cutoff_hz in [50.0, 1_000.0, 12_000.0, 60_000.0] {
+            let g = libm::tanf(core::f32::consts::PI * cutoff_hz / 192_000.0);
+            let coefficient = g / (1.0 + g);
+            for resonance in [0.1, 0.5, 0.8, 1.0] {
+                let feedback = resonance_feedback(resonance, profile);
+                for input in [-8.0, -2.0, 0.0, 2.0, 8.0] {
+                    let solved = filter.solve_feedback(input, coefficient, feedback, profile);
+                    let (predicted, _) =
+                        filter.predict_path(input - solved * feedback, coefficient, profile);
+                    assert!(
+                        (solved - predicted).abs() < 2.0e-4,
+                        "cutoff={cutoff_hz}, resonance={resonance}, input={input}, residual={}",
+                        solved - predicted
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn low_cutoff_rejects_more_high_frequency_energy() {
         fn render(cutoff: f32) -> f32 {
             let mut filter = Cem3320Filter::default();
@@ -514,6 +613,65 @@ mod tests {
                 inside_window > 0.01,
                 "profile {profile} did not sustain: {inside_window}"
             );
+        }
+    }
+
+    #[test]
+    fn self_oscillation_frequency_tracks_cutoff_across_supported_rates() {
+        const CUTOFF_HZ: f32 = 1_000.0;
+        let mut measurements = [0.0; 4];
+        for (index, sample_rate) in [44_100.0, 48_000.0, 96_000.0, 192_000.0]
+            .into_iter()
+            .enumerate()
+        {
+            let mut filter = Cem3320Filter::default();
+            let settle_samples = sample_rate as usize;
+            for _ in 0..settle_samples {
+                let _ = filter.next(0.0, CUTOFF_HZ, 1.0, sample_rate);
+            }
+
+            let mut previous = filter.next(0.0, CUTOFF_HZ, 1.0, sample_rate);
+            let mut rising_crossings = 0;
+            for _ in 0..settle_samples {
+                let output = filter.next(0.0, CUTOFF_HZ, 1.0, sample_rate);
+                rising_crossings += usize::from(previous <= 0.0 && output > 0.0);
+                previous = output;
+            }
+            measurements[index] = rising_crossings as f32;
+        }
+        for (sample_rate, measured_hz) in [44_100.0, 48_000.0, 96_000.0, 192_000.0]
+            .into_iter()
+            .zip(measurements)
+        {
+            assert!(
+                (measured_hz - CUTOFF_HZ).abs() <= CUTOFF_HZ * 0.001,
+                "rate={sample_rate}, measured={measured_hz}, all={measurements:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn self_oscillation_honors_the_service_calibration_pair() {
+        for sample_rate in [48_000.0, 192_000.0] {
+            for expected_hz in [440.0, 880.0] {
+                let mut filter = Cem3320Filter::default();
+                for _ in 0..sample_rate as usize {
+                    let _ = filter.next(0.0, expected_hz, 1.0, sample_rate);
+                }
+
+                let mut previous = filter.next(0.0, expected_hz, 1.0, sample_rate);
+                let mut rising_crossings = 0;
+                for _ in 0..(sample_rate as usize * 2) {
+                    let output = filter.next(0.0, expected_hz, 1.0, sample_rate);
+                    rising_crossings += usize::from(previous <= 0.0 && output > 0.0);
+                    previous = output;
+                }
+                let measured_hz = rising_crossings as f32 * 0.5;
+                assert!(
+                    (measured_hz - expected_hz).abs() <= 1.0,
+                    "rate={sample_rate}, expected={expected_hz}, measured={measured_hz}"
+                );
+            }
         }
     }
 }
