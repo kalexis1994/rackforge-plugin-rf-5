@@ -36,6 +36,9 @@ program in RackForge's program browser and play normally:
 - `Audition - CEM3340 Hard Sync` removes oscillator B from the audio mixer but
   keeps its pulse output connected to oscillator A's physical one-edge sync
   circuit, so the conventional cycle reset can be heard directly.
+- `Audition - CEM3340 Triangle` isolates oscillator B's triangle with an open
+  filter so its profiled 45-55% symmetry, finite-load pitch pull and local
+  corner band-limiting can be heard without another oscillator or modulation.
 - `Audition - Unison Low Note` exposes the five simultaneous voices, low-note
   priority and legato pitch changes without restarting either envelope.
 - `Audition - Unison Glide Circuit` uses the service manual's medium panel-6
@@ -57,7 +60,7 @@ or alter the serialized patch format, is cleared by loading a normal program
 or state, survives audio-device preparation order, and is replaced by the
 first physical MIDI CC1 message.
 
-All twenty-three audition programs are covered by deterministic render probes for
+All twenty-four audition programs are covered by deterministic render probes for
 finite output, usable level and bounded headroom. All catalog programs are
 also contract-validated, and the filter population is swept at every supported
 sample rate.

@@ -447,6 +447,19 @@ fn scenes() -> Vec<Scene> {
             scale_codes: EQUAL_TEMPERAMENT,
             events: chord_sequence(&[(0.20, 5.20, &[45, 52, 57])]),
         },
+        Scene {
+            id: "28_cem3340_triangle",
+            program: "audition-oscillator-b-triangle",
+            description: "Isolated oscillator-B triangle with profiled CEM3340 symmetry, load pull and corner band-limiting",
+            scale_codes: EQUAL_TEMPERAMENT,
+            events: monophonic_sequence(&[
+                (0.20, 36),
+                (1.20, 48),
+                (2.20, 60),
+                (3.20, 72),
+                (4.20, 84),
+            ]),
+        },
     ]
 }
 

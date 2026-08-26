@@ -30,9 +30,11 @@ short reconstruction interval. The complete dual-VCO,
 mixer, nonlinear filter and final-VCA path runs at four times the host sample
 rate. A unity-DC, 127-tap low-pass then reconstructs one host-rate sample
 instead of using the former four-sample box average. Triangle is generated
-directly from phase because it is continuous, while its remaining
-corner-bandwidth error is tracked below. The reconstruction boundary and its
-measured numerical response are isolated in
+directly from the profiled 45-55% phase geometry, but each of its two slope
+changes receives a one-internal-sample periodic PolyBLAMP correction. This
+keeps the continuous CEM3340 shape and its asymmetry while preventing the
+formerly sharp numerical corners from folding above the internal Nyquist
+limit. The reconstruction boundary and its measured numerical response are isolated in
 [`OVERSAMPLING_AND_DECIMATION.md`](OVERSAMPLING_AND_DECIMATION.md).
 
 Each seven-bit PULSE WIDTH pot maps monotonically to the owner's manual's
@@ -97,8 +99,7 @@ items are:
 - final calibration of the frequency-knob and B fine-control laws;
 - measured component populations, exact drift time evolution and exact
   low-octave tune extrapolation arithmetic;
-- populated-unit band-limiting of triangle corners and sync discontinuities
-  under extreme modulation.
+- populated-unit bandwidth of sync discontinuities under extreme modulation.
 
 The active CV-to-frequency mapping and its explicit hypotheses are maintained
 separately in [`TUNING_MODEL.md`](TUNING_MODEL.md).
@@ -110,8 +111,10 @@ The electrical output limits, board resistor weighting and separate audio/Poly
 Mod polarities are documented in
 [`VCO_OUTPUT_MODEL.md`](VCO_OUTPUT_MODEL.md).
 
-Numerical spectral sweeps at 44.1, 48, 96 and 192 kHz now pass the -40 dB alias
-threshold for saw, square, triangle, 1%/99% pulse and a periodic hard-sync
-condition. The candidate still requires legally usable hardware measurements
+Numerical spectral sweeps at 44.1, 48, 96 and 192 kHz verify that the corrected
+triangle produces less non-harmonic energy than the uncorrected phase geometry
+at every accepted symmetry, rate and pitch probe. It and the saw, square,
+1%/99% pulse and periodic hard-sync conditions all pass the -40 dB alias
+threshold. The candidate still requires legally usable hardware measurements
 to bound the remaining waveform curvature and analog sync-transient
 hypotheses.

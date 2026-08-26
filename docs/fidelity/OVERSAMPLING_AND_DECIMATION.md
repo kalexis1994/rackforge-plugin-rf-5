@@ -7,6 +7,13 @@ the dual CA3280 mixer, the nonlinear four-pole CEM3320 candidate and the final
 CA3280 VCA at four times the host sample rate. The common five-input summer,
 master VCA and physical output coupling remain at host rate.
 
+Saw and pulse steps use a two-host-sample PolyBLEP correction so the 1%/99%
+pulse-width endpoints remain controlled when both edges occupy one short
+window. Oscillator B's continuous asymmetric triangle instead uses a periodic
+PolyBLAMP over one internal sample at each slope transition. The correction
+changes only the corner neighborhoods and precedes both its audio and Poly Mod
+routes.
+
 Placing reconstruction after the final per-voice nonlinearity is deliberate:
 hard-sync discontinuities, resonance and both OTA transfer curves can all create new
 content above host Nyquist. Filtering only the oscillators would leave those

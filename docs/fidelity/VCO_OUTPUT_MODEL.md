@@ -92,7 +92,9 @@ requires.
 
 Saw and pulse retain PolyBLEP edge correction, and the full signal path remains
 four-times oversampled. Triangle uses each VCO profile's 45-55% rise/fall
-symmetry instead of assuming a perfect 50% shape. U464 and U428 consume the
+symmetry instead of assuming a perfect 50% shape. A periodic PolyBLAMP rounds
+only its two slope transitions over one internal sample, preserves zero DC and
+stays inside the profiled electrical endpoints. U464 and U428 consume the
 equivalent source volts directly, so there is no hidden five-volts-per-unit
 conversion at either CA3280 boundary. No state or public parameter was added.
 
@@ -135,6 +137,11 @@ voice-card waveform capture becomes available.
   retain their independent loading;
 - saw/pulse Poly Mod retain their electrical bias while triangle crosses zero;
 - every waveform combination stays finite at the oversampled rate;
+- the triangle correction is continuous at both asymmetric corners, changes
+  only their local windows, preserves zero DC and reduces non-harmonic energy
+  against the uncorrected geometry at every accepted symmetry, rate and pitch
+  probe while remaining below the common -40 dB bound;
+- its A4 peak displacement remains below 0.4% at every supported host rate;
 - all 128 panel codes are monotonic from 1% to 99%, while modulation can reach
   stable 0/100% DC without emitting sync edges;
 - complete engine renders remain finite at 44.1, 48, 96 and 192 kHz.

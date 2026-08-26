@@ -205,7 +205,7 @@ impl Vco {
             poly_mod_source_conductance += SAW_TRIANGLE_MIXER_CONDUCTANCE;
         }
         if waves.triangle {
-            let centered = triangle(phase, TRIANGLE_SYMMETRY[profile]);
+            let centered = band_limited_triangle(phase, increment, TRIANGLE_SYMMETRY[profile]);
             let half_range = (TRIANGLE_UPPER_VOLTS[profile] - TRIANGLE_LOWER_VOLTS[profile]) * 0.5;
             let midpoint = (TRIANGLE_UPPER_VOLTS[profile] + TRIANGLE_LOWER_VOLTS[profile]) * 0.5;
             let raw_source_volts = centered * half_range + midpoint;
@@ -327,13 +327,53 @@ fn blep_width(increment: f32) -> f32 {
     (increment * POLY_BLEP_WIDTH).min(0.5)
 }
 
-fn triangle(phase: f32, symmetry: f32) -> f32 {
+pub(crate) fn naive_triangle(phase: f32, symmetry: f32) -> f32 {
     let symmetry = symmetry.clamp(0.01, 0.99);
     if phase < symmetry {
         -1.0 + 2.0 * phase / symmetry
     } else {
         1.0 - 2.0 * (phase - symmetry) / (1.0 - symmetry)
     }
+}
+
+pub(crate) fn band_limited_triangle(phase: f32, increment: f32, symmetry: f32) -> f32 {
+    let symmetry = symmetry.clamp(0.01, 0.99);
+    let rising_slope = 2.0 / symmetry;
+    let falling_slope = -2.0 / (1.0 - symmetry);
+    let correction_width = blamp_width(increment);
+    let peak_phase = if phase >= symmetry {
+        phase - symmetry
+    } else {
+        phase + (1.0 - symmetry)
+    };
+
+    naive_triangle(phase, symmetry)
+        + 0.5 * (rising_slope - falling_slope) * poly_blamp(phase, correction_width)
+        + 0.5 * (falling_slope - rising_slope) * poly_blamp(peak_phase, correction_width)
+}
+
+/// Periodic integral of the PolyBLEP residual around one discontinuity.
+///
+/// A triangle has no value discontinuity, but each corner changes slope. The
+/// integrated residual rounds only that local slope transition and returns to
+/// exactly zero outside the two-sided correction window.
+fn poly_blamp(phase: f32, width: f32) -> f32 {
+    if width <= 0.0 {
+        return 0.0;
+    }
+    if phase < width {
+        let distance = 1.0 - phase / width;
+        return width * distance * distance * distance / 3.0;
+    }
+    if phase > 1.0 - width {
+        let distance = (phase - (1.0 - width)) / width;
+        return width * distance * distance * distance / 3.0;
+    }
+    0.0
+}
+
+fn blamp_width(increment: f32) -> f32 {
+    increment.min(0.5)
 }
 
 fn poly_blep(phase: f32, increment: f32) -> f32 {
@@ -372,6 +412,78 @@ mod tests {
         let sample = oscillator.next(1_000.0, 48_000.0, 0.5, SAW);
         assert!(sample.wrapped);
         assert!((0.0..1.0).contains(&oscillator.phase()));
+    }
+
+    #[test]
+    fn triangle_blamp_changes_only_the_corner_windows() {
+        let increment = 0.005;
+        let width = blamp_width(increment);
+        let symmetry = 0.5;
+        for phase in [width + 0.01, symmetry - width - 0.01] {
+            assert_eq!(
+                band_limited_triangle(phase, increment, symmetry),
+                naive_triangle(phase, symmetry)
+            );
+        }
+
+        let expected_corner_delta = 4.0 * width / 3.0;
+        assert!(
+            (band_limited_triangle(0.0, increment, symmetry) - (-1.0 + expected_corner_delta))
+                .abs()
+                < 1.0e-6
+        );
+        assert!(
+            (band_limited_triangle(symmetry, increment, symmetry) - (1.0 - expected_corner_delta))
+                .abs()
+                < 1.0e-6
+        );
+    }
+
+    #[test]
+    fn triangle_blamp_is_continuous_at_both_asymmetric_corners() {
+        let increment = 0.01;
+        let epsilon = 1.0e-5;
+        for symmetry in [0.45, 0.5, 0.55] {
+            let before_peak = band_limited_triangle(symmetry - epsilon, increment, symmetry);
+            let after_peak = band_limited_triangle(symmetry + epsilon, increment, symmetry);
+            assert!((before_peak - after_peak).abs() < 1.0e-5);
+
+            let before_wrap = band_limited_triangle(1.0 - epsilon, increment, symmetry);
+            let after_wrap = band_limited_triangle(epsilon, increment, symmetry);
+            assert!((before_wrap - after_wrap).abs() < 1.0e-5);
+        }
+    }
+
+    #[test]
+    fn triangle_blamp_preserves_dc_and_profile_bounds() {
+        const SAMPLE_COUNT: usize = 65_536;
+        for symmetry in TRIANGLE_SYMMETRY {
+            let mut sum = 0.0;
+            let mut minimum = f32::INFINITY;
+            let mut maximum = f32::NEG_INFINITY;
+            for index in 0..SAMPLE_COUNT {
+                let phase = index as f32 / SAMPLE_COUNT as f32;
+                let sample = band_limited_triangle(phase, 0.01, symmetry);
+                sum += sample;
+                minimum = minimum.min(sample);
+                maximum = maximum.max(sample);
+            }
+            assert!((sum / SAMPLE_COUNT as f32).abs() < 2.0e-5);
+            assert!(minimum >= -1.0);
+            assert!(maximum <= 1.0);
+        }
+    }
+
+    #[test]
+    fn triangle_blamp_preserves_a4_corner_level_at_supported_rates() {
+        for host_rate in [44_100.0, 48_000.0, 96_000.0, 192_000.0] {
+            let increment = 440.0 / (host_rate * 4.0);
+            for symmetry in TRIANGLE_SYMMETRY {
+                let naive_peak = naive_triangle(symmetry, symmetry);
+                let corrected_peak = band_limited_triangle(symmetry, increment, symmetry);
+                assert!(naive_peak - corrected_peak < 0.004);
+            }
+        }
     }
 
     #[test]

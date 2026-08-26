@@ -30,7 +30,8 @@
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-oscillator-b-fine-semitone", "name": "Audition - Oscillator B Fine Semitone", "order": 19, "tags": ["rf5", "audition", "oscillator-b", "fine", "semitone"] },
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-pulse-width-minimum", "name": "Audition - Pulse Width 1%", "order": 20, "tags": ["rf5", "audition", "oscillator-a", "pulse-width", "minimum"] },
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-pulse-width-square", "name": "Audition - Pulse Width 50%", "order": 21, "tags": ["rf5", "audition", "oscillator-a", "pulse-width", "square"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-pulse-width-maximum", "name": "Audition - Pulse Width 99%", "order": 22, "tags": ["rf5", "audition", "oscillator-a", "pulse-width", "maximum"] }
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-pulse-width-maximum", "name": "Audition - Pulse Width 99%", "order": 22, "tags": ["rf5", "audition", "oscillator-a", "pulse-width", "maximum"] },
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-oscillator-b-triangle", "name": "Audition - CEM3340 Triangle", "order": 23, "tags": ["rf5", "audition", "oscillator-b", "triangle", "cem3340"] }
   ],
   "schema_version": 1
 }

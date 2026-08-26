@@ -1,6 +1,8 @@
 use crate::{
     decimator::Decimator4x,
-    vco::{Vco, WaveSelection, triangle_load_frequency_ratio},
+    vco::{
+        Vco, WaveSelection, band_limited_triangle, naive_triangle, triangle_load_frequency_ratio,
+    },
 };
 use core::f32::consts::PI;
 
@@ -146,6 +148,42 @@ fn hard_sync_alias_ratio(sample_rate: f32, fundamental_bin: usize) -> f32 {
     spectral_alias_ratio(spectrum, fundamental_bin)
 }
 
+fn direct_triangle_alias_ratio(
+    sample_rate: f32,
+    fundamental_bin: usize,
+    symmetry: f32,
+    corrected: bool,
+) -> f32 {
+    let internal_rate = sample_rate * 4.0;
+    let frequency = sample_rate * fundamental_bin as f32 / FFT_SIZE as f32;
+    let increment = frequency / internal_rate;
+    let mut decimator = Decimator4x::default();
+    let mut spectrum = [Complex::default(); FFT_SIZE];
+
+    for host_index in 0..WARMUP_SAMPLES + FFT_SIZE {
+        let mut output = 0.0;
+        for sub_sample in 0..4 {
+            let internal_index = host_index * 4 + sub_sample;
+            let phase = (0.137_f64
+                + internal_index as f64 * f64::from(frequency) / f64::from(internal_rate))
+            .fract() as f32;
+            let triangle = if corrected {
+                band_limited_triangle(phase, increment, symmetry)
+            } else {
+                naive_triangle(phase, symmetry)
+            };
+            if let Some(sample) = decimator.push(triangle) {
+                output = sample;
+            }
+        }
+        if host_index >= WARMUP_SAMPLES {
+            spectrum[host_index - WARMUP_SAMPLES].real = output;
+        }
+    }
+
+    spectral_alias_ratio(spectrum, fundamental_bin)
+}
+
 fn spectral_alias_ratio(mut spectrum: [Complex; FFT_SIZE], fundamental_bin: usize) -> f32 {
     let mean = spectrum.iter().map(|sample| sample.real).sum::<f32>() / FFT_SIZE as f32;
     for sample in &mut spectrum {
@@ -199,7 +237,25 @@ fn oscillator_alias_floor_is_bounded_at_all_supported_rates() {
                 let ratio = alias_ratio(sample_rate, fundamental_bin, waves, pulse_width);
                 assert!(
                     ratio < 0.01,
-                    "{name} alias ratio {ratio} exceeded -40 dB at bin {fundamental_bin} and {sample_rate} Hz"
+                    "{name} alias ratio {ratio} exceeded its bound at bin {fundamental_bin} and {sample_rate} Hz"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn triangle_blamp_reduces_non_harmonic_energy_across_the_accepted_matrix() {
+    for sample_rate in [44_100.0, 48_000.0, 96_000.0, 192_000.0] {
+        for fundamental_bin in [37, 173, 509, 997] {
+            for symmetry in [0.45, 0.50, 0.55] {
+                let naive =
+                    direct_triangle_alias_ratio(sample_rate, fundamental_bin, symmetry, false);
+                let corrected =
+                    direct_triangle_alias_ratio(sample_rate, fundamental_bin, symmetry, true);
+                assert!(
+                    corrected < naive && corrected < 0.01,
+                    "corrected={corrected}, naive={naive}, symmetry={symmetry}, bin={fundamental_bin}, rate={sample_rate}"
                 );
             }
         }

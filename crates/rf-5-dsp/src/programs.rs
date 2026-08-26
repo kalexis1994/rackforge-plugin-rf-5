@@ -482,6 +482,27 @@ impl Program {
         Self::normal(values)
     }
 
+    fn oscillator_b_triangle() -> Self {
+        let mut values = BASELINE_INIT;
+        values[Parameter::OscillatorALevel as usize] = 0.0;
+        values[Parameter::OscillatorASaw as usize] = 0.0;
+        values[Parameter::OscillatorAPulse as usize] = 0.0;
+        values[Parameter::OscillatorBLevel as usize] = 0.78;
+        values[Parameter::OscillatorBSaw as usize] = 0.0;
+        values[Parameter::OscillatorBTriangle as usize] = 1.0;
+        values[Parameter::OscillatorBPulse as usize] = 0.0;
+        values[Parameter::OscillatorBKeyboard as usize] = 1.0;
+        values[Parameter::OscillatorBLowFrequency as usize] = 0.0;
+        values[Parameter::FilterCutoff as usize] = 0.92;
+        values[Parameter::FilterResonance as usize] = 0.0;
+        values[Parameter::FilterEnvelopeAmount as usize] = 0.0;
+        values[Parameter::AmpAttack as usize] = 0.0;
+        values[Parameter::AmpDecay as usize] = 0.20;
+        values[Parameter::AmpSustain as usize] = 0.90;
+        values[Parameter::AmpRelease as usize] = 0.18;
+        Self::normal(values)
+    }
+
     fn hard_sync() -> Self {
         let mut values = BASELINE_LEAD;
         values[Parameter::OscillatorAFrequency as usize] = OSCILLATOR_FREQUENCY_CONCERT_NORMALIZED;
@@ -568,6 +589,7 @@ pub(crate) fn find(id: &str) -> Option<Program> {
         "audition-pulse-width-minimum" => Program::oscillator_a_pulse_width(0.0),
         "audition-pulse-width-square" => Program::oscillator_a_pulse_width(64.0 / 127.0),
         "audition-pulse-width-maximum" => Program::oscillator_a_pulse_width(1.0),
+        "audition-oscillator-b-triangle" => Program::oscillator_b_triangle(),
         _ => return None,
     })
 }
@@ -606,11 +628,26 @@ mod tests {
             "audition-pulse-width-minimum",
             "audition-pulse-width-square",
             "audition-pulse-width-maximum",
+            "audition-oscillator-b-triangle",
         ] {
             let program = find(id).expect("catalog program exists");
             let mut settings = Settings::default();
             assert!(settings.apply_patch_array(program.values));
         }
+    }
+
+    #[test]
+    fn oscillator_b_triangle_audition_is_electrically_isolated() {
+        let program = find("audition-oscillator-b-triangle").unwrap();
+        assert_eq!(program.values[Parameter::OscillatorALevel as usize], 0.0);
+        assert!(program.values[Parameter::OscillatorBLevel as usize] > 0.0);
+        assert_eq!(program.values[Parameter::OscillatorBSaw as usize], 0.0);
+        assert_eq!(program.values[Parameter::OscillatorBTriangle as usize], 1.0);
+        assert_eq!(program.values[Parameter::OscillatorBPulse as usize], 0.0);
+        assert_eq!(
+            program.values[Parameter::PolyModOscillatorBAmount as usize],
+            0.0
+        );
     }
 
     #[test]

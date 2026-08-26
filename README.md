@@ -13,11 +13,13 @@ will be original RF-5 content.
 ## Current status
 
 The active candidate now contains dual four-times-oversampled oscillators,
-fractional hard sync and a 127-tap anti-alias decimator after the nonlinear per-voice
-filter/VCA path. Saw and pulse edges use a two-host-sample PolyBLEP correction,
-while SD431's single falling-edge sync transient retains its fractional
-position inside each internal sample and drives the external Figure 5 reset
-network, one shared LFO, independent pink Wheel-Mod and white audio-noise generators,
+fractional hard sync and a 127-tap anti-alias decimator after the nonlinear
+per-voice filter/VCA path. Saw and pulse edges use a two-host-sample PolyBLEP
+correction, while oscillator B's asymmetric triangle uses a one-internal-sample
+PolyBLAMP at both slope transitions. SD431's single falling-edge sync transient
+retains its fractional position inside each internal sample and drives the
+external Figure 5 reset network, one shared LFO, independent pink Wheel-Mod
+and white audio-noise generators,
 audio-rate Poly Mod, a four-pole CEM3320-class filter,
 separate CEM3310-class RC envelopes, five-voice Unison, Glide and both
 performance wheels, including the pitch wheel's SD334 diode deadband. The
@@ -78,7 +80,7 @@ same relative vertical drag on mouse and touch, while RackForge parameter
 attributes keep host-owned context menus and MIDI Link available.
 
 The `RF-5 Audition` factory bank provides
-twenty-three immediately playable listening programs for Wheel/Poly Mod, LFO range,
+twenty-four immediately playable listening programs for Wheel/Poly Mod, LFO range,
 Sync, filter drive, resonance, fast/slow envelope behaviour, CA3280 drive and
 common noise, including explicit global-Release and oscillator-B FINE endpoint
 comparisons plus pulse-width endpoints. They require no UI; see
@@ -114,7 +116,7 @@ bash tools/build-package.sh
 
 The package is written to `artifacts/rf-5-0.1.0.rfplugin`. GitHub Actions tests
 x86-64 and ARM64 before publishing the portable package as a workflow artifact.
-The audition command writes twenty-seven unnormalized listening files and their metrics
+The audition command writes twenty-eight unnormalized listening files and their metrics
 to `artifacts/auditions`; see
 [`docs/AUDITION_RENDERER.md`](docs/AUDITION_RENDERER.md).
 
