@@ -36,17 +36,16 @@ const MASTER_VOLUME_CAPACITANCE_FARADS: f32 = 0.22e-6;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct OutputStage {
-    // The 36.7 ms time constant needs more state precision than the audio path
-    // to settle to zero without a float-rounding residue.
-    previous_input: f64,
-    previous_output: f64,
+    // Voltage stored across C4189. The 36.7 ms time constant needs more state
+    // precision than the audio path to settle without a float-rounding
+    // residue.
+    coupling_capacitor_voltage: f64,
     master_volume_cv_volts: f64,
 }
 
 impl OutputStage {
     pub fn reset(&mut self) {
-        self.previous_input = 0.0;
-        self.previous_output = 0.0;
+        self.coupling_capacitor_voltage = 0.0;
         self.master_volume_cv_volts = 0.0;
     }
 
@@ -85,11 +84,10 @@ impl OutputStage {
         let input = f64::from(input);
         let time_constant = f64::from(coupling_load_ohms() * COUPLING_CAPACITANCE_FARADS);
         let sample_period = 1.0 / f64::from(sample_rate);
-        let coefficient = time_constant / (time_constant + sample_period);
-        let output = coefficient * (self.previous_output + input - self.previous_input);
-        self.previous_input = input;
-        self.previous_output = output;
-        output as f32
+        let retained = libm::exp(-sample_period / time_constant);
+        self.coupling_capacitor_voltage =
+            input + (self.coupling_capacitor_voltage - input) * retained;
+        (input - self.coupling_capacitor_voltage) as f32
     }
 }
 
@@ -213,6 +211,26 @@ mod tests {
                 output = stage.next(1.0, 1.0, sample_rate);
             }
             assert!(output.abs() < 1.0e-6, "rate={sample_rate}, output={output}");
+        }
+    }
+
+    #[test]
+    fn coupling_capacitor_decay_is_exact_and_sample_rate_invariant() {
+        let duration_seconds = 0.1;
+        let time_constant = f64::from(coupling_load_ohms() * COUPLING_CAPACITANCE_FARADS);
+        let expected = libm::exp(-duration_seconds / time_constant);
+
+        for sample_rate in [44_100.0, 48_000.0, 96_000.0, 192_000.0] {
+            let mut stage = OutputStage::default();
+            let samples = (sample_rate * duration_seconds as f32) as usize;
+            let mut output = 0.0;
+            for _ in 0..samples {
+                output = stage.ac_couple(1.0, sample_rate);
+            }
+            assert!(
+                (f64::from(output) - expected).abs() < 1.0e-7,
+                "rate={sample_rate}, output={output}, expected={expected}"
+            );
         }
     }
 

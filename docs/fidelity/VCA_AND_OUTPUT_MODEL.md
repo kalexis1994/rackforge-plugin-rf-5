@@ -104,7 +104,10 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
   six circuit volts.
 - The master-VCA output is AC-coupled by the populated 2.2 uF C4189 into the
   parallel 20 kohm/100 kohm load formed by R4562 and R4541. The resulting
-  first-order high-pass corner is approximately 4.34 Hz.
+  first-order high-pass corner is approximately 4.34 Hz. C4189 is represented
+  by its stored physical capacitor voltage and advanced with the exact
+  exponential RC solution, so its elapsed-time decay does not inherit a host
+  sample-rate approximation.
 - Five paired envelope-amount profiles, five oscillator-B Poly Mod profiles
   and the common dual Wheel Mod source profile preserve the modulation-side
   CA3280 boundaries and documented diode modes.
@@ -184,7 +187,9 @@ recorded sweeps from a serviced reference instrument.
   diode current remains within 7% of Figure 3A's condition and the populated
   full-volume small-signal voltage gain remains between 0.79 and 0.81;
 - the 4.34 Hz coupling network rejects steady DC at every supported sample
-  rate while retaining the expected approximately 97.7% amplitude at 20 Hz;
+  rate, its 100 ms capacitor decay matches the analytic value at
+  44.1/48/96/192 kHz, and it retains the expected approximately 97.7%
+  amplitude at 20 Hz;
 - program changes preserve the physical master volume.
 - the decimator preserves DC gain, produces exactly one output per four
   internal samples, passes 10 kHz essentially flat and rejects a 60 kHz
