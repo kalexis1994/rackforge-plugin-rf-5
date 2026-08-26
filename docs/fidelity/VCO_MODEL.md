@@ -66,6 +66,13 @@ mixer receives the raw positive-going triangle, while only U451's dedicated
 Poly Mod route subtracts the 2.27 V reference; saw and pulse retain their
 electrical bias in both paths.
 
+Selecting oscillator B triangle also reproduces the CEM3340's load-dependent
+frequency pull. SD431's 150 kohm mixer path loads the finite 65-150 ohm
+triangle buffer, which also drives the internal comparator, lowering B by
+approximately 0.75-1.73 cents according to its physical output profile. Saw's
+buffer isolation and pulse's open-emitter output prevent the same pitch shift
+when those waveforms are selected.
+
 ## Exposed controls in this block
 
 - oscillator A and B levels;

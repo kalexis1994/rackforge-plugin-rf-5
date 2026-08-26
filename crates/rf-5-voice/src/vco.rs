@@ -90,6 +90,9 @@ const TRIANGLE_LOWER_VOLTS: [f32; OUTPUT_PROFILE_COUNT] = [
 const TRIANGLE_SYMMETRY: [f32; OUTPUT_PROFILE_COUNT] = [
     0.450, 0.472, 0.489, 0.507, 0.529, 0.550, 0.462, 0.481, 0.518, 0.541,
 ];
+const TRIANGLE_OUTPUT_IMPEDANCE_OHMS: [f32; OUTPUT_PROFILE_COUNT] = [
+    65.0, 78.0, 91.0, 100.0, 112.0, 125.0, 138.0, 150.0, 84.0, 106.0,
+];
 
 // The voice board uses 150 kohm inputs for saw/triangle and 200 kohm for
 // pulse. With +15/-5 V supplies, the data-sheet pulse formulas and the 4016
@@ -98,6 +101,7 @@ const TRIANGLE_SYMMETRY: [f32; OUTPUT_PROFILE_COUNT] = [
 // kohm input conductance. Loading by the CA3280 input itself is applied at the
 // VCA boundary, where all simultaneously selected paths are known.
 const SAW_TRIANGLE_MIXER_CONDUCTANCE: f32 = 1.0;
+const TRIANGLE_MIXER_LOAD_RESISTANCE_OHMS: f32 = 150_000.0;
 const PULSE_MIXER_CONDUCTANCE: f32 = 150_000.0 / 200_000.0;
 const PULSE_LOWER_VOLTS: f32 = -0.6;
 const PULSE_UPPER_VOLTS: f32 = 14.1;
@@ -172,10 +176,11 @@ impl Vco {
         waves: WaveSelection,
         external_sync: [HardSyncEvent; 2],
     ) -> OscillatorSample {
-        let increment = (frequency.max(0.0) / sample_rate.max(1.0)).clamp(0.0, 0.49);
+        let profile = self.profile_index;
+        let frequency = triangle_loaded_frequency(frequency.max(0.0), profile, waves.triangle);
+        let increment = (frequency / sample_rate.max(1.0)).clamp(0.0, 0.49);
         let pulse_width = pulse_width.clamp(0.0, 1.0);
         let phase = self.phase;
-        let profile = self.profile_index;
         let mut mixer_positive_source_volts = 0.0;
         let mut mixer_positive_source_conductance = 0.0;
         let mut mixer_negative_source_volts = 0.0;
@@ -259,6 +264,23 @@ impl Vco {
             false
         }
     }
+}
+
+fn triangle_loaded_frequency(frequency: f32, profile: usize, triangle_selected: bool) -> f32 {
+    if !triangle_selected {
+        return frequency;
+    }
+
+    frequency * triangle_load_frequency_ratio(profile)
+}
+
+pub(crate) fn triangle_load_frequency_ratio(profile: usize) -> f32 {
+    // The triangle buffer also drives the internal comparator, so its finite
+    // output impedance lets an external load pull oscillator frequency. The
+    // CEM3340 sheet gives the first-order reduction directly as Rout/Rload.
+    let pull = TRIANGLE_OUTPUT_IMPEDANCE_OHMS[profile % OUTPUT_PROFILE_COUNT]
+        / TRIANGLE_MIXER_LOAD_RESISTANCE_OHMS;
+    1.0 - pull
 }
 
 fn pulse_edges(phase: f32, increment: f32, pulse_width: f32) -> [HardSyncEvent; 2] {
@@ -572,7 +594,41 @@ mod tests {
             assert!((4.85..=5.15).contains(&TRIANGLE_UPPER_VOLTS[profile]));
             assert!((-0.015..=0.015).contains(&TRIANGLE_LOWER_VOLTS[profile]));
             assert!((0.45..=0.55).contains(&TRIANGLE_SYMMETRY[profile]));
+            assert!((65.0..=150.0).contains(&TRIANGLE_OUTPUT_IMPEDANCE_OHMS[profile]));
         }
+    }
+
+    #[test]
+    fn triangle_load_reproduces_the_data_sheet_frequency_pull() {
+        let frequency = 1_000.0;
+        let profile = 7;
+        let loaded = triangle_loaded_frequency(frequency, profile, true);
+        let fractional_pull = 1.0 - loaded / frequency;
+
+        assert!((fractional_pull - 150.0 / 150_000.0).abs() < 1.0e-7);
+        let cents = 1_200.0 * libm::log2f(loaded / frequency);
+        assert!((-1.74..-1.72).contains(&cents));
+    }
+
+    #[test]
+    fn only_a_selected_triangle_loads_the_oscillator_core() {
+        let mut saw = Vco::with_phase_and_profile(0.0, 7);
+        let mut pulse = Vco::with_phase_and_profile(0.0, 7);
+        let mut triangle = Vco::with_phase_and_profile(0.0, 7);
+        let triangle_wave = WaveSelection {
+            saw: false,
+            triangle: true,
+            pulse: false,
+        };
+
+        saw.next(1_000.0, 48_000.0, 0.5, SAW);
+        pulse.next(1_000.0, 48_000.0, 0.5, PULSE);
+        triangle.next(1_000.0, 48_000.0, 0.5, triangle_wave);
+
+        assert_eq!(saw.phase(), pulse.phase());
+        assert!(triangle.phase() < saw.phase());
+        let expected = triangle_loaded_frequency(1_000.0, 7, true) / 48_000.0;
+        assert!((triangle.phase() - expected).abs() < 1.0e-7);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use crate::{
     decimator::Decimator4x,
-    vco::{Vco, WaveSelection},
+    vco::{Vco, WaveSelection, triangle_load_frequency_ratio},
 };
 use core::f32::consts::PI;
 
@@ -77,7 +77,14 @@ fn alias_ratio(
     pulse_width: f32,
 ) -> f32 {
     let internal_rate = sample_rate * 4.0;
-    let frequency = sample_rate * fundamental_bin as f32 / FFT_SIZE as f32;
+    let target_frequency = sample_rate * fundamental_bin as f32 / FFT_SIZE as f32;
+    // Keep the probe exactly periodic after the real triangle-output load
+    // pull; otherwise FFT leakage would be misclassified as alias energy.
+    let frequency = if waves.triangle {
+        target_frequency / triangle_load_frequency_ratio(0)
+    } else {
+        target_frequency
+    };
     let mut oscillator = Vco::with_phase(0.137);
     let mut decimator = Decimator4x::default();
     let mut spectrum = [Complex::default(); FFT_SIZE];

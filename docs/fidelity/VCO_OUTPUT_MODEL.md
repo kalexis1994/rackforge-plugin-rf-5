@@ -27,8 +27,9 @@ their one-sided bias when used as Poly Mod sources.
 
 Every one of the ten audio VCOs owns an independent deterministic output
 profile. Its saw upper/lower endpoints, triangle upper/lower endpoints and
-triangle symmetry all remain inside the published CEM3340 ranges. These are a
-validation population, not measurements from one particular instrument.
+triangle symmetry and 65-150 ohm triangle-output impedance all remain inside
+the published CEM3340 ranges. These are a validation population, not
+measurements from one particular instrument.
 
 One oscillator evaluation now produces two related electrical signals:
 
@@ -59,6 +60,17 @@ relationships are:
 - saw and pulse preserve those same one-sided electrical levels in Poly Mod;
 - triangle Poly Mod spans approximately -2.27 to +2.73 V after U451, instead
   of reusing the raw positive-going audio path.
+
+The triangle output is the one waveform buffer that also drives the internal
+oscillator comparator. The CEM3340 data sheet therefore specifies that its
+finite output impedance pulls frequency downward by `Rout / Rload`; it gives a
+150 ohm / 100 kohm = 0.15% worst-case example. Selecting oscillator B triangle
+on SD431 connects the populated 150 kohm mixer path, so each RF-5 output profile
+now incurs its own 0.043-0.100% downward shift (approximately 0.75-1.73 cents).
+Saw remains buffer-isolated from oscillator performance, and pulse remains an
+open-emitter comparator output, so selecting either does not add this pull.
+U451 buffers the separate triangle Poly Mod route and does not double the raw
+triangle-output load.
 
 The public pulse-width pot is first quantized to the physical 128 codes and
 then mapped to approximately 1-99% duty cycle. Modulation is added at the
@@ -95,6 +107,8 @@ hypothesis. The following remain open:
 - exact populated DC operating-point displacement through the mixer and
   filter before the modeled final 4.34 Hz output coupling network;
 - correlations between amplitude, symmetry, scale error and temperature;
+- correlation between populated triangle-output impedance and the other nine
+  profile dimensions;
 - waveform captures from a calibrated Revision 3 instrument.
 
 The candidate now preserves every schematic-visible DC component through the
@@ -107,6 +121,9 @@ voice-card waveform capture becomes available.
 ## Acceptance tests
 
 - all ten profiles remain inside every published endpoint and symmetry limit;
+- all ten triangle-output impedances remain within 65-150 ohms; selecting the
+  populated 150 kohm triangle path lowers pitch by 0.043-0.100%, while saw and
+  pulse selection do not pull oscillator frequency;
 - raw audio triangle is positive-going and approximately half the saw
   excursion, while its U451 Poly Mod path is offset by exactly 2.27 V;
 - pulse is slightly hotter than saw after the board resistor ratio;
