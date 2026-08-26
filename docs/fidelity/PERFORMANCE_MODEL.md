@@ -20,11 +20,18 @@ ten before it reaches both oscillator master sums.
 
 ## Active candidate
 
-- MIDI pitch bend consumes the complete 14-bit message, has an exact centre
-  and passes through the SD334 diode deadband before applying the documented
-  approximately plus or minus seven semitones to both VCOs. A 0.6 V candidate
-  1N914 forward drop and the populated 0.1 downstream gain produce a 9.33%
-  centre deadband while preserving both serviced endpoints.
+- MIDI pitch bend consumes the complete 14-bit message and maps it to R1's
+  physical track. R3106's 4.7k positive feed and the serviced R3129 trim place
+  the nominal 100k track endpoints at approximately +/-13.711 V. The
+  documented approximately-seven-semitone excursion implies 26.978% track
+  travel to either side of the mechanical centre rather than an invented
+  electronic gain.
+- R1's position-dependent Thevenin resistance, R3100's 100k wiper shunt, the
+  anti-parallel D315/D316 pair and R3177's 1M master-summer input are solved as
+  one nonlinear network for every MIDI pitch-bend event. The previous hard
+  0.6 V threshold is gone. A bounded 25 C 1N914 curve fit gives the centre a
+  smooth silicon knee while the 100k master-summer feedback converts the
+  resulting branch current directly to both oscillators' pitch voltage.
 - CC1 remains the live modulation-wheel amount and is not stored in programs.
 - MIDI CC64 defers key releases until the sustain pedal rises, in both
   polyphonic and Unison allocation.
@@ -56,19 +63,25 @@ ten before it reaches both oscillator master sums.
 
 The feature routing, pitch-wheel topology/span, polyphonic assignment, Unison
 priority/retrigger rules, Glide topology, populated divider/timing components
-and service limits are accepted. The exact D315/D316 forward drops and R1's
-mechanical endpoint are unmeasured, so the deadband is an isolated candidate
-rather than a claimed measured width. Q309 temperature and device population,
-the absolute CA3280 current, capacitor tolerance and the serviced unit's time
-at panel 10 also remain unmeasured. The five-second Glide boundary is
-deliberately isolated as one replaceable absolute anchor; the relative panel
-curve is circuit-derived.
+and service limits are accepted. The D315/D316 fit follows a modern 1N914
+typical curve and therefore bounds, but does not identify, the historical
+diodes. Their temperature, matching and leakage remain unmeasured. The exact
+mechanical wheel-to-pot travel is inferred from the owner's-manual fifth and
+can be replaced by a measured endpoint without changing the circuit solver.
+Q309 temperature and device population, the absolute CA3280 current,
+capacitor tolerance and the serviced unit's time at panel 10 also remain
+unmeasured. The five-second Glide boundary is deliberately isolated as one
+replaceable absolute anchor; the relative panel curve is circuit-derived.
 
 ## Acceptance tests
 
 - 14-bit pitch bend reaches exact negative, centre and positive endpoints;
-- centred and service-tolerance wheel values remain inside the diode deadband,
-  and the complete transfer is symmetric, bounded and monotonic;
+- the serviced supply/trim network centres R1 and places its nominal track
+  endpoints inside the +/-15 V rails;
+- the anti-parallel pair follows the admitted microamp 1N914 curve, and the
+  complete loaded transfer is smooth, symmetric, bounded and monotonic;
+- the +/-0.05 V service-centre tolerance contributes less than half a cent
+  before the documented residual-offset trim;
 - every one of the 128 Glide positions is finite and monotonically slower;
 - the populated divider produces 0.13145 V across Q309's control span and its
   matched-pair law produces the bounded full-range rate ratio;
@@ -85,5 +98,5 @@ curve is circuit-derived.
 - sustain holds released keys and releases them when the pedal rises.
 
 Primary evidence: original owner's manual section 1-4; TM1000D.2 common-circuit
-description, SD333/SD334 and service tests 4-4 and 4-11. Provenance is recorded
-in `SOURCE_LEDGER.md`.
+description, SD333/SD334 and service tests 4-4 and 4-11; Vishay 1N914 typical
+forward-current curve. Provenance is recorded in `SOURCE_LEDGER.md`.
