@@ -80,7 +80,7 @@ same relative vertical drag on mouse and touch, while RackForge parameter
 attributes keep host-owned context menus and MIDI Link available.
 
 The `RF-5 Audition` factory bank provides
-twenty-four immediately playable listening programs for Wheel/Poly Mod, LFO range,
+twenty-five immediately playable listening programs for Wheel/Poly Mod, LFO range,
 Sync, filter drive, resonance, fast/slow envelope behaviour, CA3280 drive and
 common noise, including explicit global-Release and oscillator-B FINE endpoint
 comparisons plus pulse-width endpoints. They require no UI; see
@@ -116,7 +116,7 @@ bash tools/build-package.sh
 
 The package is written to `artifacts/rf-5-0.1.0.rfplugin`. GitHub Actions tests
 x86-64 and ARM64 before publishing the portable package as a workflow artifact.
-The audition command writes twenty-eight unnormalized listening files and their metrics
+The audition command writes twenty-nine unnormalized listening files and their metrics
 to `artifacts/auditions`; see
 [`docs/AUDITION_RENDERER.md`](docs/AUDITION_RENDERER.md).
 

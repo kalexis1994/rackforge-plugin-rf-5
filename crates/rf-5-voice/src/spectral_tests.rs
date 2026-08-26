@@ -1,7 +1,8 @@
 use crate::{
     decimator::Decimator4x,
     vco::{
-        Vco, WaveSelection, band_limited_triangle, naive_triangle, triangle_load_frequency_ratio,
+        Vco, WaveSelection, band_limited_pulse, band_limited_triangle, naive_triangle,
+        triangle_load_frequency_ratio,
     },
 };
 use core::f32::consts::PI;
@@ -184,6 +185,46 @@ fn direct_triangle_alias_ratio(
     spectral_alias_ratio(spectrum, fundamental_bin)
 }
 
+fn audio_rate_pwm_alias_ratio(sample_rate: f32, depth: f32, moving_threshold: bool) -> f32 {
+    const MODULATOR_BIN: usize = 37;
+    const CARRIER_BIN: usize = MODULATOR_BIN * 5;
+    let internal_rate = sample_rate * 4.0;
+    let carrier_frequency = sample_rate * CARRIER_BIN as f32 / FFT_SIZE as f32;
+    let modulator_frequency = sample_rate * MODULATOR_BIN as f32 / FFT_SIZE as f32;
+    let carrier_increment = carrier_frequency / internal_rate;
+    let mut decimator = Decimator4x::default();
+    let mut spectrum = [Complex::default(); FFT_SIZE];
+    let mut previous_width = 0.5;
+
+    for host_index in 0..WARMUP_SAMPLES + FFT_SIZE {
+        let mut output = 0.0;
+        for sub_sample in 0..4 {
+            let internal_index = host_index * 4 + sub_sample;
+            let elapsed = internal_index as f64 / f64::from(internal_rate);
+            let carrier_phase = (0.137_f64 + elapsed * f64::from(carrier_frequency)).fract() as f32;
+            let modulator_phase =
+                (0.319_f64 + elapsed * f64::from(modulator_frequency)).fract() as f32;
+            let width = 0.5 + depth * libm::sinf(2.0 * PI * modulator_phase);
+            let correction_previous = if moving_threshold {
+                previous_width
+            } else {
+                width
+            };
+            let pulse =
+                band_limited_pulse(carrier_phase, carrier_increment, correction_previous, width);
+            previous_width = width;
+            if let Some(sample) = decimator.push(pulse) {
+                output = sample;
+            }
+        }
+        if host_index >= WARMUP_SAMPLES {
+            spectrum[host_index - WARMUP_SAMPLES].real = output;
+        }
+    }
+
+    spectral_alias_ratio(spectrum, MODULATOR_BIN)
+}
+
 fn spectral_alias_ratio(mut spectrum: [Complex; FFT_SIZE], fundamental_bin: usize) -> f32 {
     let mean = spectrum.iter().map(|sample| sample.real).sum::<f32>() / FFT_SIZE as f32;
     for sample in &mut spectrum {
@@ -258,6 +299,20 @@ fn triangle_blamp_reduces_non_harmonic_energy_across_the_accepted_matrix() {
                     "corrected={corrected}, naive={naive}, symmetry={symmetry}, bin={fundamental_bin}, rate={sample_rate}"
                 );
             }
+        }
+    }
+}
+
+#[test]
+fn moving_pwm_threshold_reduces_audio_rate_modulation_aliases() {
+    for sample_rate in [44_100.0, 48_000.0, 96_000.0, 192_000.0] {
+        for depth in [0.20, 0.45] {
+            let static_threshold = audio_rate_pwm_alias_ratio(sample_rate, depth, false);
+            let moving_threshold = audio_rate_pwm_alias_ratio(sample_rate, depth, true);
+            assert!(
+                moving_threshold < static_threshold && moving_threshold < 0.01,
+                "moving={moving_threshold}, static={static_threshold}, depth={depth}, rate={sample_rate}"
+            );
         }
     }
 }

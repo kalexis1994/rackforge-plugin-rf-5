@@ -34,7 +34,10 @@ waveforms contribute to the source bus. Oscillator hard sync is a separate route
   positive bias, while the dedicated DC level-shifter makes triangle bipolar
   about ground.
 - Oscillator-A frequency and pulse-width destinations are evaluated at that
-  internal rate, preserving audio-rate modulation.
+  internal rate, preserving audio-rate modulation. The PWM destination now
+  advances the CEM3340 comparator edge from its velocity relative to oscillator
+  phase rather than applying a static-width correction independently on every
+  substep.
 - The filter destination enters the four-pole CEM3320 candidate independently
   on every internal substep, preserving its audio-rate content.
 - Source amounts are additive and destinations can be enabled independently.
@@ -100,6 +103,9 @@ unmeasured.
 - frequency and filter destinations produce distinct renders;
 - all three destination depths retain the populated SD431 resistor ratios and
   consume the same physical PMOD voltage;
+- audio-rate PWM reduces non-harmonic energy against the former static-width
+  correction across moderate and near-full modulation depths at every accepted
+  host rate;
 - both envelopes trigger and release independently;
 - the expanded parameter state round-trips exactly;
 - all workspace tests remain finite and deterministic.

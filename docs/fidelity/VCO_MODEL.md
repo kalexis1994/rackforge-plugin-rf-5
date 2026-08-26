@@ -42,7 +42,12 @@ approximately 1-99% duty-cycle span, with the nearest code to 50% at the
 physical midpoint. Wheel Mod and Poly Mod are summed after that panel law at
 the shared board CV node. They may therefore overdrive a pulse to exactly 0%
 or 100%, where the CEM3340 output becomes steady DC and stops generating sync
-edges until modulation returns it to a finite pulse.
+edges until modulation returns it to a finite pulse. Each oscillator retains
+the previous internal pulse-width value so the threshold edge uses the
+relative velocity between phase and comparator threshold. This preserves the
+existing phase-wrap correction, smooths either polarity when audio-rate Poly
+Mod moves the threshold through the core ramp, and makes coincident edges
+cancel exactly at static 0/100% DC.
 
 SYNC is resolved at the same four-times internal rate but does not use the
 CEM3340's bidirectional hard-sync pin 6, which SD431 leaves unconnected.
@@ -92,8 +97,7 @@ This candidate does not yet claim final CEM3340 waveform equivalence. Open
 items are:
 
 - waveform curvature and high-frequency rounding at the actual board nodes;
-- exact populated-chip PWM threshold, control-current loading and transition
-  behavior at the 0/100% DC boundaries;
+- exact populated-chip PWM threshold and control-current loading;
 - analog bandwidth of hard-sync discontinuities after their now-fractional
   placement;
 - final calibration of the frequency-knob and B fine-control laws;
@@ -115,6 +119,9 @@ Numerical spectral sweeps at 44.1, 48, 96 and 192 kHz verify that the corrected
 triangle produces less non-harmonic energy than the uncorrected phase geometry
 at every accepted symmetry, rate and pitch probe. It and the saw, square,
 1%/99% pulse and periodic hard-sync conditions all pass the -40 dB alias
-threshold. The candidate still requires legally usable hardware measurements
+threshold. Periodic audio-rate PWM at moderate and near-full depth also
+produces less non-harmonic energy with the moving-threshold correction than
+with the former static-threshold correction at every accepted rate. The
+candidate still requires legally usable hardware measurements
 to bound the remaining waveform curvature and analog sync-transient
 hypotheses.

@@ -55,6 +55,8 @@ pub struct HardSyncEvent {
 pub struct Vco {
     phase: f32,
     profile_index: usize,
+    previous_pulse_width: f32,
+    pulse_width_initialized: bool,
 }
 
 impl Default for Vco {
@@ -62,6 +64,8 @@ impl Default for Vco {
         Self {
             phase: 0.0,
             profile_index: 0,
+            previous_pulse_width: 0.5,
+            pulse_width_initialized: false,
         }
     }
 }
@@ -148,6 +152,8 @@ impl Vco {
         Self {
             phase: if phase < 0.0 { phase + 1.0 } else { phase },
             profile_index: profile_index % OUTPUT_PROFILE_COUNT,
+            previous_pulse_width: 0.5,
+            pulse_width_initialized: false,
         }
     }
 
@@ -185,7 +191,16 @@ impl Vco {
         let profile = self.profile_index;
         let frequency = triangle_loaded_frequency(frequency.max(0.0), profile, waves.triangle);
         let increment = (frequency / sample_rate.max(1.0)).clamp(0.0, 0.49);
-        let pulse_width = pulse_width.clamp(0.0, 1.0);
+        let pulse_width = if pulse_width.is_finite() {
+            pulse_width.clamp(0.0, 1.0)
+        } else {
+            0.5
+        };
+        let previous_pulse_width = if self.pulse_width_initialized {
+            self.previous_pulse_width
+        } else {
+            pulse_width
+        };
         let phase = self.phase;
         let mut mixer_positive_source_volts = 0.0;
         let mut mixer_positive_source_conductance = 0.0;
@@ -215,7 +230,7 @@ impl Vco {
             poly_mod_source_conductance += SAW_TRIANGLE_MIXER_CONDUCTANCE;
         }
         if waves.pulse {
-            let centered = band_limited_pulse(phase, increment, pulse_width);
+            let centered = band_limited_pulse(phase, increment, previous_pulse_width, pulse_width);
             let half_range = (PULSE_UPPER_VOLTS - PULSE_LOWER_VOLTS) * 0.5;
             let midpoint = (PULSE_UPPER_VOLTS + PULSE_LOWER_VOLTS) * 0.5;
             let equivalent_source_volts =
@@ -227,6 +242,8 @@ impl Vco {
         }
 
         let hard_sync_event = pulse_hard_sync_event(phase, increment, pulse_width);
+        self.previous_pulse_width = pulse_width;
+        self.pulse_width_initialized = true;
         let wrapped = self.advance_with_sync(increment, external_sync);
 
         OscillatorSample {
@@ -306,21 +323,32 @@ fn band_limited_saw(phase: f32, increment: f32) -> f32 {
     naive - poly_blep(phase, blep_width(increment))
 }
 
-fn band_limited_pulse(phase: f32, increment: f32, pulse_width: f32) -> f32 {
-    if pulse_width <= 0.0 {
-        return -1.0;
-    }
-    if pulse_width >= 1.0 {
-        return 1.0;
-    }
+pub(crate) fn band_limited_pulse(
+    phase: f32,
+    phase_increment: f32,
+    previous_pulse_width: f32,
+    pulse_width: f32,
+) -> f32 {
     let naive = if phase < pulse_width { 1.0 } else { -1.0 };
-    let falling_phase = if phase >= pulse_width {
-        phase - pulse_width
+    let rising_correction = poly_blep(phase, blep_width(phase_increment));
+    let threshold_velocity = phase_increment - (pulse_width - previous_pulse_width);
+    if threshold_velocity >= 0.0 {
+        let falling_phase = if phase >= pulse_width {
+            phase - pulse_width
+        } else {
+            phase + (1.0 - pulse_width)
+        };
+        naive + rising_correction - poly_blep(falling_phase, blep_width(threshold_velocity.abs()))
     } else {
-        phase + (1.0 - pulse_width)
-    };
-    let correction_width = blep_width(increment);
-    naive + poly_blep(phase, correction_width) - poly_blep(falling_phase, correction_width)
+        let rising_threshold_phase = if pulse_width >= phase {
+            pulse_width - phase
+        } else {
+            pulse_width + (1.0 - phase)
+        };
+        naive
+            + rising_correction
+            + poly_blep(rising_threshold_phase, blep_width(threshold_velocity.abs()))
+    }
 }
 
 fn blep_width(increment: f32) -> f32 {
@@ -503,6 +531,41 @@ mod tests {
                 > 0.0) as usize;
         }
         assert!(narrow_positive < wide_positive);
+    }
+
+    #[test]
+    fn moving_pwm_threshold_uses_its_velocity_relative_to_phase() {
+        let rising = band_limited_pulse(0.50, 0.0, 0.49, 0.51);
+        let falling = band_limited_pulse(0.50, 0.0, 0.51, 0.49);
+        let stationary_high = band_limited_pulse(0.50, 0.0, 0.51, 0.51);
+        let stationary_low = band_limited_pulse(0.50, 0.0, 0.49, 0.49);
+
+        assert!((0.0..1.0).contains(&rising));
+        assert!((-1.0..0.0).contains(&falling));
+        assert!((rising + falling).abs() < 1.0e-6);
+        assert_eq!(stationary_high, 1.0);
+        assert_eq!(stationary_low, -1.0);
+    }
+
+    #[test]
+    fn static_pwm_endpoints_cancel_both_band_limited_edges_exactly() {
+        for pulse_width in [0.0, 1.0] {
+            let expected = pulse_width * 2.0 - 1.0;
+            for phase in [0.0, 0.001, 0.25, 0.75, 0.999] {
+                assert_eq!(
+                    band_limited_pulse(phase, 0.01, pulse_width, pulse_width),
+                    expected
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_pwm_control_recovers_to_the_physical_midpoint() {
+        let mut oscillator = Vco::default();
+        let sample = oscillator.next(440.0, 48_000.0, f32::NAN, PULSE);
+        assert!(sample.mixer_negative_source_volts.is_finite());
+        assert_eq!(oscillator.previous_pulse_width, 0.5);
     }
 
     #[test]

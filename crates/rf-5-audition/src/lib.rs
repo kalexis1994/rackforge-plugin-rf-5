@@ -460,6 +460,19 @@ fn scenes() -> Vec<Scene> {
                 (4.20, 84),
             ]),
         },
+        Scene {
+            id: "29_audio_rate_pwm",
+            program: "audition-poly-mod-pulse-width",
+            description: "Oscillator-B triangle moves oscillator A's CEM3340 PWM comparator threshold at audio rate",
+            scale_codes: EQUAL_TEMPERAMENT,
+            events: monophonic_sequence(&[
+                (0.20, 36),
+                (1.20, 43),
+                (2.20, 48),
+                (3.20, 55),
+                (4.20, 60),
+            ]),
+        },
     ]
 }
 

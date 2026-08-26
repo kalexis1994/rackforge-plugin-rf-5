@@ -407,6 +407,31 @@ impl Program {
         Self::normal(values)
     }
 
+    fn poly_mod_pulse_width() -> Self {
+        let mut values = BASELINE_INIT;
+        values[Parameter::OscillatorALevel as usize] = 0.72;
+        values[Parameter::OscillatorASaw as usize] = 0.0;
+        values[Parameter::OscillatorAPulse as usize] = 1.0;
+        values[Parameter::OscillatorAPulseWidth as usize] = 0.50;
+        values[Parameter::OscillatorBLevel as usize] = 0.0;
+        values[Parameter::OscillatorBSaw as usize] = 0.0;
+        values[Parameter::OscillatorBTriangle as usize] = 1.0;
+        values[Parameter::OscillatorBPulse as usize] = 0.0;
+        values[Parameter::PolyModFilterEnvelopeAmount as usize] = 0.0;
+        values[Parameter::PolyModOscillatorBAmount as usize] = 0.18;
+        values[Parameter::PolyModOscillatorAFrequency as usize] = 0.0;
+        values[Parameter::PolyModOscillatorAPulseWidth as usize] = 1.0;
+        values[Parameter::PolyModFilter as usize] = 0.0;
+        values[Parameter::FilterCutoff as usize] = 0.92;
+        values[Parameter::FilterResonance as usize] = 0.0;
+        values[Parameter::FilterEnvelopeAmount as usize] = 0.0;
+        values[Parameter::AmpAttack as usize] = 0.0;
+        values[Parameter::AmpDecay as usize] = 0.20;
+        values[Parameter::AmpSustain as usize] = 0.90;
+        values[Parameter::AmpRelease as usize] = 0.18;
+        Self::normal(values)
+    }
+
     fn poly_mod_filter_envelope() -> Self {
         let mut values = BASELINE_INIT;
         values[Parameter::OscillatorALevel as usize] = 0.54;
@@ -577,6 +602,7 @@ pub(crate) fn find(id: &str) -> Option<Program> {
         "audition-ca3280-drive" => Program::ca3280_drive(),
         "audition-common-noise-vca" => Program::common_noise_vca(),
         "audition-poly-mod-oscillator-b" => Program::poly_mod_oscillator_b(),
+        "audition-poly-mod-pulse-width" => Program::poly_mod_pulse_width(),
         "audition-poly-mod-filter-envelope" => Program::poly_mod_filter_envelope(),
         "audition-wheel-noise-filter" => Program::wheel_noise_filter(),
         "audition-hard-sync" => Program::hard_sync(),
@@ -616,6 +642,7 @@ mod tests {
             "audition-ca3280-drive",
             "audition-common-noise-vca",
             "audition-poly-mod-oscillator-b",
+            "audition-poly-mod-pulse-width",
             "audition-poly-mod-filter-envelope",
             "audition-wheel-noise-filter",
             "audition-hard-sync",
@@ -648,6 +675,23 @@ mod tests {
             program.values[Parameter::PolyModOscillatorBAmount as usize],
             0.0
         );
+    }
+
+    #[test]
+    fn audio_rate_pwm_audition_routes_only_the_poly_mod_width_destination() {
+        let program = find("audition-poly-mod-pulse-width").unwrap();
+        assert_eq!(program.values[Parameter::OscillatorBLevel as usize], 0.0);
+        assert_eq!(program.values[Parameter::OscillatorBTriangle as usize], 1.0);
+        assert!(program.values[Parameter::PolyModOscillatorBAmount as usize] > 0.0);
+        assert_eq!(
+            program.values[Parameter::PolyModOscillatorAPulseWidth as usize],
+            1.0
+        );
+        assert_eq!(
+            program.values[Parameter::PolyModOscillatorAFrequency as usize],
+            0.0
+        );
+        assert_eq!(program.values[Parameter::PolyModFilter as usize], 0.0);
     }
 
     #[test]

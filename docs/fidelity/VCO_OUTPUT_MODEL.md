@@ -79,7 +79,11 @@ then mapped to approximately 1-99% duty cycle. Modulation is added at the
 common CV node afterwards and may reach the data sheet's 0% and 100% limits.
 At either limit the numerical pulse is stable DC and produces no false
 hard-sync transitions; the modeled output coupling rejects that DC at the host
-boundary.
+boundary. The pulse comparator additionally tracks the previous internal
+threshold position. Its antialias width follows phase velocity minus threshold
+velocity, so Poly Mod can move the edge in either direction instead of being
+treated as a sequence of unrelated static pulse widths. Static endpoint edges
+remain coincident and cancel exactly.
 
 Selected waveforms still meet before both oscillator amount VCAs, but U464's
 positive and negative input sums remain separate until its differential pair.
@@ -144,4 +148,9 @@ voice-card waveform capture becomes available.
 - its A4 peak displacement remains below 0.4% at every supported host rate;
 - all 128 panel codes are monotonic from 1% to 99%, while modulation can reach
   stable 0/100% DC without emitting sync edges;
+- a moving PWM threshold is smooth in either direction even at zero oscillator
+  frequency, while a stationary threshold retains the exact comparator state;
+- periodic audio-rate PWM at moderate and near-full depth improves over the
+  former static-threshold correction at all supported rates and remains below
+  the common -40 dB non-harmonic bound;
 - complete engine renders remain finite at 44.1, 48, 96 and 192 kHz.

@@ -29,6 +29,9 @@ program in RackForge's program browser and play normally:
 - `Audition - Poly Mod Oscillator B` keeps oscillator B out of the audio mixer
   while its triangle drives oscillator A through the five unlinearized Poly
   Mod amount VCAs;
+- `Audition - Audio-rate PWM` keeps oscillator B out of the audio mixer while
+  its triangle moves oscillator A's pulse comparator through the physical Poly
+  Mod amount and destination networks;
 - `Audition - Poly Mod Filter Envelope` produces descending resonant sweeps
   through the five linearized envelope amount paths;
 - `Audition - Wheel Noise Filter` selects the noise endpoint of common U378
@@ -60,7 +63,7 @@ or alter the serialized patch format, is cleared by loading a normal program
 or state, survives audio-device preparation order, and is replaced by the
 first physical MIDI CC1 message.
 
-All twenty-four audition programs are covered by deterministic render probes for
+All twenty-five audition programs are covered by deterministic render probes for
 finite output, usable level and bounded headroom. All catalog programs are
 also contract-validated, and the filter population is swept at every supported
 sample rate.

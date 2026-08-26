@@ -12,7 +12,9 @@ pulse-width endpoints remain controlled when both edges occupy one short
 window. Oscillator B's continuous asymmetric triangle instead uses a periodic
 PolyBLAMP over one internal sample at each slope transition. The correction
 changes only the corner neighborhoods and precedes both its audio and Poly Mod
-routes.
+routes. For audio-rate PWM, the pulse-threshold correction width follows the
+relative velocity between the oscillator ramp and the moving comparator
+threshold; it is not frozen to oscillator frequency.
 
 Placing reconstruction after the final per-voice nonlinearity is deliberate:
 hard-sync discontinuities, resonance and both OTA transfer curves can all create new
