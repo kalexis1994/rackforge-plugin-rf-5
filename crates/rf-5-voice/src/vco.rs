@@ -111,14 +111,10 @@ const PULSE_PULLDOWN_VOLTS: f32 = -5.0;
 const PULSE_PULLDOWN_RESISTANCE_OHMS: f32 = 10_000.0;
 const PULSE_HIGH_HEADROOM_VOLTS: f32 = 0.3;
 const PULSE_HIGH_OUTPUT_RESISTANCE_OHMS: f32 = 1_300.0;
-#[cfg(test)]
 const PULSE_HIGH_CURRENT_BREAKPOINT_AMPS: f32 = 0.6e-3;
 const PULSE_LOWER_VOLTS: f32 = -0.6;
-const PULSE_HIGH_LOAD_RATIO: f32 =
-    PULSE_HIGH_OUTPUT_RESISTANCE_OHMS / PULSE_PULLDOWN_RESISTANCE_OHMS;
-const PULSE_UPPER_VOLTS: f32 = (PULSE_POSITIVE_SUPPLY_VOLTS - PULSE_HIGH_HEADROOM_VOLTS
-    + PULSE_HIGH_LOAD_RATIO * PULSE_PULLDOWN_VOLTS)
-    / (1.0 + PULSE_HIGH_LOAD_RATIO);
+const PULSE_UPPER_VOLTS: f32 =
+    cem3340_loaded_pulse_high_volts(PULSE_PULLDOWN_VOLTS, PULSE_PULLDOWN_RESISTANCE_OHMS);
 // SD431 derives 2.27 V TRI REF and U451 subtracts it from OSC B's raw
 // positive-going triangle before the Poly Mod amount OTA.
 const TRIANGLE_POLY_MOD_REFERENCE_VOLTS: f32 = 2.27;
@@ -126,6 +122,30 @@ const TRIANGLE_POLY_MOD_REFERENCE_VOLTS: f32 = 2.27;
 // wider polynomial transition is necessary when the 1%/99% hardware pulse
 // endpoints put both discontinuities inside one short reconstruction window.
 const POLY_BLEP_WIDTH: f32 = 8.0;
+
+/// CEM3340 pulse-output high level under a resistive pull-down.
+///
+/// Below 0.6 mA the data sheet specifies `V+ - 0.9 V`. Above that breakpoint
+/// the open-emitter output behaves as `V+ - 0.3 V - 1.3 kohm * Ipull-down`.
+/// Solving both branches here lets every board-level CEM3340 path share the
+/// same electrical boundary while retaining its own pull-down voltage.
+pub const fn cem3340_loaded_pulse_high_volts(
+    pull_down_voltage_volts: f32,
+    pull_down_resistance_ohms: f32,
+) -> f32 {
+    assert!(pull_down_resistance_ohms > 0.0);
+
+    let low_current_high_volts = PULSE_POSITIVE_SUPPLY_VOLTS - 0.9;
+    let low_current_amps =
+        (low_current_high_volts - pull_down_voltage_volts) / pull_down_resistance_ohms;
+    if low_current_amps < PULSE_HIGH_CURRENT_BREAKPOINT_AMPS {
+        return low_current_high_volts;
+    }
+
+    let load_ratio = PULSE_HIGH_OUTPUT_RESISTANCE_OHMS / pull_down_resistance_ohms;
+    (PULSE_POSITIVE_SUPPLY_VOLTS - PULSE_HIGH_HEADROOM_VOLTS + load_ratio * pull_down_voltage_volts)
+        / (1.0 + load_ratio)
+}
 
 impl Vco {
     pub fn with_phase(phase: f32) -> Self {
@@ -623,6 +643,15 @@ mod tests {
             - PULSE_HIGH_OUTPUT_RESISTANCE_OHMS * pull_down_current_amps;
         assert!((PULSE_UPPER_VOLTS - data_sheet_high_volts).abs() < 1.0e-6);
         assert!((PULSE_UPPER_VOLTS - 12.433_628).abs() < 1.0e-5);
+    }
+
+    #[test]
+    fn pulse_high_solver_selects_both_data_sheet_current_regions() {
+        let ground_loaded = cem3340_loaded_pulse_high_volts(0.0, 10_000.0);
+        let lightly_loaded = cem3340_loaded_pulse_high_volts(0.0, 100_000.0);
+
+        assert!((ground_loaded - 13.008_85).abs() < 1.0e-5);
+        assert!((lightly_loaded - 14.1).abs() < 1.0e-6);
     }
 
     #[test]

@@ -6,6 +6,7 @@
 //! upper-frequency anchor remains isolated until measurements can narrow it.
 
 use rf_5_contract::hardware::quantize_analog_pot;
+use rf_5_voice::vco::cem3340_loaded_pulse_high_volts;
 
 // A standard 100 kohm CEM3340 control input produces one octave per volt. The
 // SD334 LFO instead populates 110 kohm and the control DAC traverses 0-10 V,
@@ -34,7 +35,10 @@ const POPULATED_TIMING_CAPACITANCE_FARADS: f32 = 0.1e-6;
 // span becomes the same 10 V span as saw before both reach the OTA input.
 const CEM3340_SAW_SPAN_VOLTS: f32 = 10.0;
 const CEM3340_TRIANGLE_SPAN_VOLTS: f32 = 5.0;
-const CEM3340_PULSE_SPAN_VOLTS: f32 = 14.7;
+const LFO_PULSE_PULLDOWN_VOLTS: f32 = 0.0;
+const LFO_PULSE_PULLDOWN_RESISTANCE_OHMS: f32 = 10_000.0;
+const CEM3340_PULSE_SPAN_VOLTS: f32 =
+    cem3340_loaded_pulse_high_volts(LFO_PULSE_PULLDOWN_VOLTS, LFO_PULSE_PULLDOWN_RESISTANCE_OHMS);
 const U380_TRIANGLE_INPUT_OHMS: f32 = 100_000.0;
 const U380_TRIANGLE_FEEDBACK_OHMS: f32 = 100_000.0;
 const LFO_SAW_AND_TRIANGLE_INPUT_OHMS: f32 = 160_000.0;
@@ -234,6 +238,14 @@ mod tests {
         );
         assert_eq!(U380_TRIANGLE_SIGNAL_GAIN, 2.0);
         assert_eq!(TRIANGLE_GAIN, SAW_GAIN);
-        assert!((PULSE_GAIN - 1.176).abs() < 1.0e-6);
+        assert!((PULSE_GAIN - 1.040_708).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn lfo_pulse_span_includes_the_populated_ground_pull_down() {
+        let pull_down_current_amps = CEM3340_PULSE_SPAN_VOLTS / LFO_PULSE_PULLDOWN_RESISTANCE_OHMS;
+
+        assert!(pull_down_current_amps > 0.6e-3);
+        assert!((CEM3340_PULSE_SPAN_VOLTS - 13.008_85).abs() < 1.0e-5);
     }
 }

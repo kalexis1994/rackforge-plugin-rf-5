@@ -30,10 +30,11 @@ wheel in RF-5.
 - Saw, triangle and square are independently summable. Their AC-centered
   render now preserves the nominal CEM3340/SD334 current-domain relationship:
   saw and triangle are both the 1.0 reference, while pulse is approximately
-  1.176. U380's equal 100 kohm input and feedback resistors double the raw 5 V
+  1.041. U380's equal 100 kohm input and feedback resistors double the raw 5 V
   triangle span around its reference before its 160 kohm input path, matching
-  the saw's 10 V span and 160 kohm path. The pulse figure combines the accepted
-  14.7 V clamped excursion with its 200 kohm path.
+  the saw's 10 V span and 160 kohm path. The pulse figure solves the CEM3340's
+  published high-current output equation against SD334's populated 10 kohm
+  pull-down to ground, producing a 13.009 V excursion before its 200 kohm path.
 - The LFO and noise sources pass through the two profiled, unlinearized halves
   of common CA3280 U378. The 0-10 V source-mix CV drives grounded-base 2N4250
   Q307 through 8.2 kohm and drives Q309 in the opposite direction against the
@@ -91,7 +92,8 @@ and spectral assumptions are documented separately in
 - square-wave positive and negative intervals are equal within one sample;
 - simultaneously selected waveforms sum on one shared bus;
 - source amplitudes follow the accepted CEM3340 voltage, U380's 2x triangle
-  conditioning and SD334 resistor ratios instead of raw chip amplitudes;
+  conditioning, loaded pulse output and SD334 resistor ratios instead of raw
+  chip amplitudes;
 - source-mix endpoints completely isolate the opposite OTA half, intermediate
   Q307/Q309 currents move monotonically in opposite directions and zero input
   has no balance offset;
