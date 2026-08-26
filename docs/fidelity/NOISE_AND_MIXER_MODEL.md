@@ -43,7 +43,12 @@ and destination switches.
 - Per-voice oscillator waveform paths retain their populated conductances:
   saw/triangle are 150k, pulse is 200k, and simultaneous selections load the
   approximately 100k unlinearized CA3280 input before its nonlinear transfer.
-- Noise level and source mix follow the original 128-position panel storage.
+- The three audio-level cells retain their original 128-position storage and
+  0-10 V output domain. Q306 and Q302 convert oscillator A and B level through
+  33k each; Q305 converts common noise level through 75k. Their normalized
+  endpoints preserve the serviced full-level boundary only after the physical
+  2N4250 knees and distinct current laws.
+- Wheel Mod source mix follows the original 128-position panel storage.
 - Source mix recreates the complementary Q307/Q309 current controls: zero is
   LFO, one is noise, while intermediate gains follow their unequal populated
   8.2k and 10k-parallel-20k emitter networks rather than a linear crossfade.
@@ -68,8 +73,9 @@ normalized drive. These are bounded nominal reconstructions, not measurements
 of one populated instrument.
 Oscillator waveform voltage, 150/200 kohm input weighting, the manual's
 approximate 100 kohm unlinearized input and the common-noise routing are
-source-bounded, but this block does not claim measured mixer saturation
-fidelity.
+source-bounded. The SD333 audio-level current converters and their populated
+resistors are accepted, while transistor temperature and measured mixer
+saturation remain unavailable.
 
 ## Acceptance tests
 
@@ -80,6 +86,8 @@ fidelity.
 - both RMS levels stay within 20% across all supported sample rates;
 - both generators continue through silence and are not reset by notes;
 - a noise-only patch reaches the per-voice signal path;
+- Q306/Q302/Q305 produce the expected 33k/33k/75k full-level currents, retain
+  a silicon-junction knee and rise monotonically through all 128 positions;
 - Wheel Mod source mix audibly changes from the disabled LFO side to noise;
 - package parameters and state expose both physical controls.
 

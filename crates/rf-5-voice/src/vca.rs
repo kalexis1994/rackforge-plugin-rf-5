@@ -42,6 +42,14 @@ const PATCH_AMOUNT_CV_SPAN_VOLTS: f32 = 10.0;
 const FILTER_ENVELOPE_AMOUNT_CONTROL_RESISTANCE_OHMS: f32 = 5_100.0;
 const POLY_MOD_OSCILLATOR_B_CONTROL_RESISTANCE_OHMS: f32 = 5_600.0;
 const POLY_MOD_FILTER_ENVELOPE_CONTROL_RESISTANCE_OHMS: f32 = 3_000.0;
+// SD333 applies the same 0-10 V DAC domain to the three audio-level cells.
+// Q306 and Q302 drive the two per-voice oscillator-mixer halves through
+// populated 33 kohm emitter resistors. Q305 drives the common noise VCA
+// through 75 kohm. Normalizing each current at panel maximum preserves the
+// serviced full-level boundary while recovering the transistor knee and the
+// distinct noise taper.
+const OSCILLATOR_MIX_CONTROL_RESISTANCE_OHMS: f32 = 33_000.0;
+const NOISE_MIX_CONTROL_RESISTANCE_OHMS: f32 = 75_000.0;
 // The direct filter-envelope half of SD431 U422 is reconstructed as a current
 // path into U433 rather than as a normalized VCA followed by an arbitrary
 // octave range. R451 programs the linearizing diodes across the nominal
@@ -268,7 +276,12 @@ pub fn oscillator_mixer(
         MixerChannel::OscillatorA => profile.oscillator_a,
         MixerChannel::OscillatorB => profile.oscillator_b,
     };
-    ota_transfer(input, control, UNLINEARIZED_INPUT_DRIVE, half)
+    ota_transfer(
+        input,
+        ten_volt_control_current_ratio(control, OSCILLATOR_MIX_CONTROL_RESISTANCE_OHMS),
+        UNLINEARIZED_INPUT_DRIVE,
+        half,
+    )
 }
 
 /// One oscillator mixer half including the finite CA3280 input loading shared
@@ -302,7 +315,7 @@ pub fn oscillator_mixer_loaded(
 pub fn common_noise(input: f32, control: f32) -> f32 {
     ota_transfer(
         input,
-        control,
+        ten_volt_control_current_ratio(control, NOISE_MIX_CONTROL_RESISTANCE_OHMS),
         UNLINEARIZED_INPUT_DRIVE,
         COMMON_NOISE_PROFILE,
     )
@@ -354,7 +367,7 @@ pub fn filter_envelope_cutoff_octaves(envelope: f32, amount: f32, voice_index: u
     let profile =
         ENVELOPE_AMOUNT_PROFILES[voice_index % ENVELOPE_AMOUNT_PROFILES.len()].direct_filter;
     let iabc_amps =
-        patch_amount_control_current_amps(amount, FILTER_ENVELOPE_AMOUNT_CONTROL_RESISTANCE_OHMS);
+        ten_volt_control_current_amps(amount, FILTER_ENVELOPE_AMOUNT_CONTROL_RESISTANCE_OHMS);
     let diode_current_amps =
         FILTER_ENVELOPE_SUPPLY_SPAN_VOLTS / FILTER_ENVELOPE_DIODE_RESISTANCE_OHMS;
     let diode_dynamic_resistance_ohms = FILTER_ENVELOPE_DIODE_DYNAMIC_OHM_AMPS / diode_current_amps;
@@ -382,10 +395,7 @@ pub fn filter_envelope_cutoff_octaves(envelope: f32, amount: f32, voice_index: u
 pub fn poly_mod_filter_envelope(input: f32, control: f32, voice_index: usize) -> f32 {
     ota_transfer(
         input,
-        patch_amount_control_current_ratio(
-            control,
-            POLY_MOD_FILTER_ENVELOPE_CONTROL_RESISTANCE_OHMS,
-        ),
+        ten_volt_control_current_ratio(control, POLY_MOD_FILTER_ENVELOPE_CONTROL_RESISTANCE_OHMS),
         LINEARIZED_INPUT_DRIVE,
         ENVELOPE_AMOUNT_PROFILES[voice_index % ENVELOPE_AMOUNT_PROFILES.len()].poly_mod,
     )
@@ -395,7 +405,7 @@ pub fn poly_mod_filter_envelope(input: f32, control: f32, voice_index: usize) ->
 pub fn poly_mod_oscillator_b(input: f32, control: f32, voice_index: usize) -> f32 {
     ota_transfer(
         input,
-        patch_amount_control_current_ratio(control, POLY_MOD_OSCILLATOR_B_CONTROL_RESISTANCE_OHMS),
+        ten_volt_control_current_ratio(control, POLY_MOD_OSCILLATOR_B_CONTROL_RESISTANCE_OHMS),
         UNLINEARIZED_INPUT_DRIVE,
         POLY_MOD_OSCILLATOR_B_PROFILES[voice_index % POLY_MOD_OSCILLATOR_B_PROFILES.len()],
     )
@@ -557,7 +567,7 @@ fn grounded_base_2n4250_collector_current_amps(
     normalized_current * Q410_THERMAL_VOLTAGE_VOLTS / series_resistance_ohms
 }
 
-fn patch_amount_control_current_amps(control: f32, emitter_resistance_ohms: f32) -> f32 {
+fn ten_volt_control_current_amps(control: f32, emitter_resistance_ohms: f32) -> f32 {
     if !control.is_finite() || control <= 0.0 {
         return 0.0;
     }
@@ -567,9 +577,9 @@ fn patch_amount_control_current_amps(control: f32, emitter_resistance_ohms: f32)
     )
 }
 
-fn patch_amount_control_current_ratio(control: f32, emitter_resistance_ohms: f32) -> f32 {
-    patch_amount_control_current_amps(control, emitter_resistance_ohms)
-        / patch_amount_control_current_amps(1.0, emitter_resistance_ohms)
+fn ten_volt_control_current_ratio(control: f32, emitter_resistance_ohms: f32) -> f32 {
+    ten_volt_control_current_amps(control, emitter_resistance_ohms)
+        / ten_volt_control_current_amps(1.0, emitter_resistance_ohms)
 }
 
 #[cfg(test)]
@@ -627,13 +637,11 @@ mod tests {
     #[test]
     fn q301_q303_and_q304_set_the_three_patch_amount_currents() {
         let direct =
-            patch_amount_control_current_amps(1.0, FILTER_ENVELOPE_AMOUNT_CONTROL_RESISTANCE_OHMS);
+            ten_volt_control_current_amps(1.0, FILTER_ENVELOPE_AMOUNT_CONTROL_RESISTANCE_OHMS);
         let oscillator_b =
-            patch_amount_control_current_amps(1.0, POLY_MOD_OSCILLATOR_B_CONTROL_RESISTANCE_OHMS);
-        let poly_envelope = patch_amount_control_current_amps(
-            1.0,
-            POLY_MOD_FILTER_ENVELOPE_CONTROL_RESISTANCE_OHMS,
-        );
+            ten_volt_control_current_amps(1.0, POLY_MOD_OSCILLATOR_B_CONTROL_RESISTANCE_OHMS);
+        let poly_envelope =
+            ten_volt_control_current_amps(1.0, POLY_MOD_FILTER_ENVELOPE_CONTROL_RESISTANCE_OHMS);
         assert!((1.7e-3..=1.9e-3).contains(&direct));
         assert!((1.55e-3..=1.75e-3).contains(&oscillator_b));
         assert!((3.0e-3..=3.2e-3).contains(&poly_envelope));
@@ -644,13 +652,41 @@ mod tests {
             POLY_MOD_OSCILLATOR_B_CONTROL_RESISTANCE_OHMS,
             POLY_MOD_FILTER_ENVELOPE_CONTROL_RESISTANCE_OHMS,
         ] {
-            let quarter = patch_amount_control_current_ratio(0.25, resistance);
-            let half = patch_amount_control_current_ratio(0.5, resistance);
-            let full = patch_amount_control_current_ratio(1.0, resistance);
+            let quarter = ten_volt_control_current_ratio(0.25, resistance);
+            let half = ten_volt_control_current_ratio(0.5, resistance);
+            let full = ten_volt_control_current_ratio(1.0, resistance);
             assert!(quarter > 0.0 && quarter < half && half < full);
             assert!(half < 0.5);
             assert!((full - 1.0).abs() < f32::EPSILON);
         }
+    }
+
+    #[test]
+    fn q302_q305_and_q306_set_the_three_audio_level_currents() {
+        let oscillator = ten_volt_control_current_amps(1.0, OSCILLATOR_MIX_CONTROL_RESISTANCE_OHMS);
+        let noise = ten_volt_control_current_amps(1.0, NOISE_MIX_CONTROL_RESISTANCE_OHMS);
+        assert!((275.0e-6..=290.0e-6).contains(&oscillator));
+        assert!((120.0e-6..=130.0e-6).contains(&noise));
+        assert!(oscillator > noise);
+
+        for resistance in [
+            OSCILLATOR_MIX_CONTROL_RESISTANCE_OHMS,
+            NOISE_MIX_CONTROL_RESISTANCE_OHMS,
+        ] {
+            let quarter = ten_volt_control_current_ratio(0.25, resistance);
+            let half = ten_volt_control_current_ratio(0.5, resistance);
+            let full = ten_volt_control_current_ratio(1.0, resistance);
+            assert!(quarter > 0.0 && quarter < half && half < full);
+            assert!(half < 0.5);
+            assert!((full - 1.0).abs() < f32::EPSILON);
+        }
+
+        let input = 0.25;
+        assert!(
+            oscillator_mixer(input, 0.5, 0, MixerChannel::OscillatorA)
+                < oscillator_mixer(input, 1.0, 0, MixerChannel::OscillatorA)
+        );
+        assert!(common_noise(input, 0.5) < common_noise(input, 1.0));
     }
 
     #[test]

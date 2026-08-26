@@ -18,6 +18,7 @@ pub(crate) const GLIDE_CV_SPAN_VOLTS: f32 = 5.0;
 const DEFAULT_COMMON_CV_SPAN_VOLTS: f32 = 5.0;
 const FILTER_CONTROL_CV_SPAN_VOLTS: f32 = 10.0;
 const PATCH_AMOUNT_CV_SPAN_VOLTS: f32 = 10.0;
+const AUDIO_LEVEL_CV_SPAN_VOLTS: f32 = 10.0;
 const SEMITONES_PER_CONTROL_VOLT: f32 = 12.0;
 
 #[derive(Clone, Copy, Debug)]
@@ -258,6 +259,12 @@ fn common_cv_span_volts(destination: ControlVoltageDestination) -> f32 {
         ControlVoltageDestination::FilterEnvelopeAmount
         | ControlVoltageDestination::PolyModOscillatorBAmount
         | ControlVoltageDestination::PolyModFilterEnvelopeAmount => PATCH_AMOUNT_CV_SPAN_VOLTS,
+        // SD333 buffers these held voltages into grounded-base Q306/Q302/Q305.
+        // Their populated 33k/33k/75k emitter resistors set the two oscillator
+        // mixer currents and the common noise-VCA current respectively.
+        ControlVoltageDestination::OscillatorAMix
+        | ControlVoltageDestination::OscillatorBMix
+        | ControlVoltageDestination::NoiseMix => AUDIO_LEVEL_CV_SPAN_VOLTS,
         _ => DEFAULT_COMMON_CV_SPAN_VOLTS,
     }
 }
@@ -342,6 +349,9 @@ mod tests {
         assert!(settings.set(Parameter::FilterEnvelopeAmount as u32, 1.0));
         assert!(settings.set(Parameter::PolyModOscillatorBAmount as u32, 1.0));
         assert!(settings.set(Parameter::PolyModFilterEnvelopeAmount as u32, 1.0));
+        assert!(settings.set(Parameter::OscillatorALevel as u32, 1.0));
+        assert!(settings.set(Parameter::OscillatorBLevel as u32, 1.0));
+        assert!(settings.set(Parameter::NoiseLevel as u32, 1.0));
         assert!(settings.set(Parameter::Glide as u32, 1.0));
         let targets = CvTargets::from_state(
             settings,
@@ -367,6 +377,13 @@ mod tests {
                 targets.get(destination as usize),
                 PATCH_AMOUNT_CV_SPAN_VOLTS
             );
+        }
+        for destination in [
+            ControlVoltageDestination::OscillatorAMix,
+            ControlVoltageDestination::OscillatorBMix,
+            ControlVoltageDestination::NoiseMix,
+        ] {
+            assert_eq!(targets.get(destination as usize), AUDIO_LEVEL_CV_SPAN_VOLTS);
         }
         assert_eq!(
             targets.get(ControlVoltageDestination::Glide as usize),

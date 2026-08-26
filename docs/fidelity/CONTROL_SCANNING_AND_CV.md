@@ -49,6 +49,8 @@ panel maximum; Filter Resonance shares that DAC domain and reaches its
 populated 200 kohm current-input resistor. The direct filter-envelope amount
 and both Poly Mod amounts also use the ordinary 0-10 V DAC span before SD333
 Q301/Q303/Q304 convert them to current through populated 5.1k/5.6k/3k emitter
+resistors. Oscillator A level, oscillator B level and noise level use the same
+0-10 V span before Q306/Q302/Q305 and their populated 33k/33k/75k emitter
 resistors. Glide retains its separately admitted 0-5 V control span. Other
 destinations remain isolated behind the existing candidate mapping until an
 equally specific electrical anchor is available.

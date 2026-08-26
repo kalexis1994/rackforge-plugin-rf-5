@@ -36,6 +36,11 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
 - One separate unlinearized CA3280 sets common noise level before the result is
   distributed to the five CEM3320 noise inputs; noise does not pass through a
   fictitious third mixer OTA on every voice card.
+- The 0-10 V oscillator A/B level cells reach the paired voice-mixer VCAs
+  through SD333 Q306/Q302 and 33k emitter resistors. The common noise cell
+  reaches its OTA through Q305 and 75k. Full level remains service-normalized,
+  but intermediate settings now follow the common 2N4250 junction equation
+  instead of linear host multipliers.
 - The five final VCAs use substantially wider diode-linearized transfers and
   are evaluated inside the same four-times-oversampled loop as the filters.
   Their small-signal gain is equal after the documented per-voice service
@@ -127,6 +132,9 @@ recorded sweeps from a serviced reference instrument.
 
 - zero bias current closes every physical VCA boundary exactly;
 - gain rises monotonically with control current;
+- Q306/Q302 reach approximately 280 uA at full oscillator level and Q305
+  reaches approximately 125 uA at full noise level; all three preserve their
+  transistor knees and calibrated endpoints;
 - the 5 V envelope reconstructs 650-680 uA IABC, has a silicon-junction knee,
   and accepts the complete bounded 4.7-5.3 V CEM3310 population;
 - the linearized transfer retains more strong-signal range than the mixer VCA;
