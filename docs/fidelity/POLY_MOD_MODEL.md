@@ -38,28 +38,39 @@ waveforms contribute to the source bus. Hard sync is a separate route.
 - The filter destination enters the four-pole CEM3320 candidate independently
   on every internal substep, preserving its audio-rate content.
 - Source amounts are additive and destinations can be enabled independently.
-- The two amount VCAs now feed one normalized PMOD bus boundary. One candidate
-  1.2 V/unit conversion is applied before every destination, rather than
-  assigning three unrelated maximum depths.
+- U422 and U428 now contribute physical output currents to their shared PMOD
+  node. The sum develops voltage across populated R4108 (30 kohm), and U431 is
+  treated as the voltage follower shown by SD431. This removes the former
+  normalized bus and its inferred volts-per-unit anchor.
+- The envelope half uses the populated 22k source and return paths, R4146's
+  120k linearizing-diode feed and the serviced 470k/100k balance return. The
+  oscillator-B half reuses the selected 150k saw/triangle and 200k pulse
+  conductances, the approximately 100k unlinearized CA3280 input and the 330
+  ohm shunt. Its current therefore changes with the actual enabled waveform
+  combination rather than only with their normalized sum.
+- The common bus is smoothly bounded at the CA3280 data sheet's guaranteed
+  minimum +/-12 V output swing on +/-15 V rails. This is a conservative
+  electrical compliance boundary, not a host-audio clamp.
 - Oscillator-A frequency follows R4357 (30.1 kohm) relative to the calibrated
-  100 kohm, one-volt-per-octave pitch path. A unit PMOD bus therefore spans
-  approximately 47.84 semitones with the current voltage anchor.
+  100 kohm, one-volt-per-octave pitch path. One physical PMOD volt therefore
+  spans approximately 39.867 semitones.
 - Oscillator-A pulse width follows R4112 (30.1 kohm), U432 feedback R4162
   (52.3 kohm) and the CEM3340's 5 V duty-cycle range, producing approximately
-  0.417 normalized duty-cycle units per unit bus.
+  0.3475 normalized duty-cycle units per physical PMOD volt.
 - Filter cutoff follows R4181 (54.9 kohm) relative to the 100 kohm calibrated
   common filter input. The shared per-voice FIL 1 SCALE stage cancels from
-  that ratio, producing approximately 2.186 octaves per unit bus.
+  that ratio, producing approximately 1.8215 octaves per physical PMOD volt.
 
 ## Bounded uncertainty
 
 The circuit and service procedure establish routing, polarity, active versus
-cut-off linearizing terminals, destination resistance ratios and balance
-trims. The CA3280 population is bounded by its data-sheet output-current
-ratios, but the loaded voltage at U431's PMOD buffer remains unmeasured. RF-5
-therefore retains one explicit 1.2 V/unit bus anchor. A populated-unit PMOD
-voltage measurement can replace it and recalibrate all three destinations
-together without changing their accepted circuit ratios.
+cut-off linearizing terminals, destination resistance ratios, R4108's shared
+load and the balance trims. The CA3280 data sheet establishes small-signal
+transconductance, peak-output-current bounds and at least +/-12 V output
+swing. The exact populated current transfer, transistor temperature, actual
+U422/U428 matching and U431 bus swing remain unmeasured. The typical data-sheet
+output limits extend to approximately +13.7/-14.3 V, but RF-5 deliberately
+uses the guaranteed minimum magnitude until a serviced unit is measured.
 
 The direct filter-envelope path no longer owns an isolated octave-depth
 constant. The admitted 0-10 V DAC/S&H span crosses SD333 Q301 and 5.1 kohm,
@@ -81,13 +92,18 @@ unmeasured.
   distinct strong-signal ranges;
 - Q303 and Q304 retain their distinct 5.6k and 3k current laws, including the
   shared silicon-junction knee;
+- the two OTA currents add through one 30k load and remain bounded by the
+  guaranteed CA3280 output swing;
+- full one-saw oscillator-B modulation develops approximately 8.0-9.5 V
+  across the five deterministic voice profiles, while a full nominal envelope
+  approaches the conservative 12 V bus boundary;
 - frequency and filter destinations produce distinct renders;
 - all three destination depths retain the populated SD431 resistor ratios and
-  share one replaceable PMOD-bus voltage anchor;
+  consume the same physical PMOD voltage;
 - both envelopes trigger and release independently;
 - the expanded parameter state round-trips exactly;
 - all workspace tests remain finite and deterministic.
 
-Primary evidence: Sequential Circuits technical manual TM1000D.2 section 2-4,
-voice schematic SD431 and service test 4-8. Provenance and hash are recorded in
-`SOURCE_LEDGER.md`.
+Primary evidence: Sequential Circuits technical manual TM1000D.2 sections 2-4
+and 2-5, schematics SD333 and SD431, service test 4-8 and the Intersil CA3280
+data sheet. Provenance and hashes are recorded in `SOURCE_LEDGER.md`.

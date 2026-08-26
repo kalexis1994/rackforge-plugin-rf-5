@@ -7,8 +7,6 @@
 //! treated as serviced, so they cancel zero-input feed-through and equalize
 //! the five final-VCA small-signal gains.
 
-const UNLINEARIZED_INPUT_DRIVE: f32 = 0.55;
-const LINEARIZED_INPUT_DRIVE: f32 = 0.05;
 // Intersil Figure 3A plots the diode-linearized transfer at IABC = 650 uA,
 // ID = 200 uA and 10 kohm in each input. Its 1 V/div horizontal scale shows
 // the rounded current limit at approximately +/-4 V source drive. SD431 uses
@@ -65,6 +63,21 @@ const FILTER_ENVELOPE_BALANCE_TRIM_THEVENIN_OHMS: f32 = 25_000.0;
 const FILTER_ENVELOPE_DIODE_DYNAMIC_OHM_AMPS: f32 = 52.0e-3 * 1.34;
 const FILTER_ENVELOPE_SUPPLY_SPAN_VOLTS: f32 = 30.0;
 const FILTER_SUM_COMMON_INPUT_RESISTANCE_OHMS: f32 = 100_000.0;
+
+// The lower half of U422 applies the same filter envelope to the PMOD current
+// sum through matched 22 kohm signal/return paths. R4146 biases its
+// linearizing diodes, while the serviced 470k/100k balance network contributes
+// only a small parallel AC return. U422 and the unlinearized oscillator-B
+// U428 output share R4108's 30 kohm current-to-voltage load before U431 buffers
+// the resulting physical PMOD voltage. The CA3280 data sheet guarantees at
+// least +/-12 V output swing on +/-15 V rails.
+const POLY_MOD_ENVELOPE_DIODE_RESISTANCE_OHMS: f32 = 120_000.0;
+const POLY_MOD_ENVELOPE_SOURCE_RESISTANCE_OHMS: f32 = 22_000.0;
+const POLY_MOD_ENVELOPE_INPUT_RETURN_RESISTANCE_OHMS: f32 = 22_000.0;
+const POLY_MOD_ENVELOPE_BALANCE_SERIES_RESISTANCE_OHMS: f32 = 470_000.0;
+const POLY_MOD_ENVELOPE_BALANCE_TRIM_THEVENIN_OHMS: f32 = 25_000.0;
+const POLY_MOD_BUS_LOAD_RESISTANCE_OHMS: f32 = 30_000.0;
+const POLY_MOD_BUS_MINIMUM_OUTPUT_SWING_VOLTS: f32 = 12.0;
 const VCA_CONTROL_SERIES_RESISTANCE_OHMS: f32 = 3_300.0 + 3_300.0;
 #[cfg(test)]
 const Q410_REFERENCE_CURRENT_AMPS: f32 = 100.0e-6;
@@ -337,11 +350,8 @@ pub fn common_noise(input: f32, control: f32) -> f32 {
     let differential_input_volts =
         source_current_amps / input_conductance_siemens * COMMON_NOISE_PROFILE.input_drive_ratio;
     let iabc_amps = ten_volt_control_current_amps(control, NOISE_MIX_CONTROL_RESISTANCE_OHMS);
-    let output_current_amps = unlinearized_ota_output_current_amps(
-        differential_input_volts,
-        iabc_amps,
-        COMMON_NOISE_PROFILE,
-    );
+    let output_current_amps =
+        ota_output_current_amps(differential_input_volts, iabc_amps, COMMON_NOISE_PROFILE);
     let buffered_noise_volts = output_current_amps * WHITE_NOISE_OUTPUT_LOAD_RESISTANCE_OHMS;
     buffered_noise_volts / FILTER_NOISE_INPUT_RESISTANCE_OHMS
         * FILTER_FIRST_CELL_TRANSIMPEDANCE_OHMS
@@ -395,9 +405,6 @@ pub fn filter_envelope_cutoff_octaves(envelope: f32, amount: f32, voice_index: u
         ENVELOPE_AMOUNT_PROFILES[voice_index % ENVELOPE_AMOUNT_PROFILES.len()].direct_filter;
     let iabc_amps =
         ten_volt_control_current_amps(amount, FILTER_ENVELOPE_AMOUNT_CONTROL_RESISTANCE_OHMS);
-    let diode_current_amps =
-        FILTER_ENVELOPE_SUPPLY_SPAN_VOLTS / FILTER_ENVELOPE_DIODE_RESISTANCE_OHMS;
-    let diode_dynamic_resistance_ohms = FILTER_ENVELOPE_DIODE_DYNAMIC_OHM_AMPS / diode_current_amps;
     let balance_return_resistance_ohms = 1.0
         / (1.0 / FILTER_ENVELOPE_INPUT_RETURN_RESISTANCE_OHMS
             + 1.0
@@ -406,36 +413,73 @@ pub fn filter_envelope_cutoff_octaves(envelope: f32, amount: f32, voice_index: u
     let input_loop_resistance_ohms =
         FILTER_ENVELOPE_SOURCE_RESISTANCE_OHMS + balance_return_resistance_ohms;
     let envelope_volts = (envelope * ENVELOPE_NOMINAL_PEAK_VOLTS).min(ENVELOPE_MAXIMUM_PEAK_VOLTS);
-    let differential_input_volts = envelope_volts * diode_dynamic_resistance_ohms
-        / (input_loop_resistance_ohms + diode_dynamic_resistance_ohms)
-        * profile.input_drive_ratio;
-    let small_signal_output_current_amps =
-        iabc_amps * CA3280_TRANSCONDUCTANCE_SIEMENS_PER_AMP * differential_input_volts;
-    let peak_output_current_amps = iabc_amps * CA3280_PEAK_OUTPUT_CURRENT_RATIO;
-    let output_current_amps = peak_output_current_amps
-        * libm::tanhf(small_signal_output_current_amps / peak_output_current_amps)
-        * profile.transconductance_ratio;
+    let output_current_amps = linearized_ota_output_current_amps(
+        envelope_volts,
+        input_loop_resistance_ohms,
+        FILTER_ENVELOPE_DIODE_RESISTANCE_OHMS,
+        iabc_amps,
+        profile,
+    );
     output_current_amps * FILTER_SUM_COMMON_INPUT_RESISTANCE_OHMS
 }
 
-/// The second, inverted-at-the-summing-node U422 envelope amount path.
-pub fn poly_mod_filter_envelope(input: f32, control: f32, voice_index: usize) -> f32 {
-    ota_transfer(
-        input,
-        ten_volt_control_current_ratio(control, POLY_MOD_FILTER_ENVELOPE_CONTROL_RESISTANCE_OHMS),
-        LINEARIZED_INPUT_DRIVE,
-        ENVELOPE_AMOUNT_PROFILES[voice_index % ENVELOPE_AMOUNT_PROFILES.len()].poly_mod,
+/// Output current from the second U422 half carrying filter envelope to PMOD.
+pub fn poly_mod_filter_envelope_current_amps(
+    envelope: f32,
+    control: f32,
+    voice_index: usize,
+) -> f32 {
+    if !envelope.is_finite() || !control.is_finite() || control <= 0.0 {
+        return 0.0;
+    }
+    let profile = ENVELOPE_AMOUNT_PROFILES[voice_index % ENVELOPE_AMOUNT_PROFILES.len()].poly_mod;
+    let balance_return_resistance_ohms = 1.0
+        / (1.0 / POLY_MOD_ENVELOPE_INPUT_RETURN_RESISTANCE_OHMS
+            + 1.0
+                / (POLY_MOD_ENVELOPE_BALANCE_SERIES_RESISTANCE_OHMS
+                    + POLY_MOD_ENVELOPE_BALANCE_TRIM_THEVENIN_OHMS));
+    let input_loop_resistance_ohms =
+        POLY_MOD_ENVELOPE_SOURCE_RESISTANCE_OHMS + balance_return_resistance_ohms;
+    let envelope_volts = (envelope * ENVELOPE_NOMINAL_PEAK_VOLTS)
+        .clamp(-ENVELOPE_MAXIMUM_PEAK_VOLTS, ENVELOPE_MAXIMUM_PEAK_VOLTS);
+    let iabc_amps =
+        ten_volt_control_current_amps(control, POLY_MOD_FILTER_ENVELOPE_CONTROL_RESISTANCE_OHMS);
+    linearized_ota_output_current_amps(
+        envelope_volts,
+        input_loop_resistance_ohms,
+        POLY_MOD_ENVELOPE_DIODE_RESISTANCE_OHMS,
+        iabc_amps,
+        profile,
     )
 }
 
-/// The unlinearized oscillator-B waveform amount OTA in one Poly Mod path.
-pub fn poly_mod_oscillator_b(input: f32, control: f32, voice_index: usize) -> f32 {
-    ota_transfer(
+/// Output current from the unlinearized oscillator-B PMOD amount OTA U428.
+pub fn poly_mod_oscillator_b_current_amps(
+    input: f32,
+    source_conductance: f32,
+    control: f32,
+    voice_index: usize,
+) -> f32 {
+    unlinearized_conductance_mixer_output_current_amps(
         input,
-        ten_volt_control_current_ratio(control, POLY_MOD_OSCILLATOR_B_CONTROL_RESISTANCE_OHMS),
-        UNLINEARIZED_INPUT_DRIVE,
+        source_conductance,
+        control,
+        POLY_MOD_OSCILLATOR_B_CONTROL_RESISTANCE_OHMS,
         POLY_MOD_OSCILLATOR_B_PROFILES[voice_index % POLY_MOD_OSCILLATOR_B_PROFILES.len()],
     )
+}
+
+/// Shared U422/U428 current sum developed across R4108 and buffered by U431.
+pub fn poly_mod_bus_voltage(
+    filter_envelope_current_amps: f32,
+    oscillator_b_current_amps: f32,
+) -> f32 {
+    if !filter_envelope_current_amps.is_finite() || !oscillator_b_current_amps.is_finite() {
+        return 0.0;
+    }
+    let unloaded_bus_volts = (filter_envelope_current_amps + oscillator_b_current_amps)
+        * POLY_MOD_BUS_LOAD_RESISTANCE_OHMS;
+    sixth_order_limited(unloaded_bus_volts, POLY_MOD_BUS_MINIMUM_OUTPUT_SWING_VOLTS)
 }
 
 /// Convert the CEM3310 amplifier-envelope voltage into the IABC ratio applied
@@ -491,6 +535,23 @@ fn oscillator_mixer_to_filter_units(
     control: f32,
     profile: OtaHalfProfile,
 ) -> f32 {
+    unlinearized_conductance_mixer_output_current_amps(
+        input,
+        source_conductance,
+        control,
+        OSCILLATOR_MIX_CONTROL_RESISTANCE_OHMS,
+        profile,
+    ) * FILTER_FIRST_CELL_TRANSIMPEDANCE_OHMS
+        / FILTER_CIRCUIT_VOLTS_PER_UNIT
+}
+
+fn unlinearized_conductance_mixer_output_current_amps(
+    input: f32,
+    source_conductance: f32,
+    control: f32,
+    control_resistance_ohms: f32,
+    profile: OtaHalfProfile,
+) -> f32 {
     if !input.is_finite()
         || !source_conductance.is_finite()
         || source_conductance <= 0.0
@@ -507,29 +568,8 @@ fn oscillator_mixer_to_filter_units(
         + 1.0 / UNLINEARIZED_INPUT_RESISTANCE_OHMS;
     let differential_input_volts =
         source_current_amps / input_conductance_siemens * profile.input_drive_ratio;
-    let iabc_amps = ten_volt_control_current_amps(control, OSCILLATOR_MIX_CONTROL_RESISTANCE_OHMS);
-    unlinearized_ota_output_current_amps(differential_input_volts, iabc_amps, profile)
-        * FILTER_FIRST_CELL_TRANSIMPEDANCE_OHMS
-        / FILTER_CIRCUIT_VOLTS_PER_UNIT
-}
-
-fn ota_transfer(input: f32, control: f32, nominal_drive: f32, profile: OtaHalfProfile) -> f32 {
-    ota_transfer_limited(input, control, nominal_drive, profile, 1.0)
-}
-
-fn ota_transfer_limited(
-    input: f32,
-    control: f32,
-    nominal_drive: f32,
-    profile: OtaHalfProfile,
-    maximum_control: f32,
-) -> f32 {
-    if control <= 0.0 || !control.is_finite() || !input.is_finite() {
-        return 0.0;
-    }
-    let drive = nominal_drive * profile.input_drive_ratio;
-    let current = libm::tanhf(input * drive) / drive;
-    current * control.clamp(0.0, maximum_control) * profile.transconductance_ratio
+    let iabc_amps = ten_volt_control_current_amps(control, control_resistance_ohms);
+    ota_output_current_amps(differential_input_volts, iabc_amps, profile)
 }
 
 fn unlinearized_ota_loaded_voltage(
@@ -550,11 +590,34 @@ fn unlinearized_ota_loaded_voltage(
     let differential_input_volts = source_volts * WHEEL_MOD_INPUT_SHUNT_OHMS
         / (source_resistance_ohms + WHEEL_MOD_INPUT_SHUNT_OHMS)
         * profile.input_drive_ratio;
-    unlinearized_ota_output_current_amps(differential_input_volts, iabc_amps, profile)
+    ota_output_current_amps(differential_input_volts, iabc_amps, profile)
         * WHEEL_MOD_OUTPUT_LOAD_OHMS
 }
 
-fn unlinearized_ota_output_current_amps(
+fn linearized_ota_output_current_amps(
+    source_volts: f32,
+    source_loop_resistance_ohms: f32,
+    diode_resistance_ohms: f32,
+    iabc_amps: f32,
+    profile: OtaHalfProfile,
+) -> f32 {
+    if !source_volts.is_finite()
+        || !source_loop_resistance_ohms.is_finite()
+        || source_loop_resistance_ohms <= 0.0
+        || !diode_resistance_ohms.is_finite()
+        || diode_resistance_ohms <= 0.0
+    {
+        return 0.0;
+    }
+    let diode_current_amps = FILTER_ENVELOPE_SUPPLY_SPAN_VOLTS / diode_resistance_ohms;
+    let diode_dynamic_resistance_ohms = FILTER_ENVELOPE_DIODE_DYNAMIC_OHM_AMPS / diode_current_amps;
+    let differential_input_volts = source_volts * diode_dynamic_resistance_ohms
+        / (source_loop_resistance_ohms + diode_dynamic_resistance_ohms)
+        * profile.input_drive_ratio;
+    ota_output_current_amps(differential_input_volts, iabc_amps, profile)
+}
+
+fn ota_output_current_amps(
     differential_input_volts: f32,
     iabc_amps: f32,
     profile: OtaHalfProfile,
@@ -643,6 +706,7 @@ fn ten_volt_control_current_amps(control: f32, emitter_resistance_ohms: f32) -> 
     )
 }
 
+#[cfg(test)]
 fn ten_volt_control_current_ratio(control: f32, emitter_resistance_ohms: f32) -> f32 {
     ten_volt_control_current_amps(control, emitter_resistance_ohms)
         / ten_volt_control_current_amps(1.0, emitter_resistance_ohms)
@@ -666,8 +730,14 @@ mod tests {
                 );
                 assert_eq!(final_voice(input, 0.0, voice), 0.0);
                 assert_eq!(filter_envelope_cutoff_octaves(input, 0.0, voice), 0.0);
-                assert_eq!(poly_mod_filter_envelope(input, 0.0, voice), 0.0);
-                assert_eq!(poly_mod_oscillator_b(input, 0.0, voice), 0.0);
+                assert_eq!(
+                    poly_mod_filter_envelope_current_amps(input, 0.0, voice),
+                    0.0
+                );
+                assert_eq!(
+                    poly_mod_oscillator_b_current_amps(input, 1.0, 0.0, voice),
+                    0.0
+                );
             }
             assert_eq!(common_noise(input, 0.0), 0.0);
             assert_eq!(master_output(input, 0.0), 0.0);
@@ -1129,17 +1199,47 @@ mod tests {
     #[test]
     fn poly_mod_amount_vcas_are_monotonic_and_mode_correct() {
         for voice in 0..5 {
-            let low = poly_mod_oscillator_b(0.7, 0.25, voice).abs();
-            let high = poly_mod_oscillator_b(0.7, 0.75, voice).abs();
+            let low = poly_mod_oscillator_b_current_amps(0.7, 1.0, 0.25, voice).abs();
+            let high = poly_mod_oscillator_b_current_amps(0.7, 1.0, 0.75, voice).abs();
             assert!(low < high);
 
-            let linearized = poly_mod_filter_envelope(3.0, 1.0, voice);
-            let unlinearized = poly_mod_oscillator_b(3.0, 1.0, voice);
-            let linearized_small = poly_mod_filter_envelope(0.001, 1.0, voice) / 0.001;
-            let unlinearized_small = poly_mod_oscillator_b(0.001, 1.0, voice) / 0.001;
-            assert!(linearized / (3.0 * linearized_small) > 0.99);
-            assert!(unlinearized / (3.0 * unlinearized_small) < 0.65);
+            let linearized = poly_mod_filter_envelope_current_amps(1.0, 1.0, voice);
+            let unlinearized = poly_mod_oscillator_b_current_amps(5.0, 1.0, 1.0, voice);
+            let linearized_small = poly_mod_filter_envelope_current_amps(0.001, 1.0, voice) / 0.001;
+            let unlinearized_small =
+                poly_mod_oscillator_b_current_amps(0.001, 1.0, 1.0, voice) / 0.001;
+            let linearized_retained = linearized / linearized_small;
+            let unlinearized_retained = unlinearized / (5.0 * unlinearized_small);
+            assert!(
+                linearized_retained > 0.85,
+                "voice {voice} linearized retained {linearized_retained}"
+            );
+            assert!(
+                unlinearized_retained < linearized_retained,
+                "voice {voice} linearized {linearized_retained}, unlinearized {unlinearized_retained}"
+            );
         }
+    }
+
+    #[test]
+    fn pmod_currents_share_the_populated_r4108_bus() {
+        assert_eq!(POLY_MOD_BUS_LOAD_RESISTANCE_OHMS, 30_000.0);
+
+        for voice in 0..5 {
+            let oscillator_current = poly_mod_oscillator_b_current_amps(1.0, 1.0, 1.0, voice);
+            let envelope_current = poly_mod_filter_envelope_current_amps(1.0, 1.0, voice);
+            assert!(oscillator_current > 0.0);
+            assert!(envelope_current > 0.0);
+
+            let oscillator_bus = poly_mod_bus_voltage(0.0, oscillator_current);
+            let envelope_bus = poly_mod_bus_voltage(envelope_current, 0.0);
+            assert!((8.0..=9.5).contains(&oscillator_bus));
+            assert!((11.9..=12.0).contains(&envelope_bus));
+        }
+
+        let overloaded = poly_mod_bus_voltage(1.0, 1.0);
+        assert!(overloaded <= POLY_MOD_BUS_MINIMUM_OUTPUT_SWING_VOLTS);
+        assert_eq!(poly_mod_bus_voltage(f32::NAN, 0.0), 0.0);
     }
 
     #[test]

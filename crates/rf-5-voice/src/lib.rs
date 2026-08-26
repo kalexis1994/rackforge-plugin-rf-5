@@ -198,7 +198,7 @@ impl Voice {
         ) * semitone_ratio(modulation.oscillator_b_semitones);
         let internal_rate = sample_rate.max(1.0) * OSCILLATOR_OVERSAMPLING as f32;
         let mut output = None;
-        let poly_filter_envelope = -vca::poly_mod_filter_envelope(
+        let poly_filter_envelope_current = -vca::poly_mod_filter_envelope_current_amps(
             filter_envelope,
             quantize_analog_pot(settings.get(Parameter::PolyModFilterEnvelopeAmount)),
             self.voice_index,
@@ -224,13 +224,15 @@ impl Voice {
             let sample_b =
                 self.oscillator_b
                     .next(frequency_b, internal_rate, pulse_width_b, waves_b);
-            let poly_bus = poly_filter_envelope
-                + vca::poly_mod_oscillator_b(
-                    sample_b.modulation,
-                    poly_oscillator_b_amount,
-                    self.voice_index,
-                );
-            let poly_destinations = poly_mod::destinations(poly_bus);
+            let poly_oscillator_b_current = vca::poly_mod_oscillator_b_current_amps(
+                sample_b.modulation,
+                sample_b.mixer_source_conductance,
+                poly_oscillator_b_amount,
+                self.voice_index,
+            );
+            let poly_bus_volts =
+                vca::poly_mod_bus_voltage(poly_filter_envelope_current, poly_oscillator_b_current);
+            let poly_destinations = poly_mod::destinations(poly_bus_volts);
             let poly_pitch = if poly_frequency_a {
                 poly_destinations.oscillator_a_semitones
             } else {

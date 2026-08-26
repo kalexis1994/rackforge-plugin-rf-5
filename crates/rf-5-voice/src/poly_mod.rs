@@ -1,9 +1,8 @@
 //! SD431 per-voice Poly Mod destination network.
 //!
-//! Both amount VCAs feed one physical PMOD voltage. Three switches then route
-//! that same voltage through the populated oscillator-frequency, pulse-width
-//! and filter-frequency networks. Keeping the uncertain bus voltage in one
-//! place preserves those hardware ratios and makes later calibration local.
+//! Both amount VCAs feed one physical PMOD voltage developed across R4108 and
+//! buffered by U431. Three switches then route that same voltage through the
+//! populated oscillator-frequency, pulse-width and filter-frequency networks.
 
 const OCTAVE_SEMITONES: f32 = 12.0;
 
@@ -25,13 +24,6 @@ const CEM3340_PULSE_WIDTH_RANGE_VOLTS: f32 = 5.0;
 const FILTER_REFERENCE_INPUT_OHMS: f32 = 100_000.0;
 const FILTER_POLY_MOD_INPUT_OHMS: f32 = 54_900.0;
 
-// The schematic establishes every destination ratio but not the absolute
-// loaded voltage at U431's PMOD buffer. A 1.2 V unit-bus span is retained as
-// the sole candidate anchor: it keeps the established near-four-octave pitch
-// audition while allowing all other destinations to follow SD431 instead of
-// unrelated hand-tuned depths.
-const CANDIDATE_PMOD_BUS_VOLTS_PER_UNIT: f32 = 1.2;
-
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct PolyModDestinations {
     pub oscillator_a_semitones: f32,
@@ -39,12 +31,11 @@ pub struct PolyModDestinations {
     pub filter_octaves: f32,
 }
 
-pub fn destinations(normalized_bus: f32) -> PolyModDestinations {
-    if !normalized_bus.is_finite() {
+pub fn destinations(bus_volts: f32) -> PolyModDestinations {
+    if !bus_volts.is_finite() {
         return PolyModDestinations::default();
     }
 
-    let bus_volts = normalized_bus * CANDIDATE_PMOD_BUS_VOLTS_PER_UNIT;
     let oscillator_octaves = bus_volts * PITCH_REFERENCE_INPUT_OHMS / PITCH_POLY_MOD_INPUT_OHMS;
     let pulse_width = bus_volts * PULSE_WIDTH_FEEDBACK_OHMS
         / PULSE_WIDTH_POLY_MOD_INPUT_OHMS
@@ -63,11 +54,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn one_voltage_anchor_drives_every_destination() {
+    fn one_physical_bus_volt_drives_every_destination() {
         let routed = destinations(1.0);
-        assert!((routed.oscillator_a_semitones - 47.840_53).abs() < 1.0e-5);
-        assert!((routed.oscillator_a_pulse_width - 0.417_009_98).abs() < 1.0e-5);
-        assert!((routed.filter_octaves - 2.185_792_4).abs() < 1.0e-5);
+        assert!((routed.oscillator_a_semitones - 39.867_107).abs() < 1.0e-5);
+        assert!((routed.oscillator_a_pulse_width - 0.347_508_3).abs() < 1.0e-5);
+        assert!((routed.filter_octaves - 1.821_493_6).abs() < 1.0e-5);
     }
 
     #[test]

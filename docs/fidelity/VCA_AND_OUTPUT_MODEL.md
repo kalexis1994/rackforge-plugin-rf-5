@@ -105,6 +105,12 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
   envelope, Q303/5.6k for oscillator-B Poly Mod and Q304/3k for envelope Poly
   Mod. Their 0-10 V held controls now follow the same source-backed 2N4250
   junction equation as the audio VCAs instead of linear normalized gains.
+- The two Poly Mod amount stages produce physical CA3280 output currents.
+  U422's envelope half uses populated 22k signal/return and 120k diode-bias
+  paths; U428's oscillator half retains the enabled 150k/200k waveform-source
+  loading. Their currents meet at R4108's 30k load and the resulting voltage
+  is bounded at the data sheet's guaranteed minimum +/-12 V output swing
+  before U431's follower and the three destination networks.
 - The NE5534 and its 1 kohm shunt/560 ohm output-isolation network are treated
   as linear inside their headroom. The 560 ohm resistor is not modeled as a
   fixed divider because the external load is unspecified. A smooth host
@@ -155,6 +161,9 @@ recorded sweeps from a serviced reference instrument.
 - parallel paths and the 200 kohm pulse path follow the finite-input loading
   law, while the complete common-noise path reaches 0.42-0.50 internal units;
 - all transfers are finite and odd-symmetric and reject non-finite input;
+- the two Poly Mod currents share one populated 30k current-to-voltage load,
+  preserve waveform-dependent input loading and remain within guaranteed
+  CA3280 voltage compliance;
 - the master stage remains bounded while retaining multi-voice headroom;
 - the loaded linear volume pot reaches zero and five volts, its midpoint is
   approximately 2.439 V, Q411 reaches 460-475 uA, and the resulting current law

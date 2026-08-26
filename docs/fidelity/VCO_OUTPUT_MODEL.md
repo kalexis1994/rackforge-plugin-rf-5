@@ -36,7 +36,9 @@ One oscillator evaluation now produces two related signals:
   retaining the duty-dependent mean and DC endpoints, and carries the
   conductance-weighted sum of the selected 150/200 kohm waveform paths;
 - `mixer_source_conductance` reports the parallel conductance of those active
-  paths relative to one 150 kohm resistor;
+  paths relative to one 150 kohm resistor. The value reconstructs the finite
+  CA3280 input loading independently in both U464's audio mixer and U428's
+  oscillator-B Poly Mod amount stage;
 - `modulation` preserves the board-level polarity entering oscillator-B Poly
   Mod.
 
@@ -61,12 +63,12 @@ At either limit the numerical pulse is stable DC and produces no false
 hard-sync transitions; the modeled output coupling rejects that DC at the host
 boundary.
 
-Selected waveforms still add before the oscillator amount VCA. The audio
-boundary now retains their total source conductance so the approximately
+Selected waveforms still add before both oscillator amount VCAs. The shared
+waveform boundary retains their total source conductance so each approximately
 100 kohm unlinearized CA3280 input loads one selected waveform differently
-from two or three parallel paths. Oscillator B's `modulation` sum feeds Poly
-Mod independently of its audio mixer level, exactly as the separate board
-routing requires.
+from two or three parallel paths. Oscillator B's `modulation` sum and this
+conductance feed Poly Mod independently of its audio mixer level, exactly as
+the separate board routing requires.
 
 ## Numerical treatment
 
