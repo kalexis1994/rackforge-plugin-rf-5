@@ -95,16 +95,30 @@ const TRIANGLE_OUTPUT_IMPEDANCE_OHMS: [f32; OUTPUT_PROFILE_COUNT] = [
 ];
 
 // The voice board uses 150 kohm inputs for saw/triangle and 200 kohm for
-// pulse. With +15/-5 V supplies, the data-sheet pulse formulas and the 4016
-// negative clamp give approximately -0.6 V and +14.1 V after selection.
-// Values below retain circuit volts and are expressed relative to one 150
-// kohm input conductance. Loading by the CA3280 input itself is applied at the
-// VCA boundary, where all simultaneously selected paths are known.
+// pulse. Each open-emitter pulse output is pulled toward -5 V through 10
+// kohm before its ground-referenced 4016 selector. The selector's input clamp
+// bounds the low state near one diode drop below ground. In the high state the
+// pull-down draws more than the CEM3340 data sheet's 0.6 mA breakpoint, so its
+// 1.3 kohm effective output resistance must be solved together with the 10
+// kohm board load. Values below retain circuit volts and are expressed
+// relative to one 150 kohm input conductance. Loading by the CA3280 input
+// itself is applied at the VCA boundary, where every selected path is known.
 const SAW_TRIANGLE_MIXER_CONDUCTANCE: f32 = 1.0;
 const TRIANGLE_MIXER_LOAD_RESISTANCE_OHMS: f32 = 150_000.0;
 const PULSE_MIXER_CONDUCTANCE: f32 = 150_000.0 / 200_000.0;
+const PULSE_POSITIVE_SUPPLY_VOLTS: f32 = 15.0;
+const PULSE_PULLDOWN_VOLTS: f32 = -5.0;
+const PULSE_PULLDOWN_RESISTANCE_OHMS: f32 = 10_000.0;
+const PULSE_HIGH_HEADROOM_VOLTS: f32 = 0.3;
+const PULSE_HIGH_OUTPUT_RESISTANCE_OHMS: f32 = 1_300.0;
+#[cfg(test)]
+const PULSE_HIGH_CURRENT_BREAKPOINT_AMPS: f32 = 0.6e-3;
 const PULSE_LOWER_VOLTS: f32 = -0.6;
-const PULSE_UPPER_VOLTS: f32 = 14.1;
+const PULSE_HIGH_LOAD_RATIO: f32 =
+    PULSE_HIGH_OUTPUT_RESISTANCE_OHMS / PULSE_PULLDOWN_RESISTANCE_OHMS;
+const PULSE_UPPER_VOLTS: f32 = (PULSE_POSITIVE_SUPPLY_VOLTS - PULSE_HIGH_HEADROOM_VOLTS
+    + PULSE_HIGH_LOAD_RATIO * PULSE_PULLDOWN_VOLTS)
+    / (1.0 + PULSE_HIGH_LOAD_RATIO);
 // SD431 derives 2.27 V TRI REF and U451 subtracts it from OSC B's raw
 // positive-going triangle before the Poly Mod amount OTA.
 const TRIANGLE_POLY_MOD_REFERENCE_VOLTS: f32 = 2.27;
@@ -599,6 +613,19 @@ mod tests {
     }
 
     #[test]
+    fn pulse_high_level_solves_the_populated_ten_kilohm_load() {
+        let pull_down_current_amps =
+            (PULSE_UPPER_VOLTS - PULSE_PULLDOWN_VOLTS) / PULSE_PULLDOWN_RESISTANCE_OHMS;
+        assert!(pull_down_current_amps > PULSE_HIGH_CURRENT_BREAKPOINT_AMPS);
+
+        let data_sheet_high_volts = PULSE_POSITIVE_SUPPLY_VOLTS
+            - PULSE_HIGH_HEADROOM_VOLTS
+            - PULSE_HIGH_OUTPUT_RESISTANCE_OHMS * pull_down_current_amps;
+        assert!((PULSE_UPPER_VOLTS - data_sheet_high_volts).abs() < 1.0e-6);
+        assert!((PULSE_UPPER_VOLTS - 12.433_628).abs() < 1.0e-5);
+    }
+
+    #[test]
     fn triangle_load_reproduces_the_data_sheet_frequency_pull() {
         let frequency = 1_000.0;
         let profile = 7;
@@ -693,11 +720,11 @@ mod tests {
     }
 
     #[test]
-    fn voice_board_resistors_make_pulse_slightly_hotter_than_saw() {
+    fn loaded_pulse_and_saw_reach_comparable_mixer_excursions() {
         let saw_peak_to_peak = SAW_UPPER_VOLTS[4] - SAW_LOWER_VOLTS[4];
         let pulse_peak_to_peak = (PULSE_UPPER_VOLTS - PULSE_LOWER_VOLTS) * PULSE_MIXER_CONDUCTANCE;
-        assert!(pulse_peak_to_peak > saw_peak_to_peak);
-        assert!(pulse_peak_to_peak / saw_peak_to_peak < 1.11);
+        let ratio = pulse_peak_to_peak / saw_peak_to_peak;
+        assert!((0.95..1.05).contains(&ratio));
     }
 
     #[test]

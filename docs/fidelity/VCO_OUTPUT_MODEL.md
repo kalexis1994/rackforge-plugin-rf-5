@@ -12,11 +12,13 @@ electrical-characteristic conditions:
 
 The Revision 3 voice schematic adds the board-level boundary. Saw and triangle
 enter the audio and Poly Mod summing paths through 150 kohm resistors, while
-pulse uses 200 kohm. Pulse is pulled toward -5 V through 10 kohm, and the 4016
-switch network limits the negative excursion to approximately one diode drop.
-With the data-sheet high-level equation and the board's +15 V rail, this gives
-an accepted first-order pulse range of approximately -0.6 to +14.1 V after
-selection.
+pulse uses 200 kohm. Pulse is pulled toward -5 V through 10 kohm before a
+ground-referenced 4016 switch, whose input clamp limits the negative excursion
+to approximately one diode drop. The high state is not unloaded: its 10 kohm
+pull-down draws about 1.74 mA, above the data sheet's 0.6 mA breakpoint. Solving
+the published `Vhigh = V+ - 0.3 V - 1.3 kohm * Ipull-down` relation together
+with that populated resistor gives approximately +12.434 V. The accepted
+first-order board range is therefore approximately -0.6 to +12.434 V.
 
 The technical manual also states that all CEM3340 outputs are positive-going,
 but oscillator B's triangle is DC level-shifted to become symmetric about
@@ -53,8 +55,8 @@ relationships are:
 - saw reaches its profiled approximately 0-10 V data-sheet endpoints;
 - raw triangle reaches its profiled approximately 0-5 V endpoints and has
   approximately half the saw excursion;
-- pulse reaches approximately -0.45 to +10.575 equivalent source volts after
-  its larger voltage excursion and 200/150 kohm resistor ratio are combined;
+- pulse reaches approximately -0.45 to +9.325 equivalent source volts after
+  its loaded voltage excursion and 150/200 conductance ratio are combined;
 - U464 subtracts pulse and triangle input-node voltages from saw rather than
   treating selected waveforms as same-polarity host samples;
 - saw and pulse preserve those same one-sided electrical levels in Poly Mod;
@@ -100,7 +102,7 @@ The sources bound component outputs but do not publish the ten chips fitted to
 any particular unit. The deterministic profile order is therefore a
 hypothesis. The following remain open:
 
-- exact pulse clamp voltage, rise/fall asymmetry and loading through the 4016;
+- exact pulse clamp voltage, selector on-resistance and rise/fall asymmetry;
 - exact populated PWM threshold and transient behavior at modulation
   overtravel;
 - high-frequency rounding and output-buffer impedance at the populated board;
@@ -126,7 +128,8 @@ voice-card waveform capture becomes available.
   pulse selection do not pull oscillator frequency;
 - raw audio triangle is positive-going and approximately half the saw
   excursion, while its U451 Poly Mod path is offset by exactly 2.27 V;
-- pulse is slightly hotter than saw after the board resistor ratio;
+- the loaded pulse and saw excursions remain within five percent after the
+  board resistor ratio;
 - every waveform selection reports its exact populated relative conductance;
 - equal positive/negative source nodes cancel and unequal 150/200 kohm paths
   retain their independent loading;
