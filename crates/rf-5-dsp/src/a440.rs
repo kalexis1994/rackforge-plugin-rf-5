@@ -10,6 +10,7 @@ pub const FREQUENCY_HZ: f64 = CPU_CLOCK_HZ / COUNTER_DIVISOR;
 
 const SERIES_RESISTANCE_OHMS: f64 = 10_000.0;
 const SHUNT_CAPACITANCE_FARADS: f64 = 0.1e-6;
+const RC_TIME_CONSTANT_SECONDS: f64 = SERIES_RESISTANCE_OHMS * SHUNT_CAPACITANCE_FARADS;
 const VOICE_INPUT_RESISTANCE_OHMS: f32 = 39_000.0;
 const REFERENCE_INPUT_RESISTANCE_OHMS: f32 = 20_000.0;
 const SUMMER_INJECTION_GAIN: f32 = VOICE_INPUT_RESISTANCE_OHMS / REFERENCE_INPUT_RESISTANCE_OHMS;
@@ -34,18 +35,47 @@ impl ReferenceTone {
             return 0.0;
         }
 
-        self.phase += FREQUENCY_HZ / f64::from(sample_rate);
+        let sample_period_seconds = 1.0 / f64::from(sample_rate);
+        let phase_increment = FREQUENCY_HZ * sample_period_seconds;
+        let start_phase = self.phase;
+        self.phase += phase_increment;
         self.phase -= libm::floor(self.phase);
-        let input = if enabled {
-            if self.phase < 0.5 { 1.0 } else { -1.0 }
+
+        if enabled {
+            self.advance_selected_rc(start_phase, sample_period_seconds);
         } else {
-            0.0
-        };
-        let time_constant = SERIES_RESISTANCE_OHMS * SHUNT_CAPACITANCE_FARADS;
-        let coefficient = 1.0 - libm::exp(-1.0 / (f64::from(sample_rate) * time_constant));
-        self.filtered += coefficient * (input - self.filtered);
+            self.filtered = advance_rc(self.filtered, 0.0, sample_period_seconds);
+        }
         self.filtered as f32 * SUMMER_INJECTION_GAIN
     }
+
+    /// Integrate the analog RC over the exact fractional position of every
+    /// counter edge inside this host sample. At supported audio rates this is
+    /// normally zero or one edge, but the loop also remains correct at lower
+    /// diagnostic rates.
+    fn advance_selected_rc(&mut self, mut phase: f64, mut remaining_seconds: f64) {
+        while remaining_seconds > 0.0 {
+            let (input, cycles_to_edge) = if phase < 0.5 {
+                (1.0, 0.5 - phase)
+            } else {
+                (-1.0, 1.0 - phase)
+            };
+            let seconds_to_edge = cycles_to_edge / FREQUENCY_HZ;
+            let segment_seconds = remaining_seconds.min(seconds_to_edge);
+            self.filtered = advance_rc(self.filtered, input, segment_seconds);
+            remaining_seconds -= segment_seconds;
+
+            if segment_seconds < seconds_to_edge {
+                break;
+            }
+            phase = if phase < 0.5 { 0.5 } else { 0.0 };
+        }
+    }
+}
+
+fn advance_rc(value: f64, target: f64, duration_seconds: f64) -> f64 {
+    let retained = libm::exp(-duration_seconds / RC_TIME_CONSTANT_SECONDS);
+    target + (value - target) * retained
 }
 
 #[cfg(test)]
@@ -75,6 +105,41 @@ mod tests {
                 "rate={sample_rate}"
             );
         }
+    }
+
+    #[test]
+    fn fractional_counter_edge_splits_the_rc_interval_exactly() {
+        let sample_rate = 10_000.0_f32;
+        let sample_period = 1.0 / f64::from(sample_rate);
+        let before_edge = (0.5 - 0.49) / FREQUENCY_HZ;
+        let after_edge = sample_period - before_edge;
+        let initial = 0.2;
+        let expected = advance_rc(advance_rc(initial, 1.0, before_edge), -1.0, after_edge);
+        let mut tone = ReferenceTone {
+            phase: 0.49,
+            filtered: initial,
+        };
+
+        let actual = f64::from(tone.next(true, sample_rate)) / f64::from(SUMMER_INJECTION_GAIN);
+        assert!((actual - expected).abs() < 1.0e-7);
+    }
+
+    #[test]
+    fn analog_state_at_one_second_is_sample_rate_invariant() {
+        let mut endpoints = [0.0_f32; 4];
+        for (endpoint, sample_rate) in endpoints
+            .iter_mut()
+            .zip([44_100.0, 48_000.0, 96_000.0, 192_000.0])
+        {
+            let mut tone = ReferenceTone::default();
+            for _ in 0..sample_rate as usize {
+                *endpoint = tone.next(true, sample_rate);
+            }
+        }
+
+        let minimum = endpoints.iter().copied().fold(f32::INFINITY, f32::min);
+        let maximum = endpoints.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        assert!(maximum - minimum < 1.0e-5, "endpoints={endpoints:?}");
     }
 
     #[test]

@@ -18,11 +18,14 @@ Pitch, Master Tune and Unison CV sources from the oscillator measurement path.
 ## Active reconstruction
 
 `rf_5_dsp::a440` keeps the counter free-running at the exact integer division,
-applies the populated first-order RC network and weights its injection by the
-39 kohm/20 kohm input-conductance ratio. The existing common output stage then
-applies Master Volume, coupling-capacitor response and bounded host scaling.
-Turning A-440 off drives zero into the RC model so its stored capacitor voltage
-settles as the grounded hardware does.
+places every counter transition at its fractional position inside the host
+sample, analytically integrates the populated first-order RC on both sides of
+that transition, and weights its injection by the 39 kohm/20 kohm
+input-conductance ratio. The existing common output stage then applies Master
+Volume, coupling-capacitor response and bounded host scaling. Turning A-440
+off drives zero into the RC model so its stored capacitor voltage settles as
+the grounded hardware does. The capacitor state after one second agrees across
+44.1, 48, 96 and 192 kHz instead of inheriting host-sample edge jitter.
 
 The engine exposes A-440 as non-program patch-independent machine state. TUNE
 is a momentary host control: its stored value is always zero, its queried value
