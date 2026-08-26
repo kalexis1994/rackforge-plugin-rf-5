@@ -53,10 +53,10 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
   modulation OTA. Intersil Figure 3A supplies two bounded landmarks at 650 uA
   IABC and 200 uA diode current: a long linear centre and rounded current limit
   at approximately four horizontal 1 V divisions with 10 kohm inputs. SD431's
-  populated 20 kohm/20 kohm inputs double the source-voltage span. With the
-  filter candidate's explicit 2 V/internal-unit conversion, a sixth-order
-  smooth norm places the asymptote at four internal units and starts measurable
-  compression inside the CEM3320 population's 10-14 Vpp output range.
+  populated 20 kohm/20 kohm inputs double the source-voltage span. The filter
+  and VCA exchange circuit volts directly, so a sixth-order smooth norm places
+  the asymptote at eight volts and starts measurable compression inside the
+  CEM3320 population's 10-14 Vpp output range.
 - The nominal 0-5 V amplifier envelope is converted once per host sample by
   the populated R4495/Q410/R4533 network. A Fairchild 2N4250 junction fit uses
   the original approximately 0.56 V at 100 uA and 26 mV thermal slope, solving
@@ -93,7 +93,7 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
   developing current across 20 kohm in parallel with 100 kohm gives
   approximately 0.80 small-signal voltage gain at full volume. The same
   rounded sixth-order graph envelope places its source-input asymptote at
-  three internal units.
+  six circuit volts.
 - The master-VCA output is AC-coupled by the populated 2.2 uF C4189 into the
   parallel 20 kohm/100 kohm load formed by R4562 and R4541. The resulting
   first-order high-pass corner is approximately 4.34 Hz.
@@ -113,8 +113,10 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
   before U431's follower and the three destination networks.
 - The NE5534 and its 1 kohm shunt/560 ohm output-isolation network are treated
   as linear inside their headroom. The 560 ohm resistor is not modeled as a
-  fixed divider because the external load is unspecified. A smooth host
-  full-scale boundary replaces the previous hard digital clamp.
+  fixed divider because the external load is unspecified. All modeled audio
+  stages exchange circuit volts; one explicit candidate conversion after the
+  coupling network maps two circuit volts to one host unit before the smooth
+  full-scale boundary. It cannot change analog overload behavior.
 - Master volume is direct, is not delayed by the CPU control scheduler and is
   preserved when programs change.
 
@@ -130,10 +132,10 @@ peak-output-current ratio and kept deliberately narrower. Figure 3A is a
 printed bitmap, so the approximately four-division limit and sixth-order knee
 are explicit bounded interpretations rather than digitized device
 measurements. The oscillator and noise current networks no longer require a
-one-saw loading normalization. The two-circuit-volts-per-internal-filter-unit
-scale, Q410 temperature, overload-knee spread, populated-device matching,
-external output load and circuit-volts-to-host-full-scale conversion remain
-hypotheses.
+one-saw loading normalization. Q410 temperature, overload-knee spread,
+populated-device matching, external output load and the final two-volts-per-
+host-unit conversion remain hypotheses. The former two-volts-per-internal-unit
+audio scale has been removed from the analog path.
 The five-volt volume reference follows the documented analog control domain,
 but its populated rail and R113 end-to-end tolerance are unmeasured. U479's
 approximately 100 uA/V centre slope is read from the printed Figure 3A bitmap,
@@ -157,9 +159,9 @@ recorded sweeps from a serviced reference instrument.
   close but distinct, and serviced final-voice small-signal gains match;
 - a single 150 kohm mixer path develops approximately 10.9 mV at U464's input,
   the first filter cell presents approximately 90.909 kohm transimpedance, and
-  one full saw reaches 2.0-2.4 internal filter units across all five profiles;
+  one full saw reaches 4.0-4.8 circuit volts across all five profiles;
 - parallel paths and the 200 kohm pulse path follow the finite-input loading
-  law, while the complete common-noise path reaches 0.42-0.50 internal units;
+  law, while the complete common-noise path reaches 0.84-1.0 circuit volts;
 - all transfers are finite and odd-symmetric and reject non-finite input;
 - the two Poly Mod currents share one populated 30k current-to-voltage load,
   preserve waveform-dependent input loading and remain within guaranteed

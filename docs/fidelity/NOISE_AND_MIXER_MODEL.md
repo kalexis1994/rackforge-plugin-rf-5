@@ -83,8 +83,10 @@ connection and the complete common-noise routing are source-bounded. The
 SD333 audio-level current converters, R4129, the distribution resistors and
 the first-cell transimpedance are accepted. The candidate still uses the
 MM5837's guaranteed minimum separation rather than a populated output level;
-transistor temperature, the two-circuit-volts-per-internal-unit filter scale
-and measured mixer saturation remain unavailable.
+transistor temperature, the final circuit-volts-to-host-full-scale calibration
+and measured mixer saturation remain unavailable. Mixer and noise outputs now
+enter the CEM3320 model directly in circuit volts; no normalized audio scale
+remains between the populated transimpedance and filter cells.
 
 ## Acceptance tests
 
@@ -98,8 +100,8 @@ and measured mixer saturation remain unavailable.
 - Q306/Q302/Q305 produce the expected 33k/33k/75k full-level currents, retain
   a silicon-junction knee and rise monotonically through all 128 positions;
 - one full saw develops approximately 10.9 mV at U464's shunted input and
-  reaches 2.0-2.4 internal filter units through the populated current path;
-- full common white noise reaches 0.42-0.50 internal filter units through
+  reaches 4.0-4.8 circuit volts through the populated current path;
+- full common white noise reaches 0.84-1.0 circuit volts through
   R4129, U474, the 100k distribution path and first-cell transimpedance;
 - Wheel Mod source mix audibly changes from the disabled LFO side to noise;
 - package parameters and state expose both physical controls.

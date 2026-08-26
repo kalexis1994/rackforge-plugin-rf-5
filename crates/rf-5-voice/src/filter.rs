@@ -8,7 +8,7 @@
 
 const STAGE_COUNT: usize = 4;
 const MAXIMUM_NORMALIZED_CUTOFF: f32 = 0.45;
-const THERMAL_NOISE_LEVEL: f32 = 2.0e-7;
+const THERMAL_NOISE_LEVEL_VOLTS: f32 = 4.0e-7;
 const NOMINAL_POLE_SENSITIVITY_MV_PER_DECADE: f32 = 60.0;
 const SERVICE_FILTER_REFERENCE_HZ: f32 = 440.0;
 const FILTER_WARMUP_UPDATE_RATE_HZ: f32 = 10.0;
@@ -44,11 +44,9 @@ const SERVICE_NOMINAL_OSCILLATION_PANEL: f32 = 0.8;
 const FOUR_POLE_OSCILLATION_FEEDBACK: f32 = 4.0;
 const FEEDBACK_SOLVER_ITERATIONS: usize = 2;
 
-// The normalized signal path is not yet calibrated to circuit volts. Two
-// circuit volts per internal unit places the data-sheet 10-14 Vpp output swing
-// around the overload region of the existing mixer candidate and keeps the
-// conversion explicit for later measurements.
-const CANDIDATE_CIRCUIT_VOLTS_PER_UNIT: f32 = 2.0;
+// Audio entering, crossing and leaving the four cells is expressed in circuit
+// volts. The published 10-14 Vpp output population therefore bounds the
+// nonlinear cells directly, without a hidden normalized-unit conversion.
 const SPECIFIED_SIGNAL_FRACTION_OF_CLIP: f32 = 0.707_106_77;
 
 #[derive(Clone, Copy, Debug)]
@@ -255,7 +253,7 @@ impl Cem3320Filter {
         state ^= state << 5;
         self.noise_state = state;
         let normalized = state as f32 / u32::MAX as f32;
-        (normalized * 2.0 - 1.0) * THERMAL_NOISE_LEVEL
+        (normalized * 2.0 - 1.0) * THERMAL_NOISE_LEVEL_VOLTS
     }
 
     #[cfg(test)]
@@ -309,7 +307,7 @@ fn cell_output(value: f32, profile: FilterProfile) -> f32 {
 }
 
 fn output_ceiling(profile: FilterProfile) -> f32 {
-    profile.output_clip_vpp * 0.5 / CANDIDATE_CIRCUIT_VOLTS_PER_UNIT
+    profile.output_clip_vpp * 0.5
 }
 
 fn cell_output_with_slope(value: f32, profile: FilterProfile) -> (f32, f32) {
@@ -468,7 +466,7 @@ mod tests {
     #[test]
     fn clipping_span_and_even_harmonic_are_profiled() {
         for profile in FILTER_PROFILES {
-            let ceiling = profile.output_clip_vpp * 0.5 / CANDIDATE_CIRCUIT_VOLTS_PER_UNIT;
+            let ceiling = profile.output_clip_vpp * 0.5;
             assert!(cell_output(100.0, profile) <= ceiling);
             assert!(cell_output(-100.0, profile) >= -ceiling);
             let positive = cell_output(1.0, profile);
@@ -486,7 +484,7 @@ mod tests {
         fn harmonic(profile: FilterProfile, harmonic: usize) -> f32 {
             const SAMPLE_COUNT: usize = 4_096;
             const CYCLES: usize = 17;
-            let ceiling = profile.output_clip_vpp * 0.5 / CANDIDATE_CIRCUIT_VOLTS_PER_UNIT;
+            let ceiling = profile.output_clip_vpp * 0.5;
             let amplitude = ceiling * SPECIFIED_SIGNAL_FRACTION_OF_CLIP;
             let mut sine = 0.0_f32;
             let mut cosine = 0.0_f32;
@@ -520,7 +518,7 @@ mod tests {
     fn nonlinear_feedback_solver_closes_the_instantaneous_loop() {
         let mut filter = Cem3320Filter::default();
         for index in 0..4_096 {
-            let input = libm::sinf(index as f32 * 0.071) * 2.0;
+            let input = libm::sinf(index as f32 * 0.071) * 4.0;
             let _ = filter.next(input, 1_700.0, 0.92, 192_000.0);
         }
         let profile = FILTER_PROFILES[filter.profile_index];
@@ -529,12 +527,12 @@ mod tests {
             let coefficient = g / (1.0 + g);
             for resonance in [0.1, 0.5, 0.8, 1.0] {
                 let feedback = resonance_feedback(resonance, profile);
-                for input in [-8.0, -2.0, 0.0, 2.0, 8.0] {
+                for input in [-16.0, -4.0, 0.0, 4.0, 16.0] {
                     let solved = filter.solve_feedback(input, coefficient, feedback, profile);
                     let (predicted, _) =
                         filter.predict_path(input - solved * feedback, coefficient, profile);
                     assert!(
-                        (solved - predicted).abs() < 2.0e-4,
+                        (solved - predicted).abs() < 4.0e-4,
                         "cutoff={cutoff_hz}, resonance={resonance}, input={input}, residual={}",
                         solved - predicted
                     );

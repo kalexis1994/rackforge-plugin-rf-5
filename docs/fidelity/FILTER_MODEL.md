@@ -63,8 +63,9 @@ resonance current domain, direct U464 current input and white-noise distribution
 are source-backed. The five deterministic points inside those ranges are a
 validation population, not measurements of five chips from one instrument.
 The smooth Gm function is a replaceable fit through published graph/typical
-points rather than a transistor-level model. The two-circuit-volts-per-internal
-unit conversion and exact populated Gm curve remain calibration hypotheses.
+points rather than a transistor-level model. Filter input, cell state and
+output now use circuit volts directly; the exact populated Gm curve remains a
+calibration hypothesis.
 Warm-up magnitude is source-bounded, while its
 210-390 second time constants, directions and correlation are explicit,
 replaceable hypotheses because no admitted source publishes those trajectories.

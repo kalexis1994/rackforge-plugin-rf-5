@@ -2,8 +2,9 @@
 //!
 //! Five equal-value input resistors feed the inverting voice summer. Its
 //! output reaches a linearized CA3280 master VCA, the C4189 coupling network
-//! and an NE5534 output buffer. Circuit-to-host scaling remains a calibration
-//! candidate.
+//! and an NE5534 output buffer. Every value through the coupling capacitor is
+//! expressed in circuit volts; one explicit adapter-boundary constant maps
+//! those volts to the host's dimensionless full-scale domain.
 
 use rf_5_voice::vca;
 
@@ -11,6 +12,11 @@ use rf_5_voice::vca;
 // resistors into the high-impedance U480 follower. Active and inactive cards
 // therefore form an exact passive five-input average, not an arbitrary gain.
 const VOICE_SUMMER_EQUAL_RESISTOR_GAIN: f32 = 1.0 / 5.0;
+// External load and interface headroom are not specified by the instrument.
+// Preserve the accepted 2 V-per-host-unit listening calibration only here,
+// after the complete analog circuit model, until a reference output sweep is
+// available. This value cannot alter any analog overload or interaction.
+const CANDIDATE_CIRCUIT_VOLTS_PER_HOST_UNIT: f32 = 2.0;
 const HOST_OUTPUT_CEILING: f32 = 0.98;
 
 // SD430: C4189 couples the U479 master VCA to the U481 output buffer. The
@@ -57,8 +63,9 @@ impl OutputStage {
         let summer = voice_sum * VOICE_SUMMER_EQUAL_RESISTOR_GAIN;
         let master_control = self.master_volume_control(master_volume, sample_rate);
         let master_vca = vca::master_output(summer, master_control);
-        let coupled = self.ac_couple(master_vca, sample_rate);
-        HOST_OUTPUT_CEILING * libm::tanhf(coupled / HOST_OUTPUT_CEILING)
+        let coupled_volts = self.ac_couple(master_vca, sample_rate);
+        let host_input = coupled_volts / CANDIDATE_CIRCUIT_VOLTS_PER_HOST_UNIT;
+        HOST_OUTPUT_CEILING * libm::tanhf(host_input / HOST_OUTPUT_CEILING)
     }
 
     fn master_volume_control(&mut self, panel: f32, sample_rate: f32) -> f32 {
@@ -220,7 +227,8 @@ mod tests {
             for index in 0..duration {
                 let input = libm::sinf(2.0 * PI * 20.0 * index as f32 / sample_rate) * 0.01;
                 let output = stage.next(
-                    input / (VOICE_SUMMER_EQUAL_RESISTOR_GAIN * vca::MASTER_VCA_VOLTAGE_GAIN),
+                    input * CANDIDATE_CIRCUIT_VOLTS_PER_HOST_UNIT
+                        / (VOICE_SUMMER_EQUAL_RESISTOR_GAIN * vca::MASTER_VCA_VOLTAGE_GAIN),
                     1.0,
                     sample_rate,
                 );
