@@ -54,6 +54,13 @@ const OUTPUT_COUPLING_CAPACITANCE_FARADS: f32 = 2.2e-6;
 const OUTPUT_COUPLING_LOAD_OHMS: f32 = 68_000.0;
 const OUTPUT_BUFFER_FEEDBACK_OHMS: f32 = 240_000.0;
 const OUTPUT_BUFFER_GROUND_OHMS: f32 = 100_000.0;
+#[cfg(test)]
+const OUTPUT_BUFFER_SWING_MINIMUM_VOLTS: f32 = 12.0;
+#[cfg(test)]
+const OUTPUT_BUFFER_SWING_TYPICAL_VOLTS: f32 = 13.5;
+const OUTPUT_BUFFER_SOFT_KNEE_ORDER: f32 = 32.0;
+#[cfg(test)]
+const FINAL_VCA_INPUT_OHMS: f32 = 20_000.0;
 const RESONANCE_RETURN_OHMS: f32 = 51_000.0;
 const RESONANCE_SHUNT_OHMS: f32 = 3_000.0;
 const RESONANCE_SHUNT_CAPACITANCE_FARADS: f32 = 10.0e-6;
@@ -73,20 +80,22 @@ struct FilterProfile {
     pole_sensitivity_mv_per_decade: f32,
     resonance_gm_ratio: f32,
     resonance_input_ohms: f32,
+    output_buffer_swing_volts: f32,
     output_clip_vpp: f32,
     passband_second_harmonic: f32,
 }
 
 // Deterministic validation population. Every entry stays within the CEM3320
 // data-sheet limits: 57.5-62.5 mV/decade, 0.8-1.2 resonance Gm ratio,
-// 2.7-4.5 kohm Q-input impedance and 10-14 Vpp clipping. Q-input and Gm
-// tolerances are paired so the populated voice still meets the service-manual
-// oscillation window without renormalizing any individual chip.
+// 2.7-4.5 kohm Q-input impedance, 12-13.5 V U474 swing and 10-14 Vpp filter
+// clipping. Q-input and Gm tolerances are paired so the populated voice still
+// meets the service-manual oscillation window without renormalizing any chip.
 const FILTER_PROFILES: [FilterProfile; 5] = [
     FilterProfile {
         pole_sensitivity_mv_per_decade: 58.0,
         resonance_gm_ratio: 0.91,
         resonance_input_ohms: 3_600.0,
+        output_buffer_swing_volts: 12.2,
         output_clip_vpp: 11.0,
         passband_second_harmonic: 0.0014,
     },
@@ -94,6 +103,7 @@ const FILTER_PROFILES: [FilterProfile; 5] = [
         pole_sensitivity_mv_per_decade: 59.1,
         resonance_gm_ratio: 1.06,
         resonance_input_ohms: 2_700.0,
+        output_buffer_swing_volts: 13.1,
         output_clip_vpp: 12.6,
         passband_second_harmonic: 0.0021,
     },
@@ -101,6 +111,7 @@ const FILTER_PROFILES: [FilterProfile; 5] = [
         pole_sensitivity_mv_per_decade: 60.0,
         resonance_gm_ratio: 1.0,
         resonance_input_ohms: 3_300.0,
+        output_buffer_swing_volts: 12.8,
         output_clip_vpp: 12.0,
         passband_second_harmonic: 0.0018,
     },
@@ -108,6 +119,7 @@ const FILTER_PROFILES: [FilterProfile; 5] = [
         pole_sensitivity_mv_per_decade: 61.2,
         resonance_gm_ratio: 0.96,
         resonance_input_ohms: 3_600.0,
+        output_buffer_swing_volts: 13.4,
         output_clip_vpp: 13.4,
         passband_second_harmonic: 0.0028,
     },
@@ -115,6 +127,7 @@ const FILTER_PROFILES: [FilterProfile; 5] = [
         pole_sensitivity_mv_per_decade: 62.2,
         resonance_gm_ratio: 1.12,
         resonance_input_ohms: 2_700.0,
+        output_buffer_swing_volts: 12.5,
         output_clip_vpp: 10.5,
         passband_second_harmonic: 0.0011,
     },
@@ -169,26 +182,29 @@ impl ResonanceReturn {
         let coupling_coefficient = one_pole_coefficient(output_coupling_corner_hz(), sample_rate);
         let (coupling_lowpass, coupling_lowpass_slope) =
             self.output_coupling.predict(output, coupling_coefficient);
-        let buffer_input = (output - coupling_lowpass) * output_buffer_gain();
-        let buffer_input_slope = (1.0 - coupling_lowpass_slope) * output_buffer_gain();
+        let buffer_drive = (output - coupling_lowpass) * output_buffer_gain();
+        let buffer_drive_slope = (1.0 - coupling_lowpass_slope) * output_buffer_gain();
+        let (buffer_output, buffer_shape_slope) = output_buffer_with_slope(buffer_drive, profile);
+        let buffer_output_slope = buffer_drive_slope * buffer_shape_slope;
 
         let shunt_coefficient = one_pole_coefficient(resonance_input_pole_hz(profile), sample_rate);
         let (shunt_lowpass, shunt_lowpass_slope) =
-            self.input_shunt.predict(buffer_input, shunt_coefficient);
+            self.input_shunt.predict(buffer_output, shunt_coefficient);
         let dc_gain = resonance_input_dc_gain(profile);
         let high_frequency_gain = resonance_input_high_frequency_gain(profile);
         let pin_voltage =
-            high_frequency_gain * buffer_input + (dc_gain - high_frequency_gain) * shunt_lowpass;
+            high_frequency_gain * buffer_output + (dc_gain - high_frequency_gain) * shunt_lowpass;
         let pin_slope = (high_frequency_gain
             + (dc_gain - high_frequency_gain) * shunt_lowpass_slope)
-            * buffer_input_slope;
+            * buffer_output_slope;
         (pin_voltage, pin_slope)
     }
 
     fn next(&mut self, output: f32, sample_rate: f32, profile: FilterProfile) -> (f32, f32) {
         let coupling_coefficient = one_pole_coefficient(output_coupling_corner_hz(), sample_rate);
         let coupling_lowpass = self.output_coupling.next(output, coupling_coefficient);
-        let buffer_output = (output - coupling_lowpass) * output_buffer_gain();
+        let buffer_drive = (output - coupling_lowpass) * output_buffer_gain();
+        let buffer_output = output_buffer(buffer_drive, profile);
 
         let shunt_coefficient = one_pole_coefficient(resonance_input_pole_hz(profile), sample_rate);
         let shunt_lowpass = self.input_shunt.next(buffer_output, shunt_coefficient);
@@ -406,8 +422,44 @@ fn output_buffer_gain() -> f32 {
     1.0 + OUTPUT_BUFFER_FEEDBACK_OHMS / OUTPUT_BUFFER_GROUND_OHMS
 }
 
+fn output_buffer(value: f32, profile: FilterProfile) -> f32 {
+    output_buffer_with_slope(value, profile).0
+}
+
+fn output_buffer_with_slope(value: f32, profile: FilterProfile) -> (f32, f32) {
+    let ceiling = profile.output_buffer_swing_volts;
+    let unclamped = value / ceiling;
+    let normalized = unclamped.clamp(-64.0, 64.0);
+    let squared = normalized * normalized;
+    let fourth = squared * squared;
+    let eighth = fourth * fourth;
+    let sixteenth = eighth * eighth;
+    let thirty_second = sixteenth * sixteenth;
+    let soft_base = 1.0 + thirty_second;
+    let reciprocal_root = 1.0 / libm::powf(soft_base, 1.0 / OUTPUT_BUFFER_SOFT_KNEE_ORDER);
+    let curved = ceiling * normalized * reciprocal_root;
+    let output = curved.clamp(-ceiling, ceiling);
+    let slope = if unclamped == normalized && output == curved {
+        reciprocal_root / soft_base
+    } else {
+        0.0
+    };
+    (output, slope)
+}
+
 fn parallel_ohms(left: f32, right: f32) -> f32 {
     left * right / (left + right)
+}
+
+#[cfg(test)]
+fn output_buffer_audio_load_ohms(profile: FilterProfile) -> f32 {
+    let resonance_load =
+        RESONANCE_RETURN_OHMS + parallel_ohms(profile.resonance_input_ohms, RESONANCE_SHUNT_OHMS);
+    let feedback_load = OUTPUT_BUFFER_FEEDBACK_OHMS + OUTPUT_BUFFER_GROUND_OHMS;
+    parallel_ohms(
+        parallel_ohms(FINAL_VCA_INPUT_OHMS, resonance_load),
+        feedback_load,
+    )
 }
 
 fn resonance_input_dc_gain(profile: FilterProfile) -> f32 {
@@ -549,6 +601,10 @@ mod tests {
                 (RESONANCE_INPUT_MINIMUM_OHMS..=RESONANCE_INPUT_MAXIMUM_OHMS)
                     .contains(&profile.resonance_input_ohms)
             );
+            assert!(
+                (OUTPUT_BUFFER_SWING_MINIMUM_VOLTS..=OUTPUT_BUFFER_SWING_TYPICAL_VOLTS)
+                    .contains(&profile.output_buffer_swing_volts)
+            );
             assert!((10.0..=14.0).contains(&profile.output_clip_vpp));
             assert!((0.001..=0.003).contains(&profile.passband_second_harmonic));
         }
@@ -607,6 +663,43 @@ mod tests {
         assert!((resonance_input_dc_gain(typical) - 0.065_934_07).abs() < 1.0e-7);
         assert!((resonance_input_high_frequency_gain(typical) - 0.031_088_084).abs() < 1.0e-7);
         assert!((resonance_input_pole_hz(typical) - 2.501_399).abs() < 1.0e-5);
+    }
+
+    #[test]
+    fn u474_load_and_output_stay_inside_the_tl082_characterized_region() {
+        for profile in FILTER_PROFILES {
+            assert!(output_buffer_audio_load_ohms(profile) >= 10_000.0);
+            assert!(output_buffer(100.0, profile) <= profile.output_buffer_swing_volts);
+            assert!(output_buffer(-100.0, profile) >= -profile.output_buffer_swing_volts);
+            let ten_volt_output = output_buffer(10.0, profile);
+            assert!((ten_volt_output / 10.0 - 1.0).abs() < 0.0001);
+        }
+    }
+
+    #[test]
+    fn u474_late_knee_preserves_the_published_ten_volt_linearity() {
+        const SAMPLE_COUNT: usize = 4_096;
+        const CYCLES: usize = 17;
+        for profile in FILTER_PROFILES {
+            let mut fundamental_sine = 0.0;
+            let mut fundamental_cosine = 0.0;
+            let mut third_sine = 0.0;
+            let mut third_cosine = 0.0;
+            for index in 0..SAMPLE_COUNT {
+                let phase = 2.0 * core::f32::consts::PI * CYCLES as f32 * index as f32
+                    / SAMPLE_COUNT as f32;
+                let output = output_buffer(libm::sinf(phase) * 10.0, profile);
+                fundamental_sine += output * libm::sinf(phase);
+                fundamental_cosine += output * libm::cosf(phase);
+                third_sine += output * libm::sinf(phase * 3.0);
+                third_cosine += output * libm::cosf(phase * 3.0);
+            }
+            let fundamental = libm::sqrtf(
+                fundamental_sine * fundamental_sine + fundamental_cosine * fundamental_cosine,
+            );
+            let third = libm::sqrtf(third_sine * third_sine + third_cosine * third_cosine);
+            assert!(third / fundamental < 0.0002);
+        }
     }
 
     #[test]

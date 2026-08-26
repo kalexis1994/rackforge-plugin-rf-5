@@ -50,6 +50,12 @@ procedure expects resonance to begin self-oscillating between panel positions
   Hz service calibration rather than hidden in an empirical frequency offset.
   The same AC-coupled U474 output, rather than the raw OUT D voltage, now feeds
   the populated 20 kohm final-VCA input.
+- U474 no longer behaves like an impossible unlimited 3.4 multiplier. Its
+  effective audio load remains above 10 kohm, so five deterministic TL082
+  swing limits stay between the published +/-12 V minimum and +/-13.5 V
+  typical values. A 32nd-order late knee preserves the data sheet's less than
+  0.02% distortion condition at 20 Vpp, while its analytic slope remains part
+  of the instantaneous resonance solve.
 - Each physical voice card now owns one deterministic CEM3320 profile. Its
   pole-control sensitivity remains inside 57.5-62.5 mV/decade, resonance-cell
   transconductance inside 0.8-1.2 times nominal, Q-input impedance inside
@@ -80,7 +86,9 @@ validation population, not measurements of five chips from one instrument.
 The smooth Gm function is a replaceable fit through published graph/typical
 points rather than a transistor-level model. Filter input, cell state and
 output now use circuit volts directly; the exact populated Gm curve remains a
-calibration hypothesis.
+calibration hypothesis. U474's voltage bounds and 10 V linearity are
+source-backed, while the differentiable transition between them is an explicit
+late-knee hypothesis rather than a measured overload trace.
 Warm-up magnitude is source-bounded, while its
 210-390 second time constants, directions and correlation are explicit,
 replaceable hypotheses because no admitted source publishes those trajectories.
@@ -104,6 +112,10 @@ replaceable hypotheses because no admitted source publishes those trajectories.
   shunt transition for the typical 3.6 kohm input;
 - a steady output is rejected by the AC-coupled return while audio is passed;
 - the AC-coupled, 3.4-gain U474 node is shared by resonance and the final VCA;
+- every U474 profile remains inside the published +/-12 to +/-13.5 V swing
+  range under a reconstructed load above 10 kohm;
+- U474 remains below 0.02% third harmonic at the published 10 V peak condition
+  and is bounded under extreme drive;
 - all five physical Gm/Q-input pairs cross four-pole loop unity between panel
   positions 6.5 and 9.5 without a normalized feedback constant;
 - the Gm fit hits the published 100 uA point and has decreasing incremental
