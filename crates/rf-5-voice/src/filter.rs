@@ -28,7 +28,7 @@ const BUFFER_OUTPUT_IMPEDANCE_OHMS: f32 = 1_000_000.0;
 const INTERSTAGE_COUPLING_OHMS: f32 = 91_000.0;
 
 // Filter Resonance is a 0-10 V common S/H destination and reaches the CEM3320
-// current input through R4144's 200 kohm. The data-sheet graph is represented
+// current input through R4414's 200 kohm. The data-sheet graph is represented
 // by a saturating exponential fixed by its 1 mmho-at-100 uA typical point and
 // 2.2 mmho maximum-Gm line. This preserves the published modified-linear bend
 // without inventing a near-linear panel law.
@@ -40,9 +40,27 @@ const RESONANCE_GM_REFERENCE_AMPS: f32 = 100.0e-6;
 const RESONANCE_GM_AT_REFERENCE_MHOS: f32 = 1.0e-3;
 const RESONANCE_GM_LIMIT_MHOS: f32 = 2.2e-3;
 const RESONANCE_GM_CURRENT_SCALE_AMPS: f32 = 164.979_53e-6;
-const SERVICE_NOMINAL_OSCILLATION_PANEL: f32 = 0.8;
+#[cfg(test)]
 const FOUR_POLE_OSCILLATION_FEEDBACK: f32 = 4.0;
 const FEEDBACK_SOLVER_ITERATIONS: usize = 3;
+
+// SD431 does not connect OUT D directly to Q IN. C4164 AC-couples the final
+// pole into a 68 kohm load, U474 applies a non-inverting gain of 3.4, and
+// R4416 returns that signal to pin 8. The pin is loaded both by the CEM3320's
+// published 2.7-4.5 kohm input impedance and by R4415/C4145. Keeping both
+// capacitor memories makes the resonance return disappear at DC and recover
+// the populated audio-band loop gain without a service-normalized constant.
+const OUTPUT_COUPLING_CAPACITANCE_FARADS: f32 = 2.2e-6;
+const OUTPUT_COUPLING_LOAD_OHMS: f32 = 68_000.0;
+const OUTPUT_BUFFER_FEEDBACK_OHMS: f32 = 240_000.0;
+const OUTPUT_BUFFER_GROUND_OHMS: f32 = 100_000.0;
+const RESONANCE_RETURN_OHMS: f32 = 51_000.0;
+const RESONANCE_SHUNT_OHMS: f32 = 3_000.0;
+const RESONANCE_SHUNT_CAPACITANCE_FARADS: f32 = 10.0e-6;
+#[cfg(test)]
+const RESONANCE_INPUT_MINIMUM_OHMS: f32 = 2_700.0;
+#[cfg(test)]
+const RESONANCE_INPUT_MAXIMUM_OHMS: f32 = 4_500.0;
 
 // Audio entering, crossing and leaving the four cells is expressed in circuit
 // volts. The published 10-14 Vpp output population therefore bounds the
@@ -54,42 +72,49 @@ const CELL_SECOND_HARMONIC_SHARE: f32 = 1.0 / STAGE_COUNT as f32;
 struct FilterProfile {
     pole_sensitivity_mv_per_decade: f32,
     resonance_gm_ratio: f32,
+    resonance_input_ohms: f32,
     output_clip_vpp: f32,
     passband_second_harmonic: f32,
 }
 
 // Deterministic validation population. Every entry stays within the CEM3320
-// data-sheet limits: 57.5-62.5 mV/decade, 0.8-1.2 resonance Gm ratio and
-// 10-14 Vpp clipping. The 0.1-0.3% figures model the stated predominantly
-// second-harmonic passband distortion near the specified strong-signal point.
+// data-sheet limits: 57.5-62.5 mV/decade, 0.8-1.2 resonance Gm ratio,
+// 2.7-4.5 kohm Q-input impedance and 10-14 Vpp clipping. Q-input and Gm
+// tolerances are paired so the populated voice still meets the service-manual
+// oscillation window without renormalizing any individual chip.
 const FILTER_PROFILES: [FilterProfile; 5] = [
     FilterProfile {
         pole_sensitivity_mv_per_decade: 58.0,
         resonance_gm_ratio: 0.91,
+        resonance_input_ohms: 3_600.0,
         output_clip_vpp: 11.0,
         passband_second_harmonic: 0.0014,
     },
     FilterProfile {
         pole_sensitivity_mv_per_decade: 59.1,
         resonance_gm_ratio: 1.06,
+        resonance_input_ohms: 2_700.0,
         output_clip_vpp: 12.6,
         passband_second_harmonic: 0.0021,
     },
     FilterProfile {
         pole_sensitivity_mv_per_decade: 60.0,
         resonance_gm_ratio: 1.0,
+        resonance_input_ohms: 3_300.0,
         output_clip_vpp: 12.0,
         passband_second_harmonic: 0.0018,
     },
     FilterProfile {
         pole_sensitivity_mv_per_decade: 61.2,
         resonance_gm_ratio: 0.96,
+        resonance_input_ohms: 3_600.0,
         output_clip_vpp: 13.4,
         passband_second_harmonic: 0.0028,
     },
     FilterProfile {
         pole_sensitivity_mv_per_decade: 62.2,
         resonance_gm_ratio: 1.12,
+        resonance_input_ohms: 2_700.0,
         output_clip_vpp: 10.5,
         passband_second_harmonic: 0.0011,
     },
@@ -115,9 +140,70 @@ impl TptStage {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+struct TptMemory {
+    state: f32,
+}
+
+impl TptMemory {
+    fn predict(self, input: f32, coefficient: f32) -> (f32, f32) {
+        ((input - self.state) * coefficient + self.state, coefficient)
+    }
+
+    fn next(&mut self, input: f32, coefficient: f32) -> f32 {
+        let delta = (input - self.state) * coefficient;
+        let output = delta + self.state;
+        self.state = output + delta;
+        output
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct ResonanceReturn {
+    output_coupling: TptMemory,
+    input_shunt: TptMemory,
+}
+
+impl ResonanceReturn {
+    fn predict(self, output: f32, sample_rate: f32, profile: FilterProfile) -> (f32, f32) {
+        let coupling_coefficient = one_pole_coefficient(output_coupling_corner_hz(), sample_rate);
+        let (coupling_lowpass, coupling_lowpass_slope) =
+            self.output_coupling.predict(output, coupling_coefficient);
+        let buffer_input = (output - coupling_lowpass) * output_buffer_gain();
+        let buffer_input_slope = (1.0 - coupling_lowpass_slope) * output_buffer_gain();
+
+        let shunt_coefficient = one_pole_coefficient(resonance_input_pole_hz(profile), sample_rate);
+        let (shunt_lowpass, shunt_lowpass_slope) =
+            self.input_shunt.predict(buffer_input, shunt_coefficient);
+        let dc_gain = resonance_input_dc_gain(profile);
+        let high_frequency_gain = resonance_input_high_frequency_gain(profile);
+        let pin_voltage =
+            high_frequency_gain * buffer_input + (dc_gain - high_frequency_gain) * shunt_lowpass;
+        let pin_slope = (high_frequency_gain
+            + (dc_gain - high_frequency_gain) * shunt_lowpass_slope)
+            * buffer_input_slope;
+        (pin_voltage, pin_slope)
+    }
+
+    fn next(&mut self, output: f32, sample_rate: f32, profile: FilterProfile) -> (f32, f32) {
+        let coupling_coefficient = one_pole_coefficient(output_coupling_corner_hz(), sample_rate);
+        let coupling_lowpass = self.output_coupling.next(output, coupling_coefficient);
+        let buffer_output = (output - coupling_lowpass) * output_buffer_gain();
+
+        let shunt_coefficient = one_pole_coefficient(resonance_input_pole_hz(profile), sample_rate);
+        let shunt_lowpass = self.input_shunt.next(buffer_output, shunt_coefficient);
+        let dc_gain = resonance_input_dc_gain(profile);
+        let high_frequency_gain = resonance_input_high_frequency_gain(profile);
+        let pin_voltage =
+            high_frequency_gain * buffer_output + (dc_gain - high_frequency_gain) * shunt_lowpass;
+        (buffer_output, pin_voltage)
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Cem3320Filter {
     stages: [TptStage; STAGE_COUNT],
+    resonance_return: ResonanceReturn,
     noise_state: u32,
     profile_index: usize,
     warmup_position: f32,
@@ -129,6 +215,7 @@ impl Default for Cem3320Filter {
     fn default() -> Self {
         Self {
             stages: [TptStage::default(); STAGE_COUNT],
+            resonance_return: ResonanceReturn::default(),
             noise_state: 0x51f1_5e5d,
             profile_index: 2,
             warmup_position: 0.0,
@@ -167,11 +254,20 @@ impl Cem3320Filter {
         .clamp(1.0, sample_rate * MAXIMUM_NORMALIZED_CUTOFF);
         let g = libm::tanf(core::f32::consts::PI * cutoff_hz / sample_rate);
         let coefficient = g / (1.0 + g);
-        let feedback = resonance_feedback(resonance, profile);
+        let resonance_drive = resonance_drive_gain(resonance, profile);
         let thermal_noise = self.next_thermal_noise();
         let open_input = input + thermal_noise;
-        let feedback_output = self.solve_feedback(open_input, coefficient, feedback, profile);
-        let mut signal = open_input - feedback_output * feedback;
+        let feedback_output = self.solve_feedback(
+            open_input,
+            coefficient,
+            resonance_drive,
+            sample_rate,
+            profile,
+        );
+        let (resonance_voltage, _) =
+            self.resonance_return
+                .predict(feedback_output, sample_rate, profile);
+        let mut signal = open_input - resonance_voltage * resonance_drive;
         for (index, stage) in self.stages.iter_mut().enumerate() {
             if index > 0 {
                 signal *= interstage_passband_gain();
@@ -179,10 +275,12 @@ impl Cem3320Filter {
             signal = stage.next(signal, coefficient, profile);
         }
         if signal.is_finite() {
+            let (buffered_output, _) = self.resonance_return.next(signal, sample_rate, profile);
             self.last_output = signal;
-            signal
+            buffered_output
         } else {
             self.stages = [TptStage::default(); STAGE_COUNT];
+            self.resonance_return = ResonanceReturn::default();
             self.last_output = 0.0;
             0.0
         }
@@ -192,19 +290,26 @@ impl Cem3320Filter {
         &self,
         input: f32,
         coefficient: f32,
-        feedback: f32,
+        resonance_drive: f32,
+        sample_rate: f32,
         profile: FilterProfile,
     ) -> f32 {
-        if feedback <= 0.0 {
-            return 0.0;
+        if resonance_drive <= 0.0 {
+            return self.predict_path(input, coefficient, profile).0;
         }
         let ceiling = output_ceiling(profile);
         let mut estimate = self.last_output.clamp(-ceiling, ceiling);
         for _ in 0..FEEDBACK_SOLVER_ITERATIONS {
-            let (predicted, path_slope) =
-                self.predict_path(input - estimate * feedback, coefficient, profile);
+            let (resonance_voltage, resonance_slope) =
+                self.resonance_return
+                    .predict(estimate, sample_rate, profile);
+            let (predicted, path_slope) = self.predict_path(
+                input - resonance_voltage * resonance_drive,
+                coefficient,
+                profile,
+            );
             let residual = estimate - predicted;
-            let derivative = 1.0 + feedback * path_slope.max(0.0);
+            let derivative = 1.0 + resonance_drive * resonance_slope.max(0.0) * path_slope.max(0.0);
             estimate = (estimate - residual / derivative.max(1.0)).clamp(-ceiling, ceiling);
         }
         estimate
@@ -264,9 +369,8 @@ impl Cem3320Filter {
     }
 }
 
-fn resonance_feedback(value: f32, profile: FilterProfile) -> f32 {
-    let calibration_gm = nominal_resonance_gm(SERVICE_NOMINAL_OSCILLATION_PANEL);
-    FOUR_POLE_OSCILLATION_FEEDBACK * resonance_gm(value, profile) / calibration_gm
+fn resonance_drive_gain(value: f32, profile: FilterProfile) -> f32 {
+    resonance_gm(value, profile) * equivalent_feedback_ohms()
 }
 
 fn resonance_gm(value: f32, profile: FilterProfile) -> f32 {
@@ -286,6 +390,51 @@ fn resonance_control_current_amps(value: f32) -> f32 {
     value.clamp(0.0, 1.0) * FILTER_RESONANCE_CV_SPAN_VOLTS / RESONANCE_CONTROL_RESISTOR_OHMS
 }
 
+fn one_pole_coefficient(frequency_hz: f32, sample_rate: f32) -> f32 {
+    let g = libm::tanf(core::f32::consts::PI * frequency_hz / sample_rate.max(1.0));
+    g / (1.0 + g)
+}
+
+fn output_coupling_corner_hz() -> f32 {
+    1.0 / (2.0
+        * core::f32::consts::PI
+        * OUTPUT_COUPLING_LOAD_OHMS
+        * OUTPUT_COUPLING_CAPACITANCE_FARADS)
+}
+
+fn output_buffer_gain() -> f32 {
+    1.0 + OUTPUT_BUFFER_FEEDBACK_OHMS / OUTPUT_BUFFER_GROUND_OHMS
+}
+
+fn parallel_ohms(left: f32, right: f32) -> f32 {
+    left * right / (left + right)
+}
+
+fn resonance_input_dc_gain(profile: FilterProfile) -> f32 {
+    profile.resonance_input_ohms / (RESONANCE_RETURN_OHMS + profile.resonance_input_ohms)
+}
+
+fn resonance_input_high_frequency_gain(profile: FilterProfile) -> f32 {
+    let load = parallel_ohms(profile.resonance_input_ohms, RESONANCE_SHUNT_OHMS);
+    load / (RESONANCE_RETURN_OHMS + load)
+}
+
+fn resonance_input_pole_hz(profile: FilterProfile) -> f32 {
+    let conductance_sum = 1.0 / RESONANCE_RETURN_OHMS
+        + 1.0 / profile.resonance_input_ohms
+        + 1.0 / RESONANCE_SHUNT_OHMS;
+    let shunt_state_share = (1.0 / RESONANCE_SHUNT_OHMS) / conductance_sum;
+    (1.0 - shunt_state_share)
+        / (2.0 * core::f32::consts::PI * RESONANCE_SHUNT_OHMS * RESONANCE_SHUNT_CAPACITANCE_FARADS)
+}
+
+#[cfg(test)]
+fn resonance_audio_band_feedback(value: f32, profile: FilterProfile) -> f32 {
+    resonance_drive_gain(value, profile)
+        * output_buffer_gain()
+        * resonance_input_high_frequency_gain(profile)
+}
+
 fn equivalent_feedback_ohms() -> f32 {
     CELL_FEEDBACK_OHMS * BUFFER_OUTPUT_IMPEDANCE_OHMS
         / (CELL_FEEDBACK_OHMS + BUFFER_OUTPUT_IMPEDANCE_OHMS)
@@ -296,12 +445,31 @@ fn interstage_passband_gain() -> f32 {
 }
 
 fn service_trimmed_cutoff_hz(cutoff_hz: f32, profile: FilterProfile) -> f32 {
-    let ratio = cutoff_hz.max(1.0) / SERVICE_FILTER_REFERENCE_HZ;
+    let target_hz = cutoff_hz.max(1.0);
+    let low_calibration_hz = resonance_calibrated_pole_hz(SERVICE_FILTER_REFERENCE_HZ, profile);
+    let high_calibration_hz =
+        resonance_calibrated_pole_hz(SERVICE_FILTER_REFERENCE_HZ * 2.0, profile);
+    let calibrated_exponent =
+        libm::logf(high_calibration_hz / low_calibration_hz) / core::f32::consts::LN_2;
     let untrimmed_exponent =
         NOMINAL_POLE_SENSITIVITY_MV_PER_DECADE / profile.pole_sensitivity_mv_per_decade;
-    let populated_scale_trim =
-        profile.pole_sensitivity_mv_per_decade / NOMINAL_POLE_SENSITIVITY_MV_PER_DECADE;
-    SERVICE_FILTER_REFERENCE_HZ * libm::powf(ratio, untrimmed_exponent * populated_scale_trim)
+    let untrimmed_ratio = libm::powf(target_hz / SERVICE_FILTER_REFERENCE_HZ, untrimmed_exponent);
+    let populated_scale_trim = calibrated_exponent / untrimmed_exponent;
+    low_calibration_hz * libm::powf(untrimmed_ratio, populated_scale_trim)
+}
+
+fn resonance_calibrated_pole_hz(target_hz: f32, profile: FilterProfile) -> f32 {
+    let coupling_phase = libm::atanf(output_coupling_corner_hz() / target_hz);
+    let normalized_frequency = target_hz / resonance_input_pole_hz(profile);
+    let transition =
+        resonance_input_dc_gain(profile) - resonance_input_high_frequency_gain(profile);
+    let denominator = 1.0 + normalized_frequency * normalized_frequency;
+    let input_real = resonance_input_high_frequency_gain(profile) + transition / denominator;
+    let input_imaginary = -transition * normalized_frequency / denominator;
+    let input_phase = libm::atan2f(input_imaginary, input_real);
+    let required_cell_phase =
+        (core::f32::consts::PI + coupling_phase + input_phase) / STAGE_COUNT as f32;
+    target_hz / libm::tanf(required_cell_phase)
 }
 
 fn cell_output(value: f32, profile: FilterProfile) -> f32 {
@@ -377,6 +545,10 @@ mod tests {
         for profile in FILTER_PROFILES {
             assert!((57.5..=62.5).contains(&profile.pole_sensitivity_mv_per_decade));
             assert!((0.8..=1.2).contains(&profile.resonance_gm_ratio));
+            assert!(
+                (RESONANCE_INPUT_MINIMUM_OHMS..=RESONANCE_INPUT_MAXIMUM_OHMS)
+                    .contains(&profile.resonance_input_ohms)
+            );
             assert!((10.0..=14.0).contains(&profile.output_clip_vpp));
             assert!((0.001..=0.003).contains(&profile.passband_second_harmonic));
         }
@@ -428,21 +600,57 @@ mod tests {
     }
 
     #[test]
-    fn resonance_loop_crosses_four_inside_the_service_window() {
-        let nominal = FILTER_PROFILES[2];
-        assert!(resonance_feedback(0.65, nominal) < FOUR_POLE_OSCILLATION_FEEDBACK);
-        assert_eq!(
-            resonance_feedback(SERVICE_NOMINAL_OSCILLATION_PANEL, nominal),
-            FOUR_POLE_OSCILLATION_FEEDBACK
-        );
-        assert!(resonance_feedback(0.95, nominal) > FOUR_POLE_OSCILLATION_FEEDBACK);
+    fn populated_resonance_return_matches_sd431_and_the_data_sheet_input() {
+        let typical = FILTER_PROFILES[0];
+        assert!((output_coupling_corner_hz() - 1.063_87).abs() < 1.0e-5);
+        assert!((output_buffer_gain() - 3.4).abs() < 1.0e-6);
+        assert!((resonance_input_dc_gain(typical) - 0.065_934_07).abs() < 1.0e-7);
+        assert!((resonance_input_high_frequency_gain(typical) - 0.031_088_084).abs() < 1.0e-7);
+        assert!((resonance_input_pole_hz(typical) - 2.501_399).abs() < 1.0e-5);
     }
 
     #[test]
-    fn service_scale_trim_makes_all_five_filters_meet_at_440_and_880_hz() {
+    fn resonance_return_blocks_dc_but_passes_audio() {
+        let profile = FILTER_PROFILES[0];
+        let mut return_path = ResonanceReturn::default();
+        let (initial_audio, initial_pin) = return_path.next(1.0, 48_000.0, profile);
+        let mut settled_audio = initial_audio;
+        let mut settled_pin = initial_pin;
+        for _ in 0..240_000 {
+            (settled_audio, settled_pin) = return_path.next(1.0, 48_000.0, profile);
+        }
+        assert!((3.39..3.4).contains(&initial_audio));
+        assert!(initial_pin > 0.09);
+        assert!(settled_audio.abs() < initial_audio * 0.002);
+        assert!(
+            settled_pin.abs() < initial_pin * 0.002,
+            "DC residue: {settled_pin}"
+        );
+    }
+
+    #[test]
+    fn physical_resonance_loop_crosses_four_inside_the_service_window() {
+        for (index, profile) in FILTER_PROFILES.into_iter().enumerate() {
+            let below = resonance_audio_band_feedback(0.65, profile);
+            let inside = resonance_audio_band_feedback(0.95, profile);
+            assert!(
+                below < FOUR_POLE_OSCILLATION_FEEDBACK,
+                "profile {index} crossed early: {below}"
+            );
+            assert!(
+                inside > FOUR_POLE_OSCILLATION_FEEDBACK,
+                "profile {index} missed service window: {inside}"
+            );
+        }
+    }
+
+    #[test]
+    fn service_scale_trim_compensates_the_return_phase_at_440_and_880_hz() {
         for profile in FILTER_PROFILES {
-            assert!((service_trimmed_cutoff_hz(440.0, profile) - 440.0).abs() < 0.001);
-            assert!((service_trimmed_cutoff_hz(880.0, profile) - 880.0).abs() < 0.001);
+            let low_pole_hz = service_trimmed_cutoff_hz(440.0, profile);
+            let high_pole_hz = service_trimmed_cutoff_hz(880.0, profile);
+            assert!((440.0..445.0).contains(&low_pole_hz));
+            assert!((880.0..885.0).contains(&high_pole_hz));
             let trim =
                 profile.pole_sensitivity_mv_per_decade / NOMINAL_POLE_SENSITIVITY_MV_PER_DECADE;
             assert!((0.95..=1.05).contains(&trim));
@@ -555,11 +763,22 @@ mod tests {
             let g = libm::tanf(core::f32::consts::PI * cutoff_hz / 192_000.0);
             let coefficient = g / (1.0 + g);
             for resonance in [0.1, 0.5, 0.8, 1.0] {
-                let feedback = resonance_feedback(resonance, profile);
+                let resonance_drive = resonance_drive_gain(resonance, profile);
                 for input in [-16.0, -4.0, 0.0, 4.0, 16.0] {
-                    let solved = filter.solve_feedback(input, coefficient, feedback, profile);
-                    let (predicted, _) =
-                        filter.predict_path(input - solved * feedback, coefficient, profile);
+                    let solved = filter.solve_feedback(
+                        input,
+                        coefficient,
+                        resonance_drive,
+                        192_000.0,
+                        profile,
+                    );
+                    let (resonance_voltage, _) =
+                        filter.resonance_return.predict(solved, 192_000.0, profile);
+                    let (predicted, _) = filter.predict_path(
+                        input - resonance_voltage * resonance_drive,
+                        coefficient,
+                        profile,
+                    );
                     assert!(
                         (solved - predicted).abs() < 4.0e-4,
                         "cutoff={cutoff_hz}, resonance={resonance}, input={input}, residual={}",

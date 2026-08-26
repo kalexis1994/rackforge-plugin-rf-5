@@ -35,17 +35,25 @@ procedure expects resonance to begin self-oscillating between panel positions
 - Keyboard tracking is a physical on/off route and contributes exactly one
   octave of cutoff for every twelve semitones.
 - Filter Cutoff and Filter Resonance use the documented 0-10 V common-CV
-  domain instead of the former global 0-5 V approximation. R4144 converts the
+  domain instead of the former global 0-5 V approximation. R4414 converts the
   resonance span to 0-50 uA at the CEM3320 control-current input.
 - Resonance now follows a strongly bending modified-linear Gm curve. A
   saturating fit is fixed by the data sheet's typical 1 mmho at 100 uA point
-  and its 2.2 mmho maximum-Gm line; the four-pole loop crosses unity at the
-  nominal panel-8 service anchor and can sustain oscillation from its
-  deterministic internal noise floor.
+  and its 2.2 mmho maximum-Gm line. The former panel-8-normalized feedback
+  constant has been removed.
+- The complete populated resonance return now runs inside the delay-free
+  solver: OUT D crosses C4164's 2.2 uF/68 kohm high-pass, U474 applies its
+  1+240k/100k gain, R4416 feeds Q IN through 51 kohm, and the pin sees both its
+  published 2.7-4.5 kohm input impedance and R4415/C4145's 3 kohm/10 uF
+  frequency-dependent shunt. Both capacitor memories advance even with the
+  resonance control at zero. Their phase is included in the per-voice 440/880
+  Hz service calibration rather than hidden in an empirical frequency offset.
+  The same AC-coupled U474 output, rather than the raw OUT D voltage, now feeds
+  the populated 20 kohm final-VCA input.
 - Each physical voice card now owns one deterministic CEM3320 profile. Its
   pole-control sensitivity remains inside 57.5-62.5 mV/decade, resonance-cell
-  transconductance inside 0.8-1.2 times nominal, and clipping span inside the
-  published 10-14 Vpp range.
+  transconductance inside 0.8-1.2 times nominal, Q-input impedance inside
+  2.7-4.5 kohm, and clipping span inside the published 10-14 Vpp range.
 - Each profile's documented 57.5-62.5 mV/decade sensitivity is compensated by
   the populated per-voice scale trim. All five filters therefore meet at the
   serviced 440/880 Hz pair instead of diverging from an invented 1 kHz point.
@@ -62,9 +70,9 @@ procedure expects resonance to begin self-oscillating between panel positions
 
 ## Bounded uncertainty
 
-The topology, populated pole network, exponential scale, electrical ranges and
-resonance current domain, direct U464 current input and white-noise distribution
-are source-backed. Filter signals are deviations around the data sheet's
+The topology, populated pole and resonance-return networks, exponential scale,
+electrical ranges and resonance current domain, direct U464 current input and
+white-noise distribution are source-backed. Filter signals are deviations around the data sheet's
 nominal approximately 650 mV input summing node and 6.9 V buffer quiescent
 level; source DC is retained as displacement from that serviced operating
 point. The five deterministic points inside the published ranges are a
@@ -91,6 +99,13 @@ replaceable hypotheses because no admitted source publishes those trajectories.
 - the nonlinear instantaneous-loop residual remains below 0.0004 circuit
   volts across cutoff, resonance, drive and clipping stress cases;
 - full resonance CV produces 50 uA through the populated 200 kohm resistor;
+- the resonance return reproduces C4164's approximately 1.064 Hz corner,
+  U474's 3.4 gain, Q IN's DC/audio dividers and its approximately 2.501 Hz
+  shunt transition for the typical 3.6 kohm input;
+- a steady output is rejected by the AC-coupled return while audio is passed;
+- the AC-coupled, 3.4-gain U474 node is shared by resonance and the final VCA;
+- all five physical Gm/Q-input pairs cross four-pole loop unity between panel
+  positions 6.5 and 9.5 without a normalized feedback constant;
 - the Gm fit hits the published 100 uA point and has decreasing incremental
   slope;
 - four 150 pF cells and their 100k/91k/1M network reproduce the populated

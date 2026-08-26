@@ -5,10 +5,11 @@
 The Revision 3 signal path uses several RCA CA3280 operational
 transconductance amplifiers rather than one generic gain stage. Each voice
 routes the selected oscillator-A and oscillator-B waveforms through separate
-CA3280 mixer VCAs with the linearizing-diode terminal cut off. The filtered
-signal then enters a CA3280 final VCA whose linearizing terminal is active and
-whose bias current is controlled by the amplifier envelope through Q410 and
-two populated 3.3 kohm resistors. Q410 is a grounded-base Fairchild 2N4250 PNP;
+CA3280 mixer VCAs with the linearizing-diode terminal cut off. CEM3320 OUT D is
+AC-coupled by C4164, loaded by R4460 and amplified 3.4 times by U474 before the
+filtered signal enters a CA3280 final VCA whose linearizing terminal is active
+and whose bias current is controlled by the amplifier envelope through Q410
+and two populated 3.3 kohm resistors. Q410 is a grounded-base Fairchild 2N4250 PNP;
 its emitter junction therefore converts CEM3310 voltage to CA3280 IABC current
 rather than passing a normalized envelope value directly.
 
@@ -49,6 +50,10 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
   are evaluated inside the same four-times-oversampled loop as the filters.
   Their small-signal gain is equal after the documented per-voice service
   adjustment, while their strong-signal knees remain distinct.
+- The final-VCA audio input is the same stateful C4164/U474 node that drives
+  the CEM3320 resonance return. Its approximately 1.064 Hz DC-blocking corner
+  and 3.4 non-inverting gain are applied once inside the filter model; no
+  separate normalized pre-VCA gain or duplicate high-pass is added here.
 - The final-VCA signal transfer is separate from the generic linearized
   modulation OTA. Intersil Figure 3A supplies two bounded landmarks at 650 uA
   IABC and 200 uA diode current: a long linear centre and rounded current limit
