@@ -42,12 +42,13 @@ const RESONANCE_GM_LIMIT_MHOS: f32 = 2.2e-3;
 const RESONANCE_GM_CURRENT_SCALE_AMPS: f32 = 164.979_53e-6;
 const SERVICE_NOMINAL_OSCILLATION_PANEL: f32 = 0.8;
 const FOUR_POLE_OSCILLATION_FEEDBACK: f32 = 4.0;
-const FEEDBACK_SOLVER_ITERATIONS: usize = 2;
+const FEEDBACK_SOLVER_ITERATIONS: usize = 3;
 
 // Audio entering, crossing and leaving the four cells is expressed in circuit
 // volts. The published 10-14 Vpp output population therefore bounds the
 // nonlinear cells directly, without a hidden normalized-unit conversion.
 const SPECIFIED_SIGNAL_FRACTION_OF_CLIP: f32 = 0.707_106_77;
+const CELL_SECOND_HARMONIC_SHARE: f32 = 1.0 / STAGE_COUNT as f32;
 
 #[derive(Clone, Copy, Debug)]
 struct FilterProfile {
@@ -170,7 +171,7 @@ impl Cem3320Filter {
         let thermal_noise = self.next_thermal_noise();
         let open_input = input + thermal_noise;
         let feedback_output = self.solve_feedback(open_input, coefficient, feedback, profile);
-        let mut signal = cell_output(open_input - feedback_output * feedback, profile);
+        let mut signal = open_input - feedback_output * feedback;
         for (index, stage) in self.stages.iter_mut().enumerate() {
             if index > 0 {
                 signal *= interstage_passband_gain();
@@ -210,7 +211,8 @@ impl Cem3320Filter {
     }
 
     fn predict_path(&self, input: f32, coefficient: f32, profile: FilterProfile) -> (f32, f32) {
-        let (mut signal, mut slope) = cell_output_with_slope(input, profile);
+        let mut signal = input;
+        let mut slope = 1.0;
         for (index, stage) in self.stages.into_iter().enumerate() {
             if index > 0 {
                 signal *= interstage_passband_gain();
@@ -334,7 +336,8 @@ fn cell_output_with_slope(value: f32, profile: FilterProfile) -> (f32, f32) {
     // the stated 0.1-0.3% passband measurement rather than to an arbitrary
     // normalized amplitude. The tiny DC term reflects operating-point shift.
     let reference_amplitude = ceiling * SPECIFIED_SIGNAL_FRACTION_OF_CLIP;
-    let even_coefficient = 2.0 * profile.passband_second_harmonic / reference_amplitude;
+    let even_coefficient =
+        2.0 * profile.passband_second_harmonic * CELL_SECOND_HARMONIC_SHARE / reference_amplitude;
     let even_harmonic = even_coefficient * symmetric * symmetric;
     let curved = symmetric + even_harmonic;
     let output = curved.clamp(-ceiling, ceiling);
@@ -385,6 +388,26 @@ mod tests {
         assert_eq!(POLE_CAPACITANCE_FARADS, 150.0e-12);
         assert!((equivalent_feedback_ohms() - 90_909.09).abs() < 0.01);
         assert!((0.999..=1.0).contains(&interstage_passband_gain()));
+    }
+
+    #[test]
+    fn predicted_signal_path_contains_exactly_four_nonlinear_cells() {
+        let filter = Cem3320Filter::default();
+        let profile = FILTER_PROFILES[filter.profile_index];
+        let input = output_ceiling(profile) * 0.9;
+        let (predicted, _) = filter.predict_path(input, 1.0, profile);
+
+        let mut four_cells = input;
+        for index in 0..STAGE_COUNT {
+            if index > 0 {
+                four_cells *= interstage_passband_gain();
+            }
+            four_cells = cell_output(four_cells, profile);
+        }
+        let five_cells = cell_output(four_cells * interstage_passband_gain(), profile);
+
+        assert!((predicted - four_cells).abs() < 1.0e-6);
+        assert!((predicted - five_cells).abs() > 1.0e-4);
     }
 
     #[test]
@@ -480,7 +503,7 @@ mod tests {
     }
 
     #[test]
-    fn published_strong_signal_distortion_is_second_harmonic_dominant() {
+    fn four_cell_passband_distortion_matches_the_published_filter_bound() {
         fn harmonic(profile: FilterProfile, harmonic: usize) -> f32 {
             const SAMPLE_COUNT: usize = 4_096;
             const CYCLES: usize = 17;
@@ -491,7 +514,13 @@ mod tests {
             for index in 0..SAMPLE_COUNT {
                 let phase = 2.0 * core::f32::consts::PI * CYCLES as f32 * index as f32
                     / SAMPLE_COUNT as f32;
-                let output = cell_output(libm::sinf(phase) * amplitude, profile);
+                let mut output = libm::sinf(phase) * amplitude;
+                for index in 0..STAGE_COUNT {
+                    if index > 0 {
+                        output *= interstage_passband_gain();
+                    }
+                    output = cell_output(output, profile);
+                }
                 sine += output * libm::sinf(phase * harmonic as f32);
                 cosine += output * libm::cosf(phase * harmonic as f32);
             }

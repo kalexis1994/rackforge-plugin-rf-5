@@ -12,8 +12,11 @@ procedure expects resonance to begin self-oscillating between panel positions
 ## Active candidate
 
 - Four topology-preserving trapezoidal-integrator one-pole cells are cascaded.
+  Each numerical stage corresponds to exactly one CEM3320 variable-gain cell,
+  pole capacitor and output buffer. The former extra input limiter has been
+  removed: the signal now crosses four nonlinear buffers rather than five.
   The fourth-cell resonance return is closed inside the current internal
-  sample with two bounded Newton steps and an analytic slope through every
+  sample with three bounded Newton steps and an analytic slope through every
   nonlinear cell. It no longer feeds back the previous digital state as though
   the analog path contained an extra sample delay.
 - SD431's four 150 pF polystyrene pole capacitors are now admitted explicitly.
@@ -50,17 +53,21 @@ procedure expects resonance to begin self-oscillating between panel positions
   warm-up motion at a 10 Hz control rate. `VintageSpread` expands its hard
   magnitude boundary from the data-sheet typical 0.5% to the 1.5% maximum;
   it no longer applies five permanent cutoff offsets.
-- Input and cell output limiting now use the profile's clipping span and a
-  bounded even-order term. The latter preserves the data sheet's statement
-  that passband distortion is predominantly second harmonic and remains in
-  its published 0.1-0.3% range at the reference strong-signal condition.
+- Every cell output buffer uses the profile's clipping span. The bounded
+  even-order term is distributed across the four cells so their complete
+  passband cascade, rather than each cell independently, remains in the data
+  sheet's published 0.1-0.3% predominantly second-harmonic range at the
+  reference strong-signal condition.
 - Invalid numerical state is rejected and reset rather than reaching the host.
 
 ## Bounded uncertainty
 
 The topology, populated pole network, exponential scale, electrical ranges and
 resonance current domain, direct U464 current input and white-noise distribution
-are source-backed. The five deterministic points inside those ranges are a
+are source-backed. Filter signals are deviations around the data sheet's
+nominal approximately 650 mV input summing node and 6.9 V buffer quiescent
+level; source DC is retained as displacement from that serviced operating
+point. The five deterministic points inside the published ranges are a
 validation population, not measurements of five chips from one instrument.
 The smooth Gm function is a replaceable fit through published graph/typical
 points rather than a transistor-level model. Filter input, cell state and
@@ -81,21 +88,23 @@ replaceable hypotheses because no admitted source publishes those trajectories.
   instead of rising from 966 Hz to 991 Hz with the former delayed return;
 - self-oscillation reproduces the 440/880 Hz service-calibration pair within
   1 Hz at both 48 and 192 kHz;
-- the nonlinear instantaneous-loop residual remains below 0.0002 internal
-  units across cutoff, resonance, drive and clipping stress cases;
+- the nonlinear instantaneous-loop residual remains below 0.0004 circuit
+  volts across cutoff, resonance, drive and clipping stress cases;
 - full resonance CV produces 50 uA through the populated 200 kohm resistor;
 - the Gm fit hits the published 100 uA point and has decreasing incremental
   slope;
 - four 150 pF cells and their 100k/91k/1M network reproduce the populated
   near-unity interstage gain;
+- the predicted and rendered paths contain exactly four nonlinear cells, with
+  no separate fifth input limiter;
 - the 100k feedback in parallel with the nominal 1M output impedance presents
   approximately 90.909 kohm to oscillator and noise injection currents;
 - all five profiles remain inside every admitted data-sheet bound;
 - all five cutoff curves reproduce the serviced 440/880 Hz calibration pair;
 - five minutes produces distinct warm-up offsets without exceeding the
   published 0.5%/1.5% limits, independently of host sample rate;
-- strong signals retain finite profile-specific clipping and even-order
-  asymmetry;
+- the complete four-cell passband retains finite profile-specific clipping
+  and the published 0.1-0.3% predominantly second-harmonic asymmetry;
 - Poly Mod reaches the filter at the internal audio rate.
 
 Primary evidence: TM1000D.2 sections 2-6 and 4-10, voice schematic SD431 and
