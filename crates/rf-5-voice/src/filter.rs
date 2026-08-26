@@ -29,17 +29,16 @@ const INTERSTAGE_COUPLING_OHMS: f32 = 91_000.0;
 
 // Filter Resonance is a 0-10 V common S/H destination and reaches the CEM3320
 // current input through R4414's 200 kohm. The data-sheet graph is represented
-// by a saturating exponential fixed by its 1 mmho-at-100 uA typical point and
-// 2.2 mmho maximum-Gm line. This preserves the published modified-linear bend
-// without inventing a near-linear panel law.
+// by a saturating rational law fixed by its 1 mmho-at-100 uA typical point and
+// 2.2 mmho maximum-Gm line. Unlike the former exponential, that law also stays
+// within the read uncertainty of Figure 6's modified-linear trace.
 const FILTER_RESONANCE_CV_SPAN_VOLTS: f32 = 10.0;
 const RESONANCE_CONTROL_RESISTOR_OHMS: f32 = 200_000.0;
-#[cfg(test)]
 const RESONANCE_GM_REFERENCE_AMPS: f32 = 100.0e-6;
-#[cfg(test)]
 const RESONANCE_GM_AT_REFERENCE_MHOS: f32 = 1.0e-3;
 const RESONANCE_GM_LIMIT_MHOS: f32 = 2.2e-3;
-const RESONANCE_GM_CURRENT_SCALE_AMPS: f32 = 164.979_53e-6;
+const RESONANCE_GM_HALF_SATURATION_AMPS: f32 =
+    RESONANCE_GM_REFERENCE_AMPS * (RESONANCE_GM_LIMIT_MHOS / RESONANCE_GM_AT_REFERENCE_MHOS - 1.0);
 #[cfg(test)]
 const FOUR_POLE_OSCILLATION_FEEDBACK: f32 = 4.0;
 const FEEDBACK_SOLVER_ITERATIONS: usize = 3;
@@ -93,7 +92,7 @@ struct FilterProfile {
 const FILTER_PROFILES: [FilterProfile; 5] = [
     FilterProfile {
         pole_sensitivity_mv_per_decade: 58.0,
-        resonance_gm_ratio: 0.91,
+        resonance_gm_ratio: 0.82,
         resonance_input_ohms: 3_600.0,
         output_buffer_swing_volts: 12.2,
         output_clip_vpp: 11.0,
@@ -101,7 +100,7 @@ const FILTER_PROFILES: [FilterProfile; 5] = [
     },
     FilterProfile {
         pole_sensitivity_mv_per_decade: 59.1,
-        resonance_gm_ratio: 1.06,
+        resonance_gm_ratio: 0.95,
         resonance_input_ohms: 2_700.0,
         output_buffer_swing_volts: 13.1,
         output_clip_vpp: 12.6,
@@ -109,7 +108,7 @@ const FILTER_PROFILES: [FilterProfile; 5] = [
     },
     FilterProfile {
         pole_sensitivity_mv_per_decade: 60.0,
-        resonance_gm_ratio: 1.0,
+        resonance_gm_ratio: 0.87,
         resonance_input_ohms: 3_300.0,
         output_buffer_swing_volts: 12.8,
         output_clip_vpp: 12.0,
@@ -117,7 +116,7 @@ const FILTER_PROFILES: [FilterProfile; 5] = [
     },
     FilterProfile {
         pole_sensitivity_mv_per_decade: 61.2,
-        resonance_gm_ratio: 0.96,
+        resonance_gm_ratio: 0.84,
         resonance_input_ohms: 3_600.0,
         output_buffer_swing_volts: 13.4,
         output_clip_vpp: 13.4,
@@ -125,7 +124,7 @@ const FILTER_PROFILES: [FilterProfile; 5] = [
     },
     FilterProfile {
         pole_sensitivity_mv_per_decade: 62.2,
-        resonance_gm_ratio: 1.12,
+        resonance_gm_ratio: 0.96,
         resonance_input_ohms: 2_700.0,
         output_buffer_swing_volts: 12.5,
         output_clip_vpp: 10.5,
@@ -398,8 +397,8 @@ fn nominal_resonance_gm(value: f32) -> f32 {
 }
 
 fn resonance_gm_from_current(current: f32) -> f32 {
-    RESONANCE_GM_LIMIT_MHOS
-        * (1.0 - libm::expf(-current.max(0.0) / RESONANCE_GM_CURRENT_SCALE_AMPS))
+    let current = current.max(0.0);
+    RESONANCE_GM_LIMIT_MHOS * current / (current + RESONANCE_GM_HALF_SATURATION_AMPS)
 }
 
 fn resonance_control_current_amps(value: f32) -> f32 {
@@ -648,11 +647,36 @@ mod tests {
     fn modified_linear_resonance_cell_matches_published_anchor_and_flattens() {
         let gm_at_reference = resonance_gm_from_current(RESONANCE_GM_REFERENCE_AMPS);
         assert!((gm_at_reference - RESONANCE_GM_AT_REFERENCE_MHOS).abs() < 1.0e-8);
+        assert!((RESONANCE_GM_HALF_SATURATION_AMPS - 120.0e-6).abs() < 1.0e-10);
+        assert!(
+            (resonance_gm_from_current(RESONANCE_GM_HALF_SATURATION_AMPS)
+                - RESONANCE_GM_LIMIT_MHOS * 0.5)
+                .abs()
+                < 1.0e-8
+        );
 
         let first_25_ua = nominal_resonance_gm(0.5) - nominal_resonance_gm(0.0);
         let second_25_ua = nominal_resonance_gm(1.0) - nominal_resonance_gm(0.5);
         assert!(second_25_ua < first_25_ua);
         assert!(nominal_resonance_gm(1.0) < RESONANCE_GM_LIMIT_MHOS);
+    }
+
+    #[test]
+    fn rational_resonance_law_tracks_digitized_figure_six_landmarks() {
+        // The thick scanned trace was normalized to the tabulated 1 mmho at
+        // 100 uA anchor. A six-percent band is wider than the pixel/read error
+        // at all three landmarks and avoids treating the graph as a table.
+        for (current_amps, digitized_mhos) in [
+            (50.0e-6, 625.0e-6),
+            (150.0e-6, 1.210e-3),
+            (300.0e-6, 1.540e-3),
+        ] {
+            let modeled = resonance_gm_from_current(current_amps);
+            assert!(
+                ((modeled - digitized_mhos) / digitized_mhos).abs() <= 0.06,
+                "current={current_amps}, modeled={modeled}, digitized={digitized_mhos}"
+            );
+        }
     }
 
     #[test]

@@ -38,9 +38,12 @@ procedure expects resonance to begin self-oscillating between panel positions
   domain instead of the former global 0-5 V approximation. R4414 converts the
   resonance span to 0-50 uA at the CEM3320 control-current input.
 - Resonance now follows a strongly bending modified-linear Gm curve. A
-  saturating fit is fixed by the data sheet's typical 1 mmho at 100 uA point
-  and its 2.2 mmho maximum-Gm line. The former panel-8-normalized feedback
-  constant has been removed.
+  saturating rational law is fixed by the data sheet's typical 1 mmho at
+  100 uA point and its 2.2 mmho maximum-Gm line, placing half-saturation at
+  120 uA without a fitted parameter. It also follows normalized readings of
+  Figure 6 at 50, 150 and 300 uA within a deliberately wider six-percent
+  scan/digitization band. The former exponential and panel-8-normalized
+  feedback constant have both been removed.
 - The complete populated resonance return now runs inside the delay-free
   solver: OUT D crosses C4164's 2.2 uF/68 kohm high-pass, U474 applies its
   1+240k/100k gain, R4416 feeds Q IN through 51 kohm, and the pin sees both its
@@ -83,10 +86,12 @@ nominal approximately 650 mV input summing node and 6.9 V buffer quiescent
 level; source DC is retained as displacement from that serviced operating
 point. The five deterministic points inside the published ranges are a
 validation population, not measurements of five chips from one instrument.
-The smooth Gm function is a replaceable fit through published graph/typical
-points rather than a transistor-level model. Filter input, cell state and
-output now use circuit volts directly; the exact populated Gm curve remains a
-calibration hypothesis. U474's voltage bounds and 10 V linearity are
+The smooth Gm function is a replaceable rational reconstruction through the
+published graph and typical point rather than a transistor-level model. The
+five Gm/Q-input pairs are deterministic combinations inside published bounds
+that also satisfy the service oscillation window; they are not measurements of
+five selected chips. Filter input, cell state and output now use circuit volts
+directly. U474's voltage bounds and 10 V linearity are
 source-backed, while the differentiable transition between them is an explicit
 late-knee hypothesis rather than a measured overload trace.
 Warm-up magnitude is source-bounded, while its
@@ -120,6 +125,8 @@ replaceable hypotheses because no admitted source publishes those trajectories.
   positions 6.5 and 9.5 without a normalized feedback constant;
 - the Gm fit hits the published 100 uA point and has decreasing incremental
   slope;
+- the no-fit-parameter rational Gm law places half-saturation at 120 uA and
+  remains within six percent of three normalized Figure 6 landmarks;
 - four 150 pF cells and their 100k/91k/1M network reproduce the populated
   near-unity interstage gain;
 - the predicted and rendered paths contain exactly four nonlinear cells, with
