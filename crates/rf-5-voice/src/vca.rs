@@ -33,16 +33,22 @@ const FINAL_VCA_NOMINAL_LIMIT_UNITS: f32 = DATASHEET_LINEARIZED_LIMIT_VOLTS
 // sample-rate-dependent smoothing approximation.
 const ENVELOPE_NOMINAL_PEAK_VOLTS: f32 = 5.0;
 const ENVELOPE_MAXIMUM_PEAK_VOLTS: f32 = 5.3;
+// SD332's DAC reaches approximately 10.67 V and the operating firmware limits
+// ordinary full-scale CVs to 10 V. On SD333, Q301/Q303/Q304 convert the three
+// amount S/H voltages into collector current before the voice cards. Their
+// populated emitter resistors, not the later collector-compliance resistors,
+// set the CA3280 IABC curves and introduce the common 2N4250 silicon knee.
+const PATCH_AMOUNT_CV_SPAN_VOLTS: f32 = 10.0;
+const FILTER_ENVELOPE_AMOUNT_CONTROL_RESISTANCE_OHMS: f32 = 5_100.0;
+const POLY_MOD_OSCILLATOR_B_CONTROL_RESISTANCE_OHMS: f32 = 5_600.0;
+const POLY_MOD_FILTER_ENVELOPE_CONTROL_RESISTANCE_OHMS: f32 = 3_000.0;
 // The direct filter-envelope half of SD431 U422 is reconstructed as a current
 // path into U433 rather than as a normalized VCA followed by an arbitrary
-// octave range. The still-provisional common S/H boundary supplies 0-5 V to
-// R449. R451 programs the linearizing diodes across the nominal +/-15 V
-// supply, and the serviced balance network gives the inverting input its AC
-// return through R450 and R453 plus the 100k trimmer's centre Thevenin value.
-// Intersil gives RD = 52 / ID(mA) * 1.34 for the diode network. U433's 100k
-// common-CV resistor defines 10 uA as one octave of filter control current.
-const FILTER_ENVELOPE_AMOUNT_CV_SPAN_VOLTS: f32 = 5.0;
-const FILTER_ENVELOPE_IABC_RESISTANCE_OHMS: f32 = 4_750.0;
+// octave range. R451 programs the linearizing diodes across the nominal
+// +/-15 V supply, and the serviced balance network gives the inverting input
+// its AC return through R450 and R453 plus the 100k trimmer's centre Thevenin
+// value. Intersil gives RD = 52 / ID(mA) * 1.34 for the diode network. U433's
+// 100k common-CV resistor defines 10 uA as one octave of filter control current.
 const FILTER_ENVELOPE_DIODE_RESISTANCE_OHMS: f32 = 121_000.0;
 const FILTER_ENVELOPE_SOURCE_RESISTANCE_OHMS: f32 = 475_000.0;
 const FILTER_ENVELOPE_BALANCE_SERIES_RESISTANCE_OHMS: f32 = 475_000.0;
@@ -338,7 +344,8 @@ pub fn wheel_mod_source(lfo: f32, noise: f32, source_mix: f32) -> f32 {
 ///
 /// The result is in octaves because it is expressed relative to the 10 uA
 /// that a one-volt common filter CV sends through U433's populated 100 kohm
-/// input. Only the 0-5 V amount-cell span remains a replaceable candidate.
+/// input. The amount current follows SD333 Q301 and its populated 5.1 kohm
+/// emitter resistor.
 pub fn filter_envelope_cutoff_octaves(envelope: f32, amount: f32, voice_index: usize) -> f32 {
     if !envelope.is_finite() || envelope <= 0.0 || !amount.is_finite() || amount <= 0.0 {
         return 0.0;
@@ -346,8 +353,8 @@ pub fn filter_envelope_cutoff_octaves(envelope: f32, amount: f32, voice_index: u
 
     let profile =
         ENVELOPE_AMOUNT_PROFILES[voice_index % ENVELOPE_AMOUNT_PROFILES.len()].direct_filter;
-    let iabc_amps = amount.clamp(0.0, 1.0) * FILTER_ENVELOPE_AMOUNT_CV_SPAN_VOLTS
-        / FILTER_ENVELOPE_IABC_RESISTANCE_OHMS;
+    let iabc_amps =
+        patch_amount_control_current_amps(amount, FILTER_ENVELOPE_AMOUNT_CONTROL_RESISTANCE_OHMS);
     let diode_current_amps =
         FILTER_ENVELOPE_SUPPLY_SPAN_VOLTS / FILTER_ENVELOPE_DIODE_RESISTANCE_OHMS;
     let diode_dynamic_resistance_ohms = FILTER_ENVELOPE_DIODE_DYNAMIC_OHM_AMPS / diode_current_amps;
@@ -375,7 +382,10 @@ pub fn filter_envelope_cutoff_octaves(envelope: f32, amount: f32, voice_index: u
 pub fn poly_mod_filter_envelope(input: f32, control: f32, voice_index: usize) -> f32 {
     ota_transfer(
         input,
-        control,
+        patch_amount_control_current_ratio(
+            control,
+            POLY_MOD_FILTER_ENVELOPE_CONTROL_RESISTANCE_OHMS,
+        ),
         LINEARIZED_INPUT_DRIVE,
         ENVELOPE_AMOUNT_PROFILES[voice_index % ENVELOPE_AMOUNT_PROFILES.len()].poly_mod,
     )
@@ -385,7 +395,7 @@ pub fn poly_mod_filter_envelope(input: f32, control: f32, voice_index: usize) ->
 pub fn poly_mod_oscillator_b(input: f32, control: f32, voice_index: usize) -> f32 {
     ota_transfer(
         input,
-        control,
+        patch_amount_control_current_ratio(control, POLY_MOD_OSCILLATOR_B_CONTROL_RESISTANCE_OHMS),
         UNLINEARIZED_INPUT_DRIVE,
         POLY_MOD_OSCILLATOR_B_PROFILES[voice_index % POLY_MOD_OSCILLATOR_B_PROFILES.len()],
     )
@@ -547,6 +557,21 @@ fn grounded_base_2n4250_collector_current_amps(
     normalized_current * Q410_THERMAL_VOLTAGE_VOLTS / series_resistance_ohms
 }
 
+fn patch_amount_control_current_amps(control: f32, emitter_resistance_ohms: f32) -> f32 {
+    if !control.is_finite() || control <= 0.0 {
+        return 0.0;
+    }
+    grounded_base_2n4250_collector_current_amps(
+        control.clamp(0.0, 1.0) * PATCH_AMOUNT_CV_SPAN_VOLTS,
+        emitter_resistance_ohms,
+    )
+}
+
+fn patch_amount_control_current_ratio(control: f32, emitter_resistance_ohms: f32) -> f32 {
+    patch_amount_control_current_amps(control, emitter_resistance_ohms)
+        / patch_amount_control_current_amps(1.0, emitter_resistance_ohms)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -594,8 +619,37 @@ mod tests {
             let half = filter_envelope_cutoff_octaves(1.0, 0.5, voice);
             let full = filter_envelope_cutoff_octaves(1.0, 1.0, voice);
             assert!(quarter > 0.0 && quarter < half && half < full);
-            assert!((4.2..=4.9).contains(&full));
+            assert!((7.4..=8.6).contains(&full));
             assert_eq!(filter_envelope_cutoff_octaves(0.0, 1.0, voice), 0.0);
+        }
+    }
+
+    #[test]
+    fn q301_q303_and_q304_set_the_three_patch_amount_currents() {
+        let direct =
+            patch_amount_control_current_amps(1.0, FILTER_ENVELOPE_AMOUNT_CONTROL_RESISTANCE_OHMS);
+        let oscillator_b =
+            patch_amount_control_current_amps(1.0, POLY_MOD_OSCILLATOR_B_CONTROL_RESISTANCE_OHMS);
+        let poly_envelope = patch_amount_control_current_amps(
+            1.0,
+            POLY_MOD_FILTER_ENVELOPE_CONTROL_RESISTANCE_OHMS,
+        );
+        assert!((1.7e-3..=1.9e-3).contains(&direct));
+        assert!((1.55e-3..=1.75e-3).contains(&oscillator_b));
+        assert!((3.0e-3..=3.2e-3).contains(&poly_envelope));
+        assert!(poly_envelope > direct && direct > oscillator_b);
+
+        for resistance in [
+            FILTER_ENVELOPE_AMOUNT_CONTROL_RESISTANCE_OHMS,
+            POLY_MOD_OSCILLATOR_B_CONTROL_RESISTANCE_OHMS,
+            POLY_MOD_FILTER_ENVELOPE_CONTROL_RESISTANCE_OHMS,
+        ] {
+            let quarter = patch_amount_control_current_ratio(0.25, resistance);
+            let half = patch_amount_control_current_ratio(0.5, resistance);
+            let full = patch_amount_control_current_ratio(1.0, resistance);
+            assert!(quarter > 0.0 && quarter < half && half < full);
+            assert!(half < 0.5);
+            assert!((full - 1.0).abs() < f32::EPSILON);
         }
     }
 

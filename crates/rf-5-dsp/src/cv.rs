@@ -17,6 +17,7 @@ use rf_5_voice::{
 pub(crate) const GLIDE_CV_SPAN_VOLTS: f32 = 5.0;
 const DEFAULT_COMMON_CV_SPAN_VOLTS: f32 = 5.0;
 const FILTER_CONTROL_CV_SPAN_VOLTS: f32 = 10.0;
+const PATCH_AMOUNT_CV_SPAN_VOLTS: f32 = 10.0;
 const SEMITONES_PER_CONTROL_VOLT: f32 = 12.0;
 
 #[derive(Clone, Copy, Debug)]
@@ -251,6 +252,12 @@ fn common_cv_span_volts(destination: ControlVoltageDestination) -> f32 {
         ControlVoltageDestination::FilterCutoff | ControlVoltageDestination::FilterResonance => {
             FILTER_CONTROL_CV_SPAN_VOLTS
         }
+        // SD332 reaches approximately 10.67 V and V8.1 normally caps patch
+        // CVs at 10 V. SD333 sends these three held voltages through Q301,
+        // Q303 and Q304 before their collector currents reach the voice cards.
+        ControlVoltageDestination::FilterEnvelopeAmount
+        | ControlVoltageDestination::PolyModOscillatorBAmount
+        | ControlVoltageDestination::PolyModFilterEnvelopeAmount => PATCH_AMOUNT_CV_SPAN_VOLTS,
         _ => DEFAULT_COMMON_CV_SPAN_VOLTS,
     }
 }
@@ -332,6 +339,9 @@ mod tests {
         let mut settings = Settings::default();
         assert!(settings.set(Parameter::FilterCutoff as u32, 1.0));
         assert!(settings.set(Parameter::FilterResonance as u32, 1.0));
+        assert!(settings.set(Parameter::FilterEnvelopeAmount as u32, 1.0));
+        assert!(settings.set(Parameter::PolyModOscillatorBAmount as u32, 1.0));
+        assert!(settings.set(Parameter::PolyModFilterEnvelopeAmount as u32, 1.0));
         assert!(settings.set(Parameter::Glide as u32, 1.0));
         let targets = CvTargets::from_state(
             settings,
@@ -348,6 +358,16 @@ mod tests {
             targets.get(ControlVoltageDestination::FilterResonance as usize),
             FILTER_CONTROL_CV_SPAN_VOLTS
         );
+        for destination in [
+            ControlVoltageDestination::FilterEnvelopeAmount,
+            ControlVoltageDestination::PolyModOscillatorBAmount,
+            ControlVoltageDestination::PolyModFilterEnvelopeAmount,
+        ] {
+            assert_eq!(
+                targets.get(destination as usize),
+                PATCH_AMOUNT_CV_SPAN_VOLTS
+            );
+        }
         assert_eq!(
             targets.get(ControlVoltageDestination::Glide as usize),
             GLIDE_CV_SPAN_VOLTS

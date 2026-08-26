@@ -46,10 +46,12 @@ most CVs to 10 V.
 The active circuit boundary no longer forces one voltage span onto every
 common destination. Filter Cutoff is fixed by service trim 4-14 at 10 V for
 panel maximum; Filter Resonance shares that DAC domain and reaches its
-populated 200 kohm current-input resistor. Glide retains its separately
-admitted 0-5 V control span. Other destinations remain isolated behind the
-existing candidate mapping until an equally specific electrical anchor is
-available.
+populated 200 kohm current-input resistor. The direct filter-envelope amount
+and both Poly Mod amounts also use the ordinary 0-10 V DAC span before SD333
+Q301/Q303/Q304 convert them to current through populated 5.1k/5.6k/3k emitter
+resistors. Glide retains its separately admitted 0-5 V control span. Other
+destinations remain isolated behind the existing candidate mapping until an
+equally specific electrical anchor is available.
 
 CV distribution is sequential. The DAC services 38 connected sample-and-hold
 destinations: 23 common/patch destinations on the computer board and 15

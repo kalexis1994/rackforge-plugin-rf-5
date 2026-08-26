@@ -21,8 +21,13 @@ waveforms contribute to the source bus. Hard sync is a separate route.
 - The two physical halves of U422 are modeled together on each voice: one
   controls direct filter-envelope amount and the other controls the Poly Mod
   envelope source. The direct half now produces U433 summing current from the
-  populated 4.75k IABC, 121k diode-bias, 475k/47.5k input and 100k common-CV
-  reference networks. The latter is explicitly inverted at the summing node.
+  populated Q301/5.1k IABC, 121k diode-bias, 475k/47.5k input and 100k
+  common-CV reference networks. The latter is explicitly inverted at the
+  summing node.
+- SD333 Q304 turns the Poly Mod envelope amount's 0-10 V S/H output into its
+  physical IABC curve through 3 kohm. Q303 independently applies 5.6 kohm to
+  oscillator B. Both normalized source endpoints are therefore reached only
+  after their distinct 2N4250 knees rather than by linear host multipliers.
 - Oscillator B is evaluated first during each 4x internal substep. Its selected
   waveform sum passes through one profiled unlinearized CA3280 amount VCA per
   voice before the audio mixer level. Saw and pulse retain their board-level
@@ -57,12 +62,12 @@ voltage measurement can replace it and recalibrate all three destinations
 together without changing their accepted circuit ratios.
 
 The direct filter-envelope path no longer owns an isolated octave-depth
-constant. At the provisional 0-5 V common S/H span, the populated network and
-CA3280 data-sheet equations produce approximately 4.56 octaves at a nominal
-5 V CEM3310 peak. That S/H span remains the sole replaceable electrical anchor;
-a populated-unit voltage measurement will rescale the IABC current without
-changing the accepted circuit. Both envelopes use the CEM3310 true-RC
-candidate documented in `ENVELOPE_MODEL.md`; exact panel taper remains
+constant. The admitted 0-10 V DAC/S&H span crosses SD333 Q301 and 5.1 kohm,
+then the populated U422/U433 network and CA3280 data-sheet equations produce
+approximately eight octaves at a nominal 5 V CEM3310 peak. A populated-unit
+measurement can refine transistor temperature and current without changing
+the accepted circuit. Both envelopes use the CEM3310 true-RC candidate
+documented in `ENVELOPE_MODEL.md`; exact mechanical panel taper remains
 unmeasured.
 
 ## Acceptance tests
@@ -74,6 +79,8 @@ unmeasured.
   than a free maximum-octaves constant;
 - Poly Mod amount rises monotonically and its two CA3280 modes retain their
   distinct strong-signal ranges;
+- Q303 and Q304 retain their distinct 5.6k and 3k current laws, including the
+  shared silicon-junction knee;
 - frequency and filter destinations produce distinct renders;
 - all three destination depths retain the populated SD431 resistor ratios and
   share one replaceable PMOD-bus voltage anchor;

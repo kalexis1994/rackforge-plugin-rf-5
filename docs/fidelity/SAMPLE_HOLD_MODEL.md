@@ -90,12 +90,14 @@ below the documented 0.5 mV service ceiling. Accumulation uses double
 precision so sub-float increments are not silently lost at high held voltages.
 
 These rates and polarities are a conservative component population for
-testing, not measurements from an original unit. Common normalized controls
-provisionally use a 5 V span. `ControlVoltageDestination` remains the stable
-38-cell vocabulary, while `CONTROL_VOLTAGE_STROBE_ORDER` separately records the
-five physical eight-address groups recovered from V8.1. This separation keeps
-the two unconnected addresses out of the audio state without erasing their
-timing.
+testing, not measurements from an original unit. Unanchored common normalized
+controls provisionally use a 5 V span. Filter Cutoff, Filter Resonance and the
+three amount cells use the admitted 10 V operating limit; the amount cells
+subsequently cross their distinct SD333 grounded-base 2N4250 converters.
+`ControlVoltageDestination` remains the stable 38-cell vocabulary, while
+`CONTROL_VOLTAGE_STROBE_ORDER` separately records the five physical
+eight-address groups recovered from V8.1. This separation keeps the two
+unconnected addresses out of the audio state without erasing their timing.
 
 The direct LF356-to-`Vdac` path, 0.01 uF capacitor, 64-T-state firmware dwell,
 gate/CV ordering and Unison keyboard-cell semantics are accepted for the Rev 3

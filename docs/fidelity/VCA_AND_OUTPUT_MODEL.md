@@ -91,6 +91,11 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
 - Five paired envelope-amount profiles, five oscillator-B Poly Mod profiles
   and the common dual Wheel Mod source profile preserve the modulation-side
   CA3280 boundaries and documented diode modes.
+- The three stored amount controls reach their per-voice CA3280s through the
+  separate grounded-base SD333 converters: Q301/5.1k for direct filter
+  envelope, Q303/5.6k for oscillator-B Poly Mod and Q304/3k for envelope Poly
+  Mod. Their 0-10 V held controls now follow the same source-backed 2N4250
+  junction equation as the audio VCAs instead of linear normalized gains.
 - The NE5534 and its 1 kohm shunt/560 ohm output-isolation network are treated
   as linear inside their headroom. The 560 ohm resistor is not modeled as a
   fixed divider because the external load is unspecified. A smooth host
