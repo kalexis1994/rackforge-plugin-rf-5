@@ -83,6 +83,35 @@ const UNLINEARIZED_INPUT_RESISTANCE_OHMS: f32 = 100_000.0;
 const MIXER_REFERENCE_SOURCE_RESISTANCE_OHMS: f32 = 150_000.0;
 const MIXER_INPUT_CONDUCTANCE_RATIO: f32 =
     MIXER_REFERENCE_SOURCE_RESISTANCE_OHMS / UNLINEARIZED_INPUT_RESISTANCE_OHMS;
+
+// SD334's two halves of U378 sum their output currents into R3113. The source
+// mix S/H spans 0-10 V. Q307 converts the noise side through R3116, while Q309
+// receives the complementary voltage against the 10 V Thevenin source formed
+// by R3128/R3130. Their 3.3 kohm collector resistors preserve compliance but
+// do not set the grounded-base emitter current.
+const WHEEL_MOD_CONTROL_RANGE_VOLTS: f32 = 10.0;
+const WHEEL_MOD_NOISE_CONTROL_RESISTANCE_OHMS: f32 = 8_200.0;
+const WHEEL_MOD_LFO_DIVIDER_HIGH_OHMS: f32 = 10_000.0;
+const WHEEL_MOD_LFO_DIVIDER_LOW_OHMS: f32 = 20_000.0;
+const WHEEL_MOD_LFO_CONTROL_RESISTANCE_OHMS: f32 =
+    1.0 / (1.0 / WHEEL_MOD_LFO_DIVIDER_HIGH_OHMS + 1.0 / WHEEL_MOD_LFO_DIVIDER_LOW_OHMS);
+
+// U380's selected LFO sum is represented relative to a nominal 10 Vpp saw.
+// U374's pink-noise value already contains its 100k/47k closed-loop gain; the
+// MM5837 data sheet guarantees each output level within 1.5 V of a 15 V supply
+// rail, establishing at least 12 Vpp, or 6 V peak about the centred signal.
+const WHEEL_MOD_LFO_SOURCE_VOLTS_PER_UNIT: f32 = 5.0;
+const WHEEL_MOD_NOISE_SOURCE_VOLTS_PER_UNIT: f32 = 6.0;
+const WHEEL_MOD_LFO_INPUT_RESISTANCE_OHMS: f32 = 160_000.0;
+const WHEEL_MOD_NOISE_INPUT_RESISTANCE_OHMS: f32 = 20_000.0;
+const WHEEL_MOD_INPUT_SHUNT_OHMS: f32 = 330.0;
+const WHEEL_MOD_OUTPUT_LOAD_OHMS: f32 = 10_000.0;
+
+// CA3280 data-sheet typicals: 16 mS at 1 mA IABC and 410 uA peak output at
+// 500 uA IABC. Their ratio supplies both the small-signal slope and the
+// unlinearized current limit without a host-level saturation constant.
+const CA3280_TRANSCONDUCTANCE_SIEMENS_PER_AMP: f32 = 16.0;
+const CA3280_PEAK_OUTPUT_CURRENT_RATIO: f32 = 410.0 / 500.0;
 #[cfg(test)]
 const DATASHEET_MINIMUM_PEAK_CURRENT_RATIO: f32 = 0.70;
 #[cfg(test)]
@@ -255,22 +284,34 @@ pub fn common_noise(input: f32, control: f32) -> f32 {
     )
 }
 
-/// The common dual-OTA crossfade feeding the physical modulation wheel.
+/// The common dual-OTA current mixer feeding the physical modulation wheel.
+///
+/// The returned value is the reconstructed voltage across SD334 R3113, not a
+/// normalized host bus. Q307/Q309 create the complementary IABC currents and
+/// the two populated input dividers set each unlinearized CA3280 drive.
 pub fn wheel_mod_source(lfo: f32, noise: f32, source_mix: f32) -> f32 {
-    if !source_mix.is_finite() {
+    if !lfo.is_finite() || !noise.is_finite() || !source_mix.is_finite() {
         return 0.0;
     }
-    let noise_control = source_mix.clamp(0.0, 1.0);
-    let lfo_control = 1.0 - noise_control;
-    ota_transfer(
-        lfo,
-        lfo_control,
-        UNLINEARIZED_INPUT_DRIVE,
+    let source_mix_cv = source_mix.clamp(0.0, 1.0) * WHEEL_MOD_CONTROL_RANGE_VOLTS;
+    let lfo_iabc = grounded_base_2n4250_collector_current_amps(
+        WHEEL_MOD_CONTROL_RANGE_VOLTS - source_mix_cv,
+        WHEEL_MOD_LFO_CONTROL_RESISTANCE_OHMS,
+    );
+    let noise_iabc = grounded_base_2n4250_collector_current_amps(
+        source_mix_cv,
+        WHEEL_MOD_NOISE_CONTROL_RESISTANCE_OHMS,
+    );
+
+    unlinearized_ota_loaded_voltage(
+        lfo * WHEEL_MOD_LFO_SOURCE_VOLTS_PER_UNIT,
+        WHEEL_MOD_LFO_INPUT_RESISTANCE_OHMS,
+        lfo_iabc,
         WHEEL_MOD_LFO_PROFILE,
-    ) + ota_transfer(
-        noise,
-        noise_control,
-        UNLINEARIZED_INPUT_DRIVE,
+    ) + unlinearized_ota_loaded_voltage(
+        noise * WHEEL_MOD_NOISE_SOURCE_VOLTS_PER_UNIT,
+        WHEEL_MOD_NOISE_INPUT_RESISTANCE_OHMS,
+        noise_iabc,
         WHEEL_MOD_NOISE_PROFILE,
     )
 }
@@ -369,6 +410,33 @@ fn ota_transfer_limited(
     let drive = nominal_drive * profile.input_drive_ratio;
     let current = libm::tanhf(input * drive) / drive;
     current * control.clamp(0.0, maximum_control) * profile.transconductance_ratio
+}
+
+fn unlinearized_ota_loaded_voltage(
+    source_volts: f32,
+    source_resistance_ohms: f32,
+    iabc_amps: f32,
+    profile: OtaHalfProfile,
+) -> f32 {
+    if !source_volts.is_finite()
+        || !source_resistance_ohms.is_finite()
+        || source_resistance_ohms <= 0.0
+        || !iabc_amps.is_finite()
+        || iabc_amps <= 0.0
+    {
+        return 0.0;
+    }
+
+    let differential_input_volts = source_volts * WHEEL_MOD_INPUT_SHUNT_OHMS
+        / (source_resistance_ohms + WHEEL_MOD_INPUT_SHUNT_OHMS)
+        * profile.input_drive_ratio;
+    let peak_output_current_amps = iabc_amps * CA3280_PEAK_OUTPUT_CURRENT_RATIO;
+    let small_signal_output_current_amps =
+        iabc_amps * CA3280_TRANSCONDUCTANCE_SIEMENS_PER_AMP * differential_input_volts;
+    let output_current_amps = peak_output_current_amps
+        * libm::tanhf(small_signal_output_current_amps / peak_output_current_amps)
+        * profile.transconductance_ratio;
+    output_current_amps * WHEEL_MOD_OUTPUT_LOAD_OHMS
 }
 
 fn final_voice_transfer(input: f32, control: f32, profile: OtaHalfProfile) -> f32 {
@@ -771,17 +839,43 @@ mod tests {
     }
 
     #[test]
-    fn wheel_mod_dual_ota_is_complementary_and_balanced() {
+    fn wheel_mod_dual_ota_uses_complementary_physical_control_currents() {
         let lfo_only = wheel_mod_source(0.75, -8.0, 0.0);
         assert_eq!(lfo_only, wheel_mod_source(0.75, 8.0, 0.0));
         let noise_only = wheel_mod_source(-8.0, 0.75, 1.0);
         assert_eq!(noise_only, wheel_mod_source(8.0, 0.75, 1.0));
-        let middle = wheel_mod_source(0.75, 0.75, 0.5);
-        assert!(middle > lfo_only.min(noise_only));
-        assert!(middle < lfo_only.max(noise_only) * 1.02);
+        assert!(lfo_only > 0.0);
+        assert!(noise_only > 0.0);
+
+        let low_mix_lfo = wheel_mod_source(0.75, 0.0, 0.25);
+        let high_mix_lfo = wheel_mod_source(0.75, 0.0, 0.75);
+        assert!(low_mix_lfo > high_mix_lfo);
+        let low_mix_noise = wheel_mod_source(0.0, 0.75, 0.25);
+        let high_mix_noise = wheel_mod_source(0.0, 0.75, 0.75);
+        assert!(low_mix_noise < high_mix_noise);
+
         for mix in [0.0, 0.25, 0.5, 0.75, 1.0] {
             assert_eq!(wheel_mod_source(0.0, 0.0, mix), 0.0);
         }
+    }
+
+    #[test]
+    fn wheel_mod_voltage_is_set_by_u378_and_r3113() {
+        let lfo_volts = wheel_mod_source(1.0, 0.0, 0.0);
+        assert!((2.0..2.5).contains(&lfo_volts));
+
+        let maximum_lfo_iabc = grounded_base_2n4250_collector_current_amps(
+            WHEEL_MOD_CONTROL_RANGE_VOLTS,
+            WHEEL_MOD_LFO_CONTROL_RESISTANCE_OHMS,
+        );
+        let maximum_current_bound = maximum_lfo_iabc
+            * CA3280_PEAK_OUTPUT_CURRENT_RATIO
+            * WHEEL_MOD_LFO_PROFILE.transconductance_ratio;
+        assert!(lfo_volts.abs() < maximum_current_bound * WHEEL_MOD_OUTPUT_LOAD_OHMS);
+
+        let positive = wheel_mod_source(0.43, 0.0, 0.0);
+        let negative = wheel_mod_source(-0.43, 0.0, 0.0);
+        assert!((positive + negative).abs() < 1.0e-6);
     }
 
     #[test]

@@ -1,9 +1,9 @@
 //! SD334 Wheel Mod destination network.
 //!
 //! The physical wheel attenuates one shared W-MOD source voltage before five
-//! switches route it through three populated resistor networks. One remaining
-//! calibration anchor converts RF-5's normalized source bus to circuit volts;
-//! every destination ratio after that boundary is derived from the schematic.
+//! switches route it through three populated resistor networks. U378 and its
+//! 10 kohm load now deliver circuit volts directly, so this module contains no
+//! normalized-source calibration multiplier.
 
 const OCTAVE_SEMITONES: f32 = 12.0;
 
@@ -26,12 +26,6 @@ const CEM3340_PULSE_WIDTH_RANGE_VOLTS: f32 = 5.0;
 const FILTER_INPUT_OHMS: f32 = 13_300.0;
 const FILTER_FEEDBACK_OHMS: f32 = 100_000.0;
 
-// Until a populated instrument is measured, retain one explicit anchor: a
-// normalized unit source at full wheel produces one octave at the oscillator
-// destination. Changing this value recalibrates every destination together
-// without destroying their accepted hardware ratios.
-const CANDIDATE_UNIT_SOURCE_OSCILLATOR_OCTAVES: f32 = 1.0;
-
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct WheelModDestinations {
     pub oscillator_semitones: f32,
@@ -39,15 +33,13 @@ pub struct WheelModDestinations {
     pub filter_octaves: f32,
 }
 
-pub fn destinations(source: f32, wheel_amount: f32) -> WheelModDestinations {
-    if !source.is_finite() || !wheel_amount.is_finite() {
+pub fn destinations(source_volts: f32, wheel_amount: f32) -> WheelModDestinations {
+    if !source_volts.is_finite() || !wheel_amount.is_finite() {
         return WheelModDestinations::default();
     }
 
     let wheel_amount = wheel_amount.clamp(0.0, 1.0);
-    let source_volts_per_unit =
-        CANDIDATE_UNIT_SOURCE_OSCILLATOR_OCTAVES * OSCILLATOR_INPUT_OHMS / OSCILLATOR_FEEDBACK_OHMS;
-    let source_volts = source * wheel_amount * source_volts_per_unit;
+    let source_volts = source_volts * wheel_amount;
 
     let oscillator_octaves = source_volts * OSCILLATOR_FEEDBACK_OHMS / OSCILLATOR_INPUT_OHMS;
     let pulse_width = source_volts * PULSE_WIDTH_FIRST_FEEDBACK_OHMS / PULSE_WIDTH_INPUT_OHMS
@@ -68,11 +60,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn one_calibration_anchor_drives_every_destination() {
+    fn one_source_volt_drives_every_destination() {
         let routed = destinations(1.0, 1.0);
-        assert!((routed.oscillator_semitones - 12.0).abs() < 1.0e-5);
-        assert!((routed.pulse_width - 1.269_147).abs() < 1.0e-5);
-        assert!((routed.filter_octaves - 13.684_211).abs() < 1.0e-5);
+        assert!((routed.oscillator_semitones - 6.593_406_7).abs() < 1.0e-5);
+        assert!((routed.pulse_width - 0.697_333_34).abs() < 1.0e-5);
+        assert!((routed.filter_octaves - 7.518_797).abs() < 1.0e-5);
     }
 
     #[test]

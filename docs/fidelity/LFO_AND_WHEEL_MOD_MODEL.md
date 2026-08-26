@@ -29,21 +29,28 @@ wheel in RF-5.
   The last figure combines the accepted 14.7 V clamped pulse excursion with
   its 200 kohm path versus the saw's nominal 10 V and 160 kohm path.
 - The LFO and noise sources pass through the two profiled, unlinearized halves
-  of common CA3280 U378. One 7-bit source-mix CV moves their bias currents in
-  opposite directions; the service balance trims are represented as zero
-  feed-through at zero input.
+  of common CA3280 U378. The 0-10 V source-mix CV drives grounded-base 2N4250
+  Q307 through 8.2 kohm and drives Q309 in the opposite direction against the
+  10k/20k divider's 10 V Thevenin source.
+- Each U378 half uses the CA3280 data-sheet 16 mS/mA small-signal slope and
+  0.82 peak-output-current ratio. The 160k/330-ohm LFO input, 20k/330-ohm
+  noise input and shared R3113 10 kohm output load produce W-MOD circuit volts
+  directly; the service balance trims retain zero feed-through at zero input.
+- One LFO unit represents the nominal 5 V saw half-excursion. Pink noise uses
+  the MM5837's guaranteed 12 Vpp logic separation before SD334's already
+  modeled 100k/47k low-pass gain.
 - Wheel Mod amount is the passive/live performance level after that dual-OTA
   source and is not stored in a program.
 - The five destination switches no longer multiply three unrelated depth
-  guesses. RF-5 converts the normalized W-MOD bus to one candidate circuit
-  voltage, then follows the populated SD334 networks: 182 kohm/100 kohm for
+  guesses or require a normalized-bus voltage anchor. They consume U378's
+  reconstructed voltage and follow the populated SD334 networks: 182 kohm/100 kohm for
   oscillator frequency, 15 kohm/100 kohm followed by 100 kohm/52.3 kohm for
   pulse width, and 13.3 kohm/100 kohm for filter cutoff.
-- One remaining calibration anchor makes a unit source at full wheel span one
-  oscillator octave. The resistor networks consequently produce 12 semitones,
-  approximately 1.269 normalized pulse-width units and 13.684 filter octaves.
-  Pulse width and cutoff are naturally limited later by their physical model
-  boundaries rather than by arbitrary per-destination depth constants.
+- One volt at R3113 produces approximately 6.593 oscillator semitones, 0.697
+  normalized pulse-width units and 7.519 filter octaves. Actual depth now
+  follows the selected waveform, the Q307/Q309 currents and U378 saturation;
+  pulse width and cutoff remain naturally limited by their later physical
+  model boundaries.
 - Three diagnostic factory programs temporarily establish a known wheel
   position for vibrato, pulse-width and filter auditions. This override is
   deliberately not serialized; incoming MIDI CC1 replaces it immediately.
@@ -55,14 +62,15 @@ frequency endpoints. RF-5 therefore accepts the circuit-derived sweep width
 while isolating the 20 Hz upper anchor in the LFO module rather than treating
 it as measured hardware fact. A populated-unit timing measurement can replace
 that one anchor without changing the control law. Wheel Mod destination ratios
-are now circuit-derived; only the normalized-source-to-volts anchor remains a
-calibration hypothesis. A populated-unit voltage measurement at W-MOD replaces
-that anchor and recalibrates all five switches together.
+and the W-MOD source voltage are now circuit-derived. Populated-unit
+measurements can refine the transistor/OTA population without restoring a
+host normalization boundary.
 
-The original Wheel Mod source-mix control now crossfades the LFO with the
+The original Wheel Mod source-mix control now current-mixes the LFO with the
 shared MM5837-class noise candidate through its physical CA3280 rather than a
-generic arithmetic blend. Populated-device matching and normalized overload
-remain candidates. The noise circuit and spectral assumptions are documented separately in
+generic arithmetic blend. Populated transistor temperature, MM5837 rail
+excursions and CA3280 matching remain bounded candidates. The noise circuit
+and spectral assumptions are documented separately in
 `NOISE_AND_MIXER_MODEL.md`.
 
 ## Acceptance tests
@@ -74,9 +82,12 @@ remain candidates. The noise circuit and spectral assumptions are documented sep
 - source amplitudes follow the accepted CEM3340 voltage and SD334 resistor
   ratios instead of ideal equal-amplitude shapes;
 - source-mix endpoints completely isolate the opposite OTA half, intermediate
-  settings remain complementary and zero input has no balance offset;
+  Q307/Q309 currents move monotonically in opposite directions and zero input
+  has no balance offset;
+- a nominal selected saw produces the finite R3113 voltage predicted by the
+  populated input divider, CA3280 current limit and 10 kohm load;
 - oscillator, pulse-width and filter depths retain the populated SD334
-  resistor ratios and share one replaceable absolute calibration anchor;
+  resistor ratios while consuming the reconstructed W-MOD voltage directly;
 - silence and note events do not stop or retrigger the LFO;
 - CC1 changes the render when a documented destination is enabled;
 - audition wheel state is cleared by CC1, normal program loads and state loads;

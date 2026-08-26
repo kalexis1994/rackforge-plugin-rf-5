@@ -35,7 +35,8 @@ and destination switches.
   transitions and analog networks without making sequence timing host-rate
   dependent.
 - U375 passes through SD334's exact 47k / (100k parallel 0.01uF) pinking
-  network and feeds only the Wheel Mod crossfade.
+  network and feeds only the Wheel Mod current mixer. Its voltage boundary
+  uses the MM5837 data-sheet minimum 12 Vpp logic-level separation.
 - U427 passes through SD430's 0.1uF / 200k / 10k AC-coupling network and a
   profiled common unlinearized CA3280; its buffered output reaches all five
   filters.
@@ -43,7 +44,9 @@ and destination switches.
   saw/triangle are 150k, pulse is 200k, and simultaneous selections load the
   approximately 100k unlinearized CA3280 input before its nonlinear transfer.
 - Noise level and source mix follow the original 128-position panel storage.
-- Source mix is a complementary linear crossfade: zero is LFO, one is noise.
+- Source mix recreates the complementary Q307/Q309 current controls: zero is
+  LFO, one is noise, while intermediate gains follow their unequal populated
+  8.2k and 10k-parallel-20k emitter networks rather than a linear crossfade.
 - Noise joins the two-OTA oscillator mix only at each filter input, matching
   the SD431-SD435 routing.
 
@@ -57,9 +60,12 @@ false shared sequence without inventing an unsupported clock mismatch. Both
 physical ICs power up from random non-zero states, while RF-5 deliberately uses
 distinct fixed seeds so tests, saved sessions and live renders are reproducible.
 
-The output gain after the pinking network and the exact CA3280 drive at the
-populated board are not numerically established by the service manual. The
-current noise gain and normalized OTA drive are therefore isolated candidates.
+The MM5837 sheet bounds its loaded output levels but does not publish typical
+rail error, and the exact CA3280/Q307 population remains unmeasured. RF-5 uses
+the guaranteed 12 Vpp separation, the populated U374 gain, both U378 input
+dividers, the data-sheet OTA slope/current limit and R3113 load rather than a
+normalized drive. These are bounded nominal reconstructions, not measurements
+of one populated instrument.
 Oscillator waveform voltage, 150/200 kohm input weighting, the manual's
 approximate 100 kohm unlinearized input and the common-noise routing are
 source-bounded, but this block does not claim measured mixer saturation
