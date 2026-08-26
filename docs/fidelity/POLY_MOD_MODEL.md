@@ -11,7 +11,7 @@ The filter-envelope input has negative polarity in this path. The service test
 therefore expects increasing FILTER ENV Poly Mod to make oscillator A descend
 in frequency and to sweep a resonating filter downward. Oscillator B remains a
 Poly Mod source even when its audio mixer level is zero, and any enabled B
-waveforms contribute to the source bus. Hard sync is a separate route.
+waveforms contribute to the source bus. Oscillator hard sync is a separate route.
 
 ## Active candidate
 

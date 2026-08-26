@@ -25,7 +25,7 @@ do not become user-selectable authenticity modes.
    - Map physical ranges, tapers, switches and modulation routings.
    - Define deterministic state and original RF-5 factory programs.
 3. **Dual VCO voice core**
-   - Model tuning law, waveform geometry, pulse width, hard sync, drift and
+   - Model tuning law, waveform geometry, pulse width, oscillator sync, drift and
      per-voice dispersion without aliasing shortcuts becoming audible.
 4. **Mixer and Poly Mod**
    - Calibrate oscillator/noise gain staging, overload and audio-rate routes.

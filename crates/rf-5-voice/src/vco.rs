@@ -31,10 +31,10 @@ pub struct OscillatorSample {
     /// 150 kohm path. All three sources meet one U428 input.
     pub poly_mod_source_conductance: f32,
     pub wrapped: bool,
-    /// Bipolar pulses and their fractional positions inside this internal
-    /// sample, produced by capacitively coupling the pulse output into another
-    /// CEM3340 hard-sync input.
-    pub sync_events: [HardSyncEvent; 2],
+    /// Fractional position of the selected pulse-output falling edge inside
+    /// this internal sample. SD431 shapes only that edge into the negative
+    /// pulse accepted by oscillator A's external hard-sync network.
+    pub hard_sync_event: Option<HardSyncEvent>,
 }
 
 impl OscillatorSample {
@@ -45,17 +45,8 @@ impl OscillatorSample {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum HardSyncPulse {
-    #[default]
-    None,
-    Positive,
-    Negative,
-}
-
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct HardSyncEvent {
-    pub pulse: HardSyncPulse,
     /// Position inside the current internal sample, from zero to one.
     pub offset: f32,
 }
@@ -160,26 +151,13 @@ impl Vco {
         }
     }
 
-    /// Apply one polarity from the physical CEM3340 hard-sync input.
+    /// Apply the negative pulse from the external CEM3340 hard-sync circuit.
     ///
-    /// Positive pulses reverse only a rising triangle and negative pulses
-    /// reverse only a falling triangle. Reflecting phase onto the opposite
-    /// branch preserves triangle voltage while allowing saw and pulse to make
-    /// the discontinuities shown in the data sheet.
-    pub fn hard_sync_pulse(&mut self, pulse: HardSyncPulse) -> bool {
-        let symmetry = TRIANGLE_SYMMETRY[self.profile_index];
-        match pulse {
-            HardSyncPulse::Positive if self.phase < symmetry => {
-                self.phase = 1.0 - self.phase * (1.0 - symmetry) / symmetry;
-                self.phase = self.phase.min(1.0 - f32::EPSILON);
-                true
-            }
-            HardSyncPulse::Negative if self.phase > symmetry => {
-                self.phase = symmetry * (1.0 - self.phase) / (1.0 - symmetry);
-                true
-            }
-            HardSyncPulse::None | HardSyncPulse::Positive | HardSyncPulse::Negative => false,
-        }
+    /// SD431 follows the data sheet's Figure 5 conventional-sync topology,
+    /// forcing the triangle core back to the beginning of its cycle rather
+    /// than using the bidirectional hard-sync input on pin 6.
+    pub fn hard_sync_reset(&mut self) {
+        self.phase = 0.0;
     }
 
     pub fn phase(self) -> f32 {
@@ -193,13 +171,7 @@ impl Vco {
         pulse_width: f32,
         waves: WaveSelection,
     ) -> OscillatorSample {
-        self.next_with_sync(
-            frequency,
-            sample_rate,
-            pulse_width,
-            waves,
-            [HardSyncEvent::default(); 2],
-        )
+        self.next_with_sync(frequency, sample_rate, pulse_width, waves, None)
     }
 
     pub fn next_with_sync(
@@ -208,7 +180,7 @@ impl Vco {
         sample_rate: f32,
         pulse_width: f32,
         waves: WaveSelection,
-        external_sync: [HardSyncEvent; 2],
+        external_sync: Option<HardSyncEvent>,
     ) -> OscillatorSample {
         let profile = self.profile_index;
         let frequency = triangle_loaded_frequency(frequency.max(0.0), profile, waves.triangle);
@@ -254,7 +226,7 @@ impl Vco {
             poly_mod_source_conductance += PULSE_MIXER_CONDUCTANCE;
         }
 
-        let sync_events = pulse_edges(phase, increment, pulse_width);
+        let hard_sync_event = pulse_hard_sync_event(phase, increment, pulse_width);
         let wrapped = self.advance_with_sync(increment, external_sync);
 
         OscillatorSample {
@@ -265,27 +237,22 @@ impl Vco {
             poly_mod_source_volts,
             poly_mod_source_conductance,
             wrapped,
-            sync_events,
+            hard_sync_event,
         }
     }
 
-    fn advance_with_sync(&mut self, increment: f32, sync_events: [HardSyncEvent; 2]) -> bool {
-        let mut elapsed = 0.0;
-        let mut wrapped = false;
-        for event in sync_events {
-            if event.pulse == HardSyncPulse::None {
-                continue;
-            }
+    fn advance_with_sync(&mut self, increment: f32, sync_event: Option<HardSyncEvent>) -> bool {
+        if let Some(event) = sync_event {
             let offset = if event.offset.is_finite() {
-                event.offset.clamp(elapsed, 1.0)
+                event.offset.clamp(0.0, 1.0)
             } else {
-                elapsed
+                0.0
             };
-            wrapped |= self.advance_phase(increment * (offset - elapsed));
-            self.hard_sync_pulse(event.pulse);
-            elapsed = offset;
+            let wrapped = self.advance_phase(increment * offset);
+            self.hard_sync_reset();
+            return wrapped | self.advance_phase(increment * (1.0 - offset));
         }
-        wrapped | self.advance_phase(increment * (1.0 - elapsed))
+        self.advance_phase(increment)
     }
 
     fn advance_phase(&mut self, increment: f32) -> bool {
@@ -317,35 +284,21 @@ pub(crate) fn triangle_load_frequency_ratio(profile: usize) -> f32 {
     1.0 - pull
 }
 
-fn pulse_edges(phase: f32, increment: f32, pulse_width: f32) -> [HardSyncEvent; 2] {
+fn pulse_hard_sync_event(phase: f32, increment: f32, pulse_width: f32) -> Option<HardSyncEvent> {
     if pulse_width <= 0.0 || pulse_width >= 1.0 {
-        return [HardSyncEvent::default(); 2];
+        return None;
     }
     let advanced = phase + increment;
-    let mut events = [HardSyncEvent::default(); 2];
-    let mut count = 0;
-    let mut push = |pulse, distance: f32| {
-        if count < events.len() && increment > 0.0 {
-            events[count] = HardSyncEvent {
-                pulse,
-                offset: (distance / increment).clamp(0.0, 1.0),
-            };
-            count += 1;
-        }
+    let distance = if phase < pulse_width && advanced >= pulse_width {
+        pulse_width - phase
+    } else if advanced >= 1.0 && advanced - 1.0 >= pulse_width {
+        1.0 - phase + pulse_width
+    } else {
+        return None;
     };
-
-    if phase < pulse_width && advanced >= pulse_width {
-        push(HardSyncPulse::Negative, pulse_width - phase);
-    }
-    if advanced >= 1.0 {
-        push(HardSyncPulse::Positive, 1.0 - phase);
-        let wrapped_phase = advanced - 1.0;
-        if wrapped_phase >= pulse_width {
-            push(HardSyncPulse::Negative, 1.0 - phase + pulse_width);
-        }
-    }
-
-    events
+    (increment > 0.0).then_some(HardSyncEvent {
+        offset: (distance / increment).clamp(0.0, 1.0),
+    })
 }
 
 fn band_limited_saw(phase: f32, increment: f32) -> f32 {
@@ -441,7 +394,7 @@ mod tests {
     }
 
     #[test]
-    fn pulse_dc_endpoints_are_stable_and_emit_no_sync_edges() {
+    fn pulse_dc_endpoints_are_stable_and_emit_no_sync_edge() {
         for (width, expected) in [
             (0.0, PULSE_LOWER_VOLTS * PULSE_MIXER_CONDUCTANCE),
             (1.0, PULSE_UPPER_VOLTS * PULSE_MIXER_CONDUCTANCE),
@@ -450,7 +403,7 @@ mod tests {
             for _ in 0..2_000 {
                 let sample = oscillator.next(440.0, 48_000.0, width, PULSE);
                 assert!((sample.mixer_negative_source_volts - expected).abs() < 1.0e-6);
-                assert_eq!(sample.sync_events, [HardSyncEvent::default(); 2]);
+                assert_eq!(sample.hard_sync_event, None);
             }
         }
     }
@@ -468,16 +421,8 @@ mod tests {
             let wide_sample = wide.next(100.0, 10_000.0, 0.99, PULSE);
             narrow_sum += narrow_sample.mixer_negative_source_volts;
             wide_sum += wide_sample.mixer_negative_source_volts;
-            narrow_edges += narrow_sample
-                .sync_events
-                .iter()
-                .filter(|event| event.pulse != HardSyncPulse::None)
-                .count();
-            wide_edges += wide_sample
-                .sync_events
-                .iter()
-                .filter(|event| event.pulse != HardSyncPulse::None)
-                .count();
+            narrow_edges += usize::from(narrow_sample.hard_sync_event.is_some());
+            wide_edges += usize::from(wide_sample.hard_sync_event.is_some());
         }
         let narrow_mean = narrow_sum / 10_000.0;
         let wide_mean = wide_sum / 10_000.0;
@@ -486,45 +431,28 @@ mod tests {
         assert!((narrow_mean + wide_mean - 2.0 * midpoint).abs() < 2.0e-3);
         assert!(((narrow_mean - midpoint) / half_range + 0.98).abs() < 0.01);
         assert!(((wide_mean - midpoint) / half_range - 0.98).abs() < 0.01);
-        assert!((narrow_edges as isize - 200).abs() <= 2);
-        assert!((wide_edges as isize - 200).abs() <= 2);
+        assert!((narrow_edges as isize - 100).abs() <= 2);
+        assert!((wide_edges as isize - 100).abs() <= 2);
     }
 
     #[test]
-    fn bipolar_hard_sync_reflects_only_the_matching_triangle_branch() {
-        let symmetry = TRIANGLE_SYMMETRY[0];
-        let mut rising = Vco::with_phase(0.20);
-        let before = triangle(rising.phase(), symmetry);
-        assert!(rising.hard_sync_pulse(HardSyncPulse::Positive));
-        assert!(rising.phase() > symmetry);
-        assert!((triangle(rising.phase(), symmetry) - before).abs() < 1.0e-6);
-        let reflected = rising.phase();
-        assert!(!rising.hard_sync_pulse(HardSyncPulse::Positive));
-        assert_eq!(rising.phase(), reflected);
-
-        let mut falling = Vco::with_phase(0.80);
-        let before = triangle(falling.phase(), symmetry);
-        assert!(falling.hard_sync_pulse(HardSyncPulse::Negative));
-        assert!(falling.phase() < symmetry);
-        assert!((triangle(falling.phase(), symmetry) - before).abs() < 1.0e-6);
-        let reflected = falling.phase();
-        assert!(!falling.hard_sync_pulse(HardSyncPulse::Negative));
-        assert_eq!(falling.phase(), reflected);
+    fn external_hard_sync_resets_either_triangle_branch() {
+        for phase in [0.20, 0.80] {
+            let mut oscillator = Vco::with_phase(phase);
+            oscillator.hard_sync_reset();
+            assert_eq!(oscillator.phase(), 0.0);
+        }
     }
 
     #[test]
-    fn pulse_output_reports_both_capacitively_coupled_sync_polarities() {
+    fn pulse_output_reports_only_the_falling_hard_sync_edge() {
         let mut oscillator = Vco::with_phase(0.45);
         let falling = oscillator.next(1_000.0, 10_000.0, 0.50, SAW);
-        assert_eq!(falling.sync_events[0].pulse, HardSyncPulse::Negative);
-        assert!((falling.sync_events[0].offset - 0.5).abs() < 1.0e-6);
-        assert_eq!(falling.sync_events[1], HardSyncEvent::default());
+        assert!((falling.hard_sync_event.unwrap().offset - 0.5).abs() < 1.0e-6);
 
         let mut oscillator = Vco::with_phase(0.95);
         let rising = oscillator.next(1_000.0, 10_000.0, 0.50, SAW);
-        assert_eq!(rising.sync_events[0].pulse, HardSyncPulse::Positive);
-        assert!((rising.sync_events[0].offset - 0.5).abs() < 1.0e-6);
-        assert_eq!(rising.sync_events[1], HardSyncEvent::default());
+        assert_eq!(rising.hard_sync_event, None);
     }
 
     #[test]
@@ -534,17 +462,14 @@ mod tests {
         assert_eq!(sample.mixer_positive_source_volts, 0.0);
         assert_eq!(sample.mixer_negative_source_volts, 0.0);
         assert_eq!(sample.poly_mod_source_volts, 0.0);
-        assert_eq!(sample.sync_events[0].pulse, HardSyncPulse::Negative);
+        assert!(sample.hard_sync_event.is_some());
     }
 
     #[test]
-    fn two_edges_inside_one_sample_are_ordered_and_fractional() {
+    fn falling_edge_after_wrap_retains_its_fractional_position() {
         let mut oscillator = Vco::with_phase(0.95);
         let sample = oscillator.next(4_000.0, 10_000.0, 0.10, WaveSelection::default());
-        assert_eq!(sample.sync_events[0].pulse, HardSyncPulse::Positive);
-        assert!((sample.sync_events[0].offset - 0.125).abs() < 1.0e-6);
-        assert_eq!(sample.sync_events[1].pulse, HardSyncPulse::Negative);
-        assert!((sample.sync_events[1].offset - 0.375).abs() < 1.0e-6);
+        assert!((sample.hard_sync_event.unwrap().offset - 0.375).abs() < 1.0e-6);
     }
 
     #[test]
@@ -555,19 +480,10 @@ mod tests {
             10_000.0,
             0.5,
             SAW,
-            [
-                HardSyncEvent {
-                    pulse: HardSyncPulse::Positive,
-                    offset: 0.25,
-                },
-                HardSyncEvent::default(),
-            ],
+            Some(HardSyncEvent { offset: 0.25 }),
         );
 
-        let phase_at_edge = 0.20 + 0.10 * 0.25;
-        let symmetry = TRIANGLE_SYMMETRY[0];
-        let reflected = 1.0 - phase_at_edge * (1.0 - symmetry) / symmetry;
-        let expected_phase = reflected + 0.10 * 0.75;
+        let expected_phase = 0.10 * 0.75;
         assert!((oscillator.phase() - expected_phase).abs() < 1.0e-6);
 
         let expected_audio =
@@ -577,7 +493,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_or_reversed_sync_offsets_cannot_break_phase_bounds() {
+    fn invalid_sync_offsets_cannot_break_phase_bounds() {
         let mut oscillator = Vco::with_phase(0.25);
         for _ in 0..1_000 {
             let sample = oscillator.next_with_sync(
@@ -585,16 +501,7 @@ mod tests {
                 48_000.0,
                 0.5,
                 SAW,
-                [
-                    HardSyncEvent {
-                        pulse: HardSyncPulse::Positive,
-                        offset: f32::NAN,
-                    },
-                    HardSyncEvent {
-                        pulse: HardSyncPulse::Negative,
-                        offset: -10.0,
-                    },
-                ],
+                Some(HardSyncEvent { offset: f32::NAN }),
             );
             assert!(sample.mixer_differential_source_volts().is_finite());
             assert!((0.0..1.0).contains(&oscillator.phase()));

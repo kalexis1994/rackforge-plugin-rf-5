@@ -33,9 +33,9 @@ program in RackForge's program browser and play normally:
   through the five linearized envelope amount paths;
 - `Audition - Wheel Noise Filter` selects the noise endpoint of common U378
   and routes the physical wheel output to filter cutoff.
-- `Audition - Bipolar Hard Sync` removes oscillator B from the audio mixer but
-  keeps its pulse output connected to oscillator A's physical sync circuit, so
-  both edge polarities and the resulting direction reversals can be heard.
+- `Audition - CEM3340 Hard Sync` removes oscillator B from the audio mixer but
+  keeps its pulse output connected to oscillator A's physical one-edge sync
+  circuit, so the conventional cycle reset can be heard directly.
 - `Audition - Unison Low Note` exposes the five simultaneous voices, low-note
   priority and legato pitch changes without restarting either envelope.
 - `Audition - Unison Glide Circuit` uses the service manual's medium panel-6

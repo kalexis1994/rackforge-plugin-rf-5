@@ -5,19 +5,19 @@ RackForge. It is being built as a self-contained Rust/WebAssembly instrument:
 no firmware, sample ROM, wave ROM or external sound bank is required.
 
 The target architecture combines two voltage-controlled oscillators per voice,
-hard sync, audio-rate polyphonic modulation, a four-pole resonant low-pass
-filter, separate filter and amplifier envelopes, unison and performance
-controls. All factory programs and interface assets will be original RF-5
-content.
+the original one-edge CEM3340 hard-sync path, audio-rate polyphonic modulation,
+a four-pole resonant low-pass filter, separate filter and amplifier envelopes,
+unison and performance controls. All factory programs and interface assets
+will be original RF-5 content.
 
 ## Current status
 
 The active candidate now contains dual four-times-oversampled oscillators,
-hard sync and a 127-tap anti-alias decimator after the nonlinear per-voice
+fractional hard sync and a 127-tap anti-alias decimator after the nonlinear per-voice
 filter/VCA path. Saw and pulse edges use a two-host-sample PolyBLEP correction,
-while both capacitively coupled hard-sync polarities retain their fractional
-position inside each internal sample,
-one shared LFO, independent pink Wheel-Mod and white audio-noise generators,
+while SD431's single falling-edge sync transient retains its fractional
+position inside each internal sample and drives the external Figure 5 reset
+network, one shared LFO, independent pink Wheel-Mod and white audio-noise generators,
 audio-rate Poly Mod, a four-pole CEM3320-class filter,
 separate CEM3310-class RC envelopes, five-voice Unison, Glide and both
 performance wheels, including the pitch wheel's SD334 diode deadband. The

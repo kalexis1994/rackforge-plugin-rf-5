@@ -243,17 +243,13 @@ impl Voice {
             } else {
                 0.0
             };
-            let sync_events = if sync {
-                sample_b.sync_events
-            } else {
-                [vco::HardSyncEvent::default(); 2]
-            };
+            let sync_event = sync.then_some(sample_b.hard_sync_event).flatten();
             let sample_a = self.oscillator_a.next_with_sync(
                 frequency_a * semitone_ratio(modulation.oscillator_a_semitones + poly_pitch),
                 internal_rate,
                 pulse_width::add_modulation(pulse_width_a, poly_pulse_width),
                 waves_a,
-                sync_events,
+                sync_event,
             );
             let poly_filter_octaves = if poly_filter {
                 poly_destinations.filter_octaves

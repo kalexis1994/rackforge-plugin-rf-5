@@ -8,7 +8,7 @@ CA3280 VCA at four times the host sample rate. The common five-input summer,
 master VCA and physical output coupling remain at host rate.
 
 Placing reconstruction after the final per-voice nonlinearity is deliberate:
-hard-sync edges, resonance and both OTA transfer curves can all create new
+hard-sync discontinuities, resonance and both OTA transfer curves can all create new
 content above host Nyquist. Filtering only the oscillators would leave those
 later products free to fold into the audible band.
 

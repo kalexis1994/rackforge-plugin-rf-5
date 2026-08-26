@@ -18,7 +18,8 @@ events and writes twenty-seven unnormalized 48 kHz mono PCM WAV files:
 11. oscillator-B audio-rate Poly Mod through its five amount VCAs;
 12. descending filter-envelope Poly Mod through the five paired envelope VCAs;
 13. the noise half of the Wheel Mod source CA3280 routed to filter cutoff.
-14. the bipolar CEM3340 hard-sync path with oscillator B removed from audio.
+14. the one-edge CEM3340 conventional hard-sync path with oscillator B removed
+    from audio.
 15. the documented first-five/earliest-used polyphonic assignment sequence.
 16. low-note-priority Unison with legato retuning and envelope continuity.
 17. the slow region of the common LFO's circuit-derived sweep.

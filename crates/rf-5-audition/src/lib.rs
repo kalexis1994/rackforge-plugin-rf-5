@@ -340,9 +340,9 @@ fn scenes() -> Vec<Scene> {
             events: chord_sequence(&[(0.20, 5.20, &[48, 55, 60])]),
         },
         Scene {
-            id: "14_bipolar_hard_sync",
+            id: "14_cem3340_hard_sync",
             program: "audition-hard-sync",
-            description: "Both capacitively coupled oscillator-B pulse edges reverse the matching oscillator-A triangle branch",
+            description: "SD431 shapes oscillator B's falling pulse edge into the external CEM3340 Figure 5 hard-sync reset",
             scale_codes: EQUAL_TEMPERAMENT,
             events: monophonic_sequence(&[
                 (0.20, 36),

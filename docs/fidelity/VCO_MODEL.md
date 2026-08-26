@@ -10,7 +10,7 @@ oscillator boundary:
 - full 14-bit CV resolution for individual oscillator pitch;
 - saw and pulse outputs for oscillator A;
 - saw, triangle and pulse outputs for oscillator B;
-- oscillator B can hard-synchronize oscillator A;
+- oscillator B can conventionally hard-synchronize oscillator A through the panel SYNC switch;
 - selected waveforms are additive, not mutually exclusive.
 
 The automatic tune system and low-frequency/keyboard modes are active parts of
@@ -42,19 +42,16 @@ the shared board CV node. They may therefore overdrive a pulse to exactly 0%
 or 100%, where the CEM3340 output becomes steady DC and stops generating sync
 edges until modulation returns it to a finite pulse.
 
-Hard sync is resolved at the same four-times internal rate but is not a generic
-phase reset. The Revision 3 voice board takes oscillator B's pulse output before
-its audio-selection switch, gates it through a 4016 and capacitively couples
-both edges into oscillator A's CEM3340 hard-sync input. RF-5 retains each edge's
-fractional position inside the internal sample, advances A exactly to that
-instant, applies the polarity-dependent reflection and then advances the
-remainder. Two edges inside one interval remain ordered. A rising B pulse
-creates the positive sync polarity and can reverse A only while A's triangle is
-rising; a falling B pulse creates the negative polarity and can reverse A only
-while its triangle is falling. RF-5 reflects A onto the opposite triangle
-branch at the same instantaneous voltage, which also creates the data-sheet saw
-and pulse discontinuities. Sync therefore remains active even when no B
-waveform is sent to the audio mixer. Detailed acceptance is documented in
+SYNC is resolved at the same four-times internal rate but does not use the
+CEM3340's bidirectional hard-sync pin 6, which SD431 leaves unconnected.
+Oscillator B's pulse output instead crosses U446 and the populated
+C4107/R4296/R4297/Q401 version of the manufacturer's Figure 5 conventional
+hard-sync circuit. It admits only the falling edge as a negative base pulse.
+RF-5 retains that edge's fractional position inside the internal sample,
+advances A exactly to that instant, starts A at the lower endpoint of a new
+cycle and then advances the remainder. A rising B edge generates no event.
+Sync remains active even when no B waveform is sent to the audio mixer.
+Detailed acceptance is documented in
 [`HARD_SYNC_MODEL.md`](HARD_SYNC_MODEL.md).
 
 Waveforms sum before their oscillator level. Enabling a second waveform can
