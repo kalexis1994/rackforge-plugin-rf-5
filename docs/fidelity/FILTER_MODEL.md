@@ -20,6 +20,10 @@ procedure expects resonance to begin self-oscillating between panel positions
   Each 100 kohm feedback resistor sees the nominal 1 megohm buffer impedance
   in parallel, producing 90.909 kohm against the populated 91 kohm coupling
   resistor and therefore 0.999 nominal interstage passband gain.
+- U464's oscillator-mixer output currents feed first-cell `IN A` directly.
+  Common white noise arrives at the same node through each populated 100 kohm
+  distribution resistor. Both paths now share the first cell's 90.909 kohm
+  current-to-voltage conversion instead of independent normalized gains.
 - Oscillators, audio mixer, audio-rate Poly Mod and all four filter cells run
   together at four times the host sample rate.
 - Service trim 4-20 replaces the former 14 Hz intercept: 2.000 V of panel CV
@@ -55,12 +59,13 @@ procedure expects resonance to begin self-oscillating between panel positions
 ## Bounded uncertainty
 
 The topology, populated pole network, exponential scale, electrical ranges and
-resonance current domain are source-backed. The five deterministic points
-inside those ranges are a validation population, not measurements of five
-chips from one instrument. The smooth Gm function is a replaceable fit through
-published graph/typical points rather than a transistor-level model. The
-circuit-volts-to-normalized-audio conversion and exact populated Gm curve
-remain calibration hypotheses. Warm-up magnitude is source-bounded, while its
+resonance current domain, direct U464 current input and white-noise distribution
+are source-backed. The five deterministic points inside those ranges are a
+validation population, not measurements of five chips from one instrument.
+The smooth Gm function is a replaceable fit through published graph/typical
+points rather than a transistor-level model. The two-circuit-volts-per-internal
+unit conversion and exact populated Gm curve remain calibration hypotheses.
+Warm-up magnitude is source-bounded, while its
 210-390 second time constants, directions and correlation are explicit,
 replaceable hypotheses because no admitted source publishes those trajectories.
 
@@ -82,6 +87,8 @@ replaceable hypotheses because no admitted source publishes those trajectories.
   slope;
 - four 150 pF cells and their 100k/91k/1M network reproduce the populated
   near-unity interstage gain;
+- the 100k feedback in parallel with the nominal 1M output impedance presents
+  approximately 90.909 kohm to oscillator and noise injection currents;
 - all five profiles remain inside every admitted data-sheet bound;
 - all five cutoff curves reproduce the serviced 440/880 Hz calibration pair;
 - five minutes produces distinct warm-up offsets without exceeding the

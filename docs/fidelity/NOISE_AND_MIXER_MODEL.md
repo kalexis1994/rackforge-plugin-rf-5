@@ -10,9 +10,10 @@ feedback: a 2.1277 low-frequency gain and an approximately 159 Hz pole.
 U427 on output-board schematic SD430 is the separate white-noise source heard
 in the audio path. C458's 0.1 uF coupling capacitor, R4131's 200 kohm series
 resistor and R4132's 10 kohm shunt form an approximately 7.58 Hz high-pass
-boundary before the common noise-level CA3280. That OTA output is buffered and
-distributed to the dedicated noise input on all five voice cards. Audio noise
-therefore neither shares a sequence nor a spectrum with Wheel Mod noise.
+boundary before the common noise-level CA3280. Its output current develops
+voltage across R4129's 10 kohm, U474 buffers it, and five 100 kohm paths inject
+the result into the first CEM3320 cell on the voice cards. Audio noise therefore
+neither shares a sequence nor a spectrum with Wheel Mod noise.
 
 The MM5837 data sheet identifies a self-clocked 17-bit maximal-length shift
 register with feedback at stages 17 and 14. Its specified sequence cycle is
@@ -38,11 +39,16 @@ and destination switches.
   network and feeds only the Wheel Mod current mixer. Its voltage boundary
   uses the MM5837 data-sheet minimum 12 Vpp logic-level separation.
 - U427 passes through SD430's 0.1uF / 200k / 10k AC-coupling network and a
-  profiled common unlinearized CA3280; its buffered output reaches all five
-  filters.
+  profiled common unlinearized CA3280. The candidate uses the MM5837's
+  guaranteed 12 Vpp separation, U430 output current, R4129's 10k load, U474,
+  each 100k distribution path and the first filter cell's 90.909k
+  transimpedance instead of a normalized noise gain.
 - Per-voice oscillator waveform paths retain their populated conductances:
   saw/triangle are 150k, pulse is 200k, and simultaneous selections load the
-  approximately 100k unlinearized CA3280 input before its nonlinear transfer.
+  330-ohm-shunted, approximately 100k unlinearized CA3280 input before its
+  nonlinear transfer. Both U464 output currents feed CEM3320 `IN A` directly;
+  the populated 100k feedback in parallel with the nominal 1M output impedance
+  converts them through the same 90.909k first-cell transimpedance.
 - The three audio-level cells retain their original 128-position storage and
   0-10 V output domain. Q306 and Q302 convert oscillator A and B level through
   33k each; Q305 converts common noise level through 75k. Their normalized
@@ -71,11 +77,14 @@ the guaranteed 12 Vpp separation, the populated U374 gain, both U378 input
 dividers, the data-sheet OTA slope/current limit and R3113 load rather than a
 normalized drive. These are bounded nominal reconstructions, not measurements
 of one populated instrument.
-Oscillator waveform voltage, 150/200 kohm input weighting, the manual's
-approximate 100 kohm unlinearized input and the common-noise routing are
-source-bounded. The SD333 audio-level current converters and their populated
-resistors are accepted, while transistor temperature and measured mixer
-saturation remain unavailable.
+Oscillator waveform voltage, 150/200 kohm input weighting, the 330 ohm shunt,
+the manual's approximate 100 kohm unlinearized input, U464's direct current
+connection and the complete common-noise routing are source-bounded. The
+SD333 audio-level current converters, R4129, the distribution resistors and
+the first-cell transimpedance are accepted. The candidate still uses the
+MM5837's guaranteed minimum separation rather than a populated output level;
+transistor temperature, the two-circuit-volts-per-internal-unit filter scale
+and measured mixer saturation remain unavailable.
 
 ## Acceptance tests
 
@@ -88,6 +97,10 @@ saturation remain unavailable.
 - a noise-only patch reaches the per-voice signal path;
 - Q306/Q302/Q305 produce the expected 33k/33k/75k full-level currents, retain
   a silicon-junction knee and rise monotonically through all 128 positions;
+- one full saw develops approximately 10.9 mV at U464's shunted input and
+  reaches 2.0-2.4 internal filter units through the populated current path;
+- full common white noise reaches 0.42-0.50 internal filter units through
+  R4129, U474, the 100k distribution path and first-cell transimpedance;
 - Wheel Mod source mix audibly changes from the disabled LFO side to noise;
 - package parameters and state expose both physical controls.
 

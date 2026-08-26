@@ -108,13 +108,34 @@ const MASTER_VCA_NOMINAL_LIMIT_UNITS: f32 = DATASHEET_LINEARIZED_LIMIT_VOLTS
     / FINAL_VCA_CIRCUIT_VOLTS_PER_UNIT;
 // TM1000D.2 section 2-5 gives approximately 100 kohm for a CA3280 input with
 // its linearizing-diode terminal cut off. SD431 feeds saw/triangle through
-// 150 kohm and pulse through 200 kohm. Conductances are normalized to the
-// populated 150 kohm path so the existing single-saw calibration remains the
-// sole circuit-to-host level anchor.
+// 150 kohm and pulse through 200 kohm. The selected source conductances share
+// the populated 330 ohm input shunt before the resulting differential voltage
+// is converted to physical OTA output current and first-cell filter voltage.
 const UNLINEARIZED_INPUT_RESISTANCE_OHMS: f32 = 100_000.0;
 const MIXER_REFERENCE_SOURCE_RESISTANCE_OHMS: f32 = 150_000.0;
-const MIXER_INPUT_CONDUCTANCE_RATIO: f32 =
-    MIXER_REFERENCE_SOURCE_RESISTANCE_OHMS / UNLINEARIZED_INPUT_RESISTANCE_OHMS;
+const MIXER_INPUT_SHUNT_RESISTANCE_OHMS: f32 = 330.0;
+const OSCILLATOR_SOURCE_VOLTS_PER_UNIT: f32 = 5.0;
+
+// U464's two current outputs feed CEM3320 IN A directly. The first cell's
+// populated 100 kohm feedback sees the nominal 1 megohm CEM3320 output
+// impedance in parallel, producing 90.909 kohm of current-to-voltage gain.
+// The filter candidate and final-VCA boundary both use two circuit volts per
+// internal unit, so no additional mixer gain anchor is required.
+const FILTER_FIRST_CELL_FEEDBACK_OHMS: f32 = 100_000.0;
+const FILTER_CELL_OUTPUT_IMPEDANCE_OHMS: f32 = 1_000_000.0;
+const FILTER_FIRST_CELL_TRANSIMPEDANCE_OHMS: f32 =
+    1.0 / (1.0 / FILTER_FIRST_CELL_FEEDBACK_OHMS + 1.0 / FILTER_CELL_OUTPUT_IMPEDANCE_OHMS);
+const FILTER_CIRCUIT_VOLTS_PER_UNIT: f32 = FINAL_VCA_CIRCUIT_VOLTS_PER_UNIT;
+
+// SD430 couples U427 through 200k into the 10k-shunted U430 input. U430's
+// current output develops voltage across R4129, the U474 follower distributes
+// it through 100k to every CEM3320 IN A, and the same first-cell
+// transimpedance converts that injected current to filter circuit volts.
+const WHITE_NOISE_SOURCE_VOLTS_PER_UNIT: f32 = 6.0;
+const WHITE_NOISE_SOURCE_RESISTANCE_OHMS: f32 = 200_000.0;
+const WHITE_NOISE_INPUT_SHUNT_RESISTANCE_OHMS: f32 = 10_000.0;
+const WHITE_NOISE_OUTPUT_LOAD_RESISTANCE_OHMS: f32 = 10_000.0;
+const FILTER_NOISE_INPUT_RESISTANCE_OHMS: f32 = 100_000.0;
 
 // SD334's two halves of U378 sum their output currents into R3113. The source
 // mix S/H spans 0-10 V. Q307 converts the noise side through R3116, while Q309
@@ -276,21 +297,15 @@ pub fn oscillator_mixer(
         MixerChannel::OscillatorA => profile.oscillator_a,
         MixerChannel::OscillatorB => profile.oscillator_b,
     };
-    ota_transfer(
-        input,
-        ten_volt_control_current_ratio(control, OSCILLATOR_MIX_CONTROL_RESISTANCE_OHMS),
-        UNLINEARIZED_INPUT_DRIVE,
-        half,
-    )
+    oscillator_mixer_to_filter_units(input, 1.0, control, half)
 }
 
 /// One oscillator mixer half including the finite CA3280 input loading shared
 /// by every simultaneously selected waveform resistor.
 ///
 /// `source_conductance` is relative to one 150 kohm path: saw and triangle are
-/// 1.0 each, while the populated 200 kohm pulse path is 0.75. The normalization
-/// deliberately leaves one selected saw unchanged, avoiding a second unknown
-/// circuit-volts-to-host calibration.
+/// 1.0 each, while the populated 200 kohm pulse path is 0.75. `input` already
+/// contains the corresponding conductance-weighted source-voltage sum.
 pub fn oscillator_mixer_loaded(
     input: f32,
     source_conductance: f32,
@@ -301,24 +316,36 @@ pub fn oscillator_mixer_loaded(
     if !input.is_finite() || !source_conductance.is_finite() || source_conductance <= 0.0 {
         return 0.0;
     }
-    let reference_loaded_conductance = MIXER_INPUT_CONDUCTANCE_RATIO + 1.0;
-    let selected_loaded_conductance = MIXER_INPUT_CONDUCTANCE_RATIO + source_conductance;
-    oscillator_mixer(
-        input * reference_loaded_conductance / selected_loaded_conductance,
-        control,
-        voice_index,
-        channel,
-    )
+    let profile = MIXER_PROFILES[voice_index % MIXER_PROFILES.len()];
+    let half = match channel {
+        MixerChannel::OscillatorA => profile.oscillator_a,
+        MixerChannel::OscillatorB => profile.oscillator_b,
+    };
+    oscillator_mixer_to_filter_units(input, source_conductance, control, half)
 }
 
 /// The single common noise-level OTA before noise reaches all five filters.
 pub fn common_noise(input: f32, control: f32) -> f32 {
-    ota_transfer(
-        input,
-        ten_volt_control_current_ratio(control, NOISE_MIX_CONTROL_RESISTANCE_OHMS),
-        UNLINEARIZED_INPUT_DRIVE,
+    if !input.is_finite() || !control.is_finite() || control <= 0.0 {
+        return 0.0;
+    }
+    let source_current_amps =
+        input / WHITE_NOISE_SOURCE_RESISTANCE_OHMS * WHITE_NOISE_SOURCE_VOLTS_PER_UNIT;
+    let input_conductance_siemens = 1.0 / WHITE_NOISE_SOURCE_RESISTANCE_OHMS
+        + 1.0 / WHITE_NOISE_INPUT_SHUNT_RESISTANCE_OHMS
+        + 1.0 / UNLINEARIZED_INPUT_RESISTANCE_OHMS;
+    let differential_input_volts =
+        source_current_amps / input_conductance_siemens * COMMON_NOISE_PROFILE.input_drive_ratio;
+    let iabc_amps = ten_volt_control_current_amps(control, NOISE_MIX_CONTROL_RESISTANCE_OHMS);
+    let output_current_amps = unlinearized_ota_output_current_amps(
+        differential_input_volts,
+        iabc_amps,
         COMMON_NOISE_PROFILE,
-    )
+    );
+    let buffered_noise_volts = output_current_amps * WHITE_NOISE_OUTPUT_LOAD_RESISTANCE_OHMS;
+    buffered_noise_volts / FILTER_NOISE_INPUT_RESISTANCE_OHMS
+        * FILTER_FIRST_CELL_TRANSIMPEDANCE_OHMS
+        / FILTER_CIRCUIT_VOLTS_PER_UNIT
 }
 
 /// The common dual-OTA current mixer feeding the physical modulation wheel.
@@ -458,6 +485,34 @@ pub fn master_output(input: f32, control_current_ratio: f32) -> f32 {
         * MASTER_VCA_PROFILE.transconductance_ratio
 }
 
+fn oscillator_mixer_to_filter_units(
+    input: f32,
+    source_conductance: f32,
+    control: f32,
+    profile: OtaHalfProfile,
+) -> f32 {
+    if !input.is_finite()
+        || !source_conductance.is_finite()
+        || source_conductance <= 0.0
+        || !control.is_finite()
+        || control <= 0.0
+    {
+        return 0.0;
+    }
+
+    let source_current_amps =
+        input / MIXER_REFERENCE_SOURCE_RESISTANCE_OHMS * OSCILLATOR_SOURCE_VOLTS_PER_UNIT;
+    let input_conductance_siemens = source_conductance / MIXER_REFERENCE_SOURCE_RESISTANCE_OHMS
+        + 1.0 / MIXER_INPUT_SHUNT_RESISTANCE_OHMS
+        + 1.0 / UNLINEARIZED_INPUT_RESISTANCE_OHMS;
+    let differential_input_volts =
+        source_current_amps / input_conductance_siemens * profile.input_drive_ratio;
+    let iabc_amps = ten_volt_control_current_amps(control, OSCILLATOR_MIX_CONTROL_RESISTANCE_OHMS);
+    unlinearized_ota_output_current_amps(differential_input_volts, iabc_amps, profile)
+        * FILTER_FIRST_CELL_TRANSIMPEDANCE_OHMS
+        / FILTER_CIRCUIT_VOLTS_PER_UNIT
+}
+
 fn ota_transfer(input: f32, control: f32, nominal_drive: f32, profile: OtaHalfProfile) -> f32 {
     ota_transfer_limited(input, control, nominal_drive, profile, 1.0)
 }
@@ -495,13 +550,24 @@ fn unlinearized_ota_loaded_voltage(
     let differential_input_volts = source_volts * WHEEL_MOD_INPUT_SHUNT_OHMS
         / (source_resistance_ohms + WHEEL_MOD_INPUT_SHUNT_OHMS)
         * profile.input_drive_ratio;
+    unlinearized_ota_output_current_amps(differential_input_volts, iabc_amps, profile)
+        * WHEEL_MOD_OUTPUT_LOAD_OHMS
+}
+
+fn unlinearized_ota_output_current_amps(
+    differential_input_volts: f32,
+    iabc_amps: f32,
+    profile: OtaHalfProfile,
+) -> f32 {
+    if !differential_input_volts.is_finite() || !iabc_amps.is_finite() || iabc_amps <= 0.0 {
+        return 0.0;
+    }
     let peak_output_current_amps = iabc_amps * CA3280_PEAK_OUTPUT_CURRENT_RATIO;
     let small_signal_output_current_amps =
         iabc_amps * CA3280_TRANSCONDUCTANCE_SIEMENS_PER_AMP * differential_input_volts;
-    let output_current_amps = peak_output_current_amps
+    peak_output_current_amps
         * libm::tanhf(small_signal_output_current_amps / peak_output_current_amps)
-        * profile.transconductance_ratio;
-    output_current_amps * WHEEL_MOD_OUTPUT_LOAD_OHMS
+        * profile.transconductance_ratio
 }
 
 fn final_voice_transfer(input: f32, control: f32, profile: OtaHalfProfile) -> f32 {
@@ -690,6 +756,29 @@ mod tests {
     }
 
     #[test]
+    fn mixer_currents_reach_the_filter_through_populated_transimpedances() {
+        assert!((90_900.0..=90_920.0).contains(&FILTER_FIRST_CELL_TRANSIMPEDANCE_OHMS));
+
+        let source_current_amps =
+            OSCILLATOR_SOURCE_VOLTS_PER_UNIT / MIXER_REFERENCE_SOURCE_RESISTANCE_OHMS;
+        let input_conductance_siemens = 1.0 / MIXER_REFERENCE_SOURCE_RESISTANCE_OHMS
+            + 1.0 / MIXER_INPUT_SHUNT_RESISTANCE_OHMS
+            + 1.0 / UNLINEARIZED_INPUT_RESISTANCE_OHMS;
+        let differential_input_volts = source_current_amps / input_conductance_siemens;
+        assert!((10.8e-3..=11.1e-3).contains(&differential_input_volts));
+
+        for voice in 0..5 {
+            for channel in [MixerChannel::OscillatorA, MixerChannel::OscillatorB] {
+                let one_saw = oscillator_mixer(1.0, 1.0, voice, channel);
+                assert!((2.0..=2.4).contains(&one_saw));
+            }
+        }
+
+        let full_noise = common_noise(1.0, 1.0);
+        assert!((0.42..=0.50).contains(&full_noise));
+    }
+
+    #[test]
     fn q410_reconstructs_the_ca3280_datasheet_operating_current() {
         let reconstructed_saturation = Q410_REFERENCE_CURRENT_AMPS
             * libm::expf(-Q410_REFERENCE_VBE_VOLTS / Q410_THERMAL_VOLTAGE_VOLTS);
@@ -810,17 +899,18 @@ mod tests {
     }
 
     #[test]
-    fn active_linearizing_diodes_extend_the_input_range() {
-        let input = 3.0;
-        let unlinearized = oscillator_mixer(input, 1.0, 2, MixerChannel::OscillatorA).abs();
-        let linearized = final_voice(input, 1.0, 2).abs();
+    fn unlinearized_mixer_limits_before_the_linearized_final_vca() {
+        let mixer_input = 10.0;
+        let final_input = 2.5;
+        let unlinearized = oscillator_mixer(mixer_input, 1.0, 2, MixerChannel::OscillatorA).abs();
+        let linearized = final_voice(final_input, 1.0, 2).abs();
         let mixer_small_signal =
             oscillator_mixer(0.001, 1.0, 2, MixerChannel::OscillatorA).abs() / 0.001;
         let final_small_signal = final_voice(0.001, 1.0, 2).abs() / 0.001;
-        let mixer_retained = unlinearized / (input * mixer_small_signal);
-        let final_retained = linearized / (input * final_small_signal);
+        let mixer_retained = unlinearized / (mixer_input * mixer_small_signal);
+        let final_retained = linearized / (final_input * final_small_signal);
         assert!(final_retained > 0.97);
-        assert!(mixer_retained < 0.65);
+        assert!(mixer_retained < 0.55);
     }
 
     #[test]
@@ -931,7 +1021,7 @@ mod tests {
     }
 
     #[test]
-    fn mixer_loading_preserves_the_single_150k_path_anchor() {
+    fn mixer_loading_preserves_the_single_150k_path_response() {
         for voice in 0..5 {
             for channel in [MixerChannel::OscillatorA, MixerChannel::OscillatorB] {
                 assert_eq!(
@@ -950,8 +1040,13 @@ mod tests {
         assert!(two_equal_paths > one_path);
         assert!(two_equal_paths < unloaded_linear_sum);
 
-        let expected_input_ratio =
-            2.0 * (MIXER_INPUT_CONDUCTANCE_RATIO + 1.0) / (MIXER_INPUT_CONDUCTANCE_RATIO + 2.0);
+        let one_path_conductance = 1.0 / MIXER_REFERENCE_SOURCE_RESISTANCE_OHMS
+            + 1.0 / MIXER_INPUT_SHUNT_RESISTANCE_OHMS
+            + 1.0 / UNLINEARIZED_INPUT_RESISTANCE_OHMS;
+        let two_path_conductance = 2.0 / MIXER_REFERENCE_SOURCE_RESISTANCE_OHMS
+            + 1.0 / MIXER_INPUT_SHUNT_RESISTANCE_OHMS
+            + 1.0 / UNLINEARIZED_INPUT_RESISTANCE_OHMS;
+        let expected_input_ratio = 2.0 * one_path_conductance / two_path_conductance;
         let small_one = oscillator_mixer_loaded(0.001, 1.0, 1.0, 2, MixerChannel::OscillatorA);
         let small_two = oscillator_mixer_loaded(0.002, 2.0, 1.0, 2, MixerChannel::OscillatorA);
         assert!((small_two / small_one - expected_input_ratio).abs() < 1.0e-5);

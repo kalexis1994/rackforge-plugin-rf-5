@@ -30,17 +30,21 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
   knees inside the CA3280 data-sheet output-current bounds.
 - Each oscillator mix reconstructs the manual's approximately 100 kohm
   unlinearized input impedance against the selected 150 kohm saw/triangle and
-  200 kohm pulse paths. A single saw remains the level anchor; parallel
+  200 kohm pulse paths plus the populated 330 ohm input shunt. Parallel
   waveform selections produce the source-backed passive loading before the
-  nonlinear current transfer.
+  nonlinear current transfer. U464's output currents then enter the first
+  CEM3320 cell directly and develop voltage through its 100k feedback in
+  parallel with the nominal 1M output impedance.
 - One separate unlinearized CA3280 sets common noise level before the result is
-  distributed to the five CEM3320 noise inputs; noise does not pass through a
-  fictitious third mixer OTA on every voice card.
+  developed across R4129's 10k, buffered by U474 and distributed through five
+  100k paths to the CEM3320 inputs; noise does not pass through a fictitious
+  third mixer OTA on every voice card.
 - The 0-10 V oscillator A/B level cells reach the paired voice-mixer VCAs
   through SD333 Q306/Q302 and 33k emitter resistors. The common noise cell
-  reaches its OTA through Q305 and 75k. Full level remains service-normalized,
-  but intermediate settings now follow the common 2N4250 junction equation
-  instead of linear host multipliers.
+  reaches its OTA through Q305 and 75k. Their physical IABC currents now drive
+  CA3280 current limits and the populated filter-input transimpedances; the
+  intermediate settings follow the common 2N4250 junction equation instead of
+  linear host multipliers.
 - The five final VCAs use substantially wider diode-linearized transfers and
   are evaluated inside the same four-times-oversampled loop as the filters.
   Their small-signal gain is equal after the documented per-voice service
@@ -119,9 +123,11 @@ The deterministic population is bounded by the published 0.70-1.30
 peak-output-current ratio and kept deliberately narrower. Figure 3A is a
 printed bitmap, so the approximately four-division limit and sixth-order knee
 are explicit bounded interpretations rather than digitized device
-measurements. The one-saw loading normalization, normalized voltage scale,
-Q410 temperature, overload-knee spread, populated-device matching, external
-output load and circuit-volts-to-host-full-scale conversion remain hypotheses.
+measurements. The oscillator and noise current networks no longer require a
+one-saw loading normalization. The two-circuit-volts-per-internal-filter-unit
+scale, Q410 temperature, overload-knee spread, populated-device matching,
+external output load and circuit-volts-to-host-full-scale conversion remain
+hypotheses.
 The five-volt volume reference follows the documented analog control domain,
 but its populated rail and R113 end-to-end tolerance are unmeasured. U479's
 approximately 100 uA/V centre slope is read from the printed Figure 3A bitmap,
@@ -143,9 +149,11 @@ recorded sweeps from a serviced reference instrument.
   CEM3320's 10-14 Vpp output range;
 - all mixer profiles remain inside published output bounds, paired halves stay
   close but distinct, and serviced final-voice small-signal gains match;
-- a single 150 kohm mixer path preserves the existing level anchor, while
-  parallel paths and the 200 kohm pulse path follow the finite-input loading
-  law;
+- a single 150 kohm mixer path develops approximately 10.9 mV at U464's input,
+  the first filter cell presents approximately 90.909 kohm transimpedance, and
+  one full saw reaches 2.0-2.4 internal filter units across all five profiles;
+- parallel paths and the 200 kohm pulse path follow the finite-input loading
+  law, while the complete common-noise path reaches 0.42-0.50 internal units;
 - all transfers are finite and odd-symmetric and reject non-finite input;
 - the master stage remains bounded while retaining multi-voice headroom;
 - the loaded linear volume pot reaches zero and five volts, its midpoint is
