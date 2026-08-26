@@ -8,7 +8,27 @@
 const LFSR_MASK: u32 = (1 << 17) - 1;
 const PINK_RESET_SEED: u32 = 0x1_5a4d;
 const WHITE_RESET_SEED: u32 = 0x0_c2b7;
-const CANDIDATE_CLOCK_HZ: f32 = 80_000.0;
+
+// The data sheet does not publish a typical self-clock frequency. It instead
+// bounds one complete maximal-length sequence to 1.1-2.4 seconds. The
+// geometric centre minimizes the largest relative error to either limit and
+// remains an explicit RF-5 candidate rather than a claimed device typical.
+#[cfg(test)]
+const MM5837_MINIMUM_CYCLE_SECONDS: f32 = 1.1;
+#[cfg(test)]
+const MM5837_MAXIMUM_CYCLE_SECONDS: f32 = 2.4;
+const MM5837_CANDIDATE_CYCLE_SECONDS: f32 = 1.624_807_7;
+const MM5837_CLOCK_HZ: f32 = LFSR_MASK as f32 / MM5837_CANDIDATE_CYCLE_SECONDS;
+
+// A held random-bit stream has a sinc-squared power response. Its -3 dB
+// frequency is this fraction of the update clock, providing an independent
+// check against the data sheet's published 24-56 kHz half-power range.
+#[cfg(test)]
+const ZERO_ORDER_HOLD_HALF_POWER_RATIO: f32 = 0.442_946_46;
+#[cfg(test)]
+const MM5837_MINIMUM_HALF_POWER_HZ: f32 = 24_000.0;
+#[cfg(test)]
+const MM5837_MAXIMUM_HALF_POWER_HZ: f32 = 56_000.0;
 const INTERNAL_OVERSAMPLING: usize = 4;
 
 const PINK_INPUT_RESISTANCE_OHMS: f32 = 47_000.0;
@@ -42,7 +62,7 @@ impl Mm5837 {
     }
 
     fn next_subsample(&mut self, internal_rate: f32) -> f32 {
-        self.clock_phase += CANDIDATE_CLOCK_HZ / internal_rate;
+        self.clock_phase += MM5837_CLOCK_HZ / internal_rate;
         while self.clock_phase >= 1.0 {
             self.clock_phase -= 1.0;
             self.advance_lfsr();
@@ -151,6 +171,25 @@ impl WhiteNoise {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn candidate_self_clock_obeys_both_published_ranges() {
+        let cycle_seconds = LFSR_MASK as f32 / MM5837_CLOCK_HZ;
+        let half_power_hz = MM5837_CLOCK_HZ * ZERO_ORDER_HOLD_HALF_POWER_RATIO;
+
+        assert!(
+            (MM5837_MINIMUM_CYCLE_SECONDS..=MM5837_MAXIMUM_CYCLE_SECONDS).contains(&cycle_seconds)
+        );
+        assert!(
+            (MM5837_MINIMUM_HALF_POWER_HZ..=MM5837_MAXIMUM_HALF_POWER_HZ).contains(&half_power_hz)
+        );
+        assert!(
+            (cycle_seconds * cycle_seconds
+                - MM5837_MINIMUM_CYCLE_SECONDS * MM5837_MAXIMUM_CYCLE_SECONDS)
+                .abs()
+                < 1.0e-5
+        );
+    }
 
     #[test]
     fn lfsr_has_the_documented_maximal_period() {

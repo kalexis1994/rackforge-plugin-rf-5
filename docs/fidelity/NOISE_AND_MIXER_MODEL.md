@@ -31,6 +31,11 @@ and destination switches.
 
 - Two engine-owned 17-bit LFSRs advance from distinct fixed non-zero seeds,
   representing U375 and U427 rather than one artificially shared sequence.
+- Their candidate self-clock is derived from the geometric centre of the
+  published 1.1-2.4 second complete-sequence interval: approximately
+  80.669 kHz and 1.6248 seconds per maximal sequence. The held-bit response
+  predicts an approximately 35.732 kHz half-power point, independently inside
+  the published 24-56 kHz band.
 - Independent phase accumulators hold both candidate chip clocks constant
   across host sample rates; four-times internal processing integrates their
   transitions and analog networks without making sequence timing host-rate
@@ -68,7 +73,11 @@ and destination switches.
 ## Bounded uncertainty
 
 The MM5837 data sheet specifies ranges rather than a typical internal clock.
-RF-5 isolates an 80 kHz candidate inside the documented limits for each IC.
+RF-5 therefore chooses the geometric centre of the published cycle-time range,
+which minimizes the maximum relative error toward either endpoint. This is a
+reproducible candidate-selection rule, not a claimed manufacturer typical; its
+held-bit half-power prediction also passes the separate published frequency
+range.
 Two physical self-contained oscillators will not be exactly frequency locked;
 until populated devices are measured, independent state/phase removes the
 false shared sequence without inventing an unsupported clock mismatch. Both
@@ -95,6 +104,9 @@ remains between the populated transimpedance and filter cells.
 ## Acceptance tests
 
 - the LFSR visits every non-zero 17-bit state before repeating;
+- the derived self-clock completes that sequence inside the published
+  1.1-2.4 second interval and its held-bit half-power point lies inside the
+  published 24-56 kHz interval;
 - both sources are deterministic, finite, mutually distinct and bipolar;
 - the populated networks produce their 159 Hz low-pass and 7.58 Hz high-pass
   corners, with substantially more difference energy in the white path;
