@@ -43,7 +43,7 @@ const WHITE_SHUNT_RESISTANCE_OHMS: f32 = 10_000.0;
 struct Mm5837 {
     lfsr: u32,
     reset_seed: u32,
-    clock_phase: f32,
+    clock_phase: f64,
     held: f32,
 }
 
@@ -61,13 +61,29 @@ impl Mm5837 {
         *self = Self::new(self.reset_seed);
     }
 
-    fn next_subsample(&mut self, internal_rate: f32) -> f32 {
-        self.clock_phase += MM5837_CLOCK_HZ / internal_rate;
-        while self.clock_phase >= 1.0 {
-            self.clock_phase -= 1.0;
+    /// Visit every constant-output segment inside one internal sample.
+    ///
+    /// The MM5837 clock is asynchronous to the audio clock. Keeping the
+    /// fractional edge position lets the following analog RC network evolve
+    /// for the correct time on each side of a random-bit transition.
+    fn for_each_segment(&mut self, internal_rate: f32, mut visit: impl FnMut(f32, f64)) {
+        let internal_rate = f64::from(internal_rate.max(1.0));
+        let phase_increment = f64::from(MM5837_CLOCK_HZ) / internal_rate;
+        let mut remaining_fraction = 1.0_f64;
+
+        while remaining_fraction > 0.0 {
+            let fraction_to_edge = (1.0 - self.clock_phase) / phase_increment;
+            if fraction_to_edge > remaining_fraction {
+                visit(self.held, remaining_fraction);
+                self.clock_phase += phase_increment * remaining_fraction;
+                break;
+            }
+
+            visit(self.held, fraction_to_edge);
+            remaining_fraction = (remaining_fraction - fraction_to_edge).max(0.0);
+            self.clock_phase = 0.0;
             self.advance_lfsr();
         }
-        self.held
     }
 
     fn advance_lfsr(&mut self) {
@@ -81,7 +97,7 @@ impl Mm5837 {
 #[derive(Clone, Copy, Debug)]
 pub struct PinkNoise {
     source: Mm5837,
-    low_pass: f32,
+    low_pass: f64,
 }
 
 impl Default for PinkNoise {
@@ -101,21 +117,31 @@ impl PinkNoise {
 
     pub fn next(&mut self, sample_rate: f32) -> f32 {
         let internal_rate = sample_rate.max(1.0) * INTERNAL_OVERSAMPLING as f32;
-        let cutoff_hz = 1.0
-            / (2.0
-                * core::f32::consts::PI
-                * PINK_FEEDBACK_RESISTANCE_OHMS
-                * PINK_FEEDBACK_CAPACITANCE_FARADS);
-        let coefficient =
-            1.0 - libm::expf(-2.0 * core::f32::consts::PI * cutoff_hz / internal_rate);
+        let time_constant =
+            f64::from(PINK_FEEDBACK_RESISTANCE_OHMS * PINK_FEEDBACK_CAPACITANCE_FARADS);
+        let full_interval_retained = libm::exp(-1.0 / (f64::from(internal_rate) * time_constant));
+        let mut output = 0.0;
         for _ in 0..INTERNAL_OVERSAMPLING {
-            let raw = self.source.next_subsample(internal_rate);
-            self.low_pass += coefficient * (raw - self.low_pass);
+            output = self.next_internal(internal_rate, full_interval_retained);
         }
+        output
+    }
+
+    fn next_internal(&mut self, internal_rate: f32, full_interval_retained: f64) -> f32 {
+        let low_pass = &mut self.low_pass;
+        self.source
+            .for_each_segment(internal_rate, |raw, interval_fraction| {
+                *low_pass = advance_rc_fraction(
+                    *low_pass,
+                    f64::from(raw),
+                    interval_fraction,
+                    full_interval_retained,
+                );
+            });
         // The inverting sign is immaterial for noise, but the populated
         // closed-loop magnitude fixes its level relative to the other Wheel
         // Mod source before the still-isolated absolute calibration anchor.
-        self.low_pass * PINK_FEEDBACK_RESISTANCE_OHMS / PINK_INPUT_RESISTANCE_OHMS
+        self.low_pass as f32 * PINK_FEEDBACK_RESISTANCE_OHMS / PINK_INPUT_RESISTANCE_OHMS
     }
 
     #[cfg(test)]
@@ -127,7 +153,7 @@ impl PinkNoise {
 #[derive(Clone, Copy, Debug)]
 pub struct WhiteNoise {
     source: Mm5837,
-    coupling_low_pass: f32,
+    coupling_low_pass: f64,
 }
 
 impl Default for WhiteNoise {
@@ -147,25 +173,53 @@ impl WhiteNoise {
 
     pub fn next(&mut self, sample_rate: f32) -> f32 {
         let internal_rate = sample_rate.max(1.0) * INTERNAL_OVERSAMPLING as f32;
-        let time_constant = (WHITE_SERIES_RESISTANCE_OHMS + WHITE_SHUNT_RESISTANCE_OHMS)
-            * WHITE_COUPLING_CAPACITANCE_FARADS;
-        let coefficient = 1.0 - libm::expf(-1.0 / (time_constant * internal_rate));
+        let time_constant = f64::from(
+            (WHITE_SERIES_RESISTANCE_OHMS + WHITE_SHUNT_RESISTANCE_OHMS)
+                * WHITE_COUPLING_CAPACITANCE_FARADS,
+        );
+        let full_interval_retained = libm::exp(-1.0 / (f64::from(internal_rate) * time_constant));
         let mut output = 0.0;
         for _ in 0..INTERNAL_OVERSAMPLING {
-            let raw = self.source.next_subsample(internal_rate);
-            self.coupling_low_pass += coefficient * (raw - self.coupling_low_pass);
-            output = raw - self.coupling_low_pass;
+            output = self.next_internal(internal_rate, full_interval_retained);
         }
+        output
+    }
+
+    fn next_internal(&mut self, internal_rate: f32, full_interval_retained: f64) -> f32 {
+        let coupling_low_pass = &mut self.coupling_low_pass;
+        self.source
+            .for_each_segment(internal_rate, |raw, interval_fraction| {
+                *coupling_low_pass = advance_rc_fraction(
+                    *coupling_low_pass,
+                    f64::from(raw),
+                    interval_fraction,
+                    full_interval_retained,
+                );
+            });
         // Absolute MM5837 swing and CA3280 input drive remain one candidate
         // boundary. Preserve unity pass-band normalization while reproducing
         // C458/R4131/R4132's documented 7.58 Hz AC-coupling corner.
-        output
+        self.source.held - self.coupling_low_pass as f32
     }
 
     #[cfg(test)]
     pub(crate) fn state(self) -> u32 {
         self.source.lfsr
     }
+}
+
+fn advance_rc_fraction(
+    value: f64,
+    target: f64,
+    interval_fraction: f64,
+    full_interval_retained: f64,
+) -> f64 {
+    let retained = if interval_fraction == 1.0 {
+        full_interval_retained
+    } else {
+        libm::exp(libm::log(full_interval_retained) * interval_fraction)
+    };
+    target + (value - target) * retained
 }
 
 #[cfg(test)]
@@ -255,6 +309,50 @@ mod tests {
             previous_white = white_sample;
         }
         assert!(white_difference_energy > pink_difference_energy * 100.0);
+    }
+
+    #[test]
+    fn fractional_mm5837_edge_splits_both_analog_networks() {
+        let internal_rate = 192_000.0;
+        let phase_increment = f64::from(MM5837_CLOCK_HZ) / f64::from(internal_rate);
+        let initial = 0.2;
+
+        let mut pink = PinkNoise {
+            source: Mm5837::new(1),
+            low_pass: initial,
+        };
+        pink.source.clock_phase = 1.0 - 0.25 * phase_increment;
+        let pink_time_constant =
+            f64::from(PINK_FEEDBACK_RESISTANCE_OHMS * PINK_FEEDBACK_CAPACITANCE_FARADS);
+        let pink_retained = libm::exp(-1.0 / (f64::from(internal_rate) * pink_time_constant));
+        let expected_pink = advance_rc_fraction(
+            advance_rc_fraction(initial, 1.0, 0.25, pink_retained),
+            -1.0,
+            0.75,
+            pink_retained,
+        );
+        let pink_gain = PINK_FEEDBACK_RESISTANCE_OHMS / PINK_INPUT_RESISTANCE_OHMS;
+        let actual_pink = f64::from(pink.next_internal(internal_rate, pink_retained) / pink_gain);
+        assert!((actual_pink - expected_pink).abs() < 1.0e-7);
+
+        let mut white = WhiteNoise {
+            source: Mm5837::new(1),
+            coupling_low_pass: initial,
+        };
+        white.source.clock_phase = 1.0 - 0.25 * phase_increment;
+        let white_time_constant = f64::from(
+            (WHITE_SERIES_RESISTANCE_OHMS + WHITE_SHUNT_RESISTANCE_OHMS)
+                * WHITE_COUPLING_CAPACITANCE_FARADS,
+        );
+        let white_retained = libm::exp(-1.0 / (f64::from(internal_rate) * white_time_constant));
+        let expected_white_low_pass = advance_rc_fraction(
+            advance_rc_fraction(initial, 1.0, 0.25, white_retained),
+            -1.0,
+            0.75,
+            white_retained,
+        );
+        let actual_white = white.next_internal(internal_rate, white_retained);
+        assert!((f64::from(actual_white) - (-1.0 - expected_white_low_pass)).abs() < 1.0e-7);
     }
 
     #[test]

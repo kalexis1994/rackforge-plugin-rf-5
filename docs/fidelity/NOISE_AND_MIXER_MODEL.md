@@ -36,10 +36,12 @@ and destination switches.
   80.669 kHz and 1.6248 seconds per maximal sequence. The held-bit response
   predicts an approximately 35.732 kHz half-power point, independently inside
   the published 24-56 kHz band.
-- Independent phase accumulators hold both candidate chip clocks constant
-  across host sample rates; four-times internal processing integrates their
-  transitions and analog networks without making sequence timing host-rate
-  dependent.
+- Independent double-precision phase accumulators hold both candidate chip
+  clocks constant across host sample rates. Every random-bit edge retains its
+  fractional position inside the four-times interval; the 159 Hz pinking RC
+  and 7.58 Hz white-noise coupling RC are analytically integrated for the
+  exact time on each side of that edge instead of quantizing it to the
+  internal sample grid.
 - U375 passes through SD334's exact 47k / (100k parallel 0.01uF) pinking
   network and feeds only the Wheel Mod current mixer. Its voltage boundary
   uses the MM5837 data-sheet minimum 12 Vpp logic-level separation.
@@ -108,6 +110,8 @@ remains between the populated transimpedance and filter cells.
   1.1-2.4 second interval and its held-bit half-power point lies inside the
   published 24-56 kHz interval;
 - both sources are deterministic, finite, mutually distinct and bipolar;
+- a deliberately quarter-interval random-bit transition reproduces the
+  analytic two-segment response of both populated analog networks;
 - the populated networks produce their 159 Hz low-pass and 7.58 Hz high-pass
   corners, with substantially more difference energy in the white path;
 - both RMS levels stay within 20% across all supported sample rates;
