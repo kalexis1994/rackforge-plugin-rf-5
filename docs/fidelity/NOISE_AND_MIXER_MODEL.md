@@ -45,10 +45,14 @@ and destination switches.
   transimpedance instead of a normalized noise gain.
 - Per-voice oscillator waveform paths retain their populated conductances:
   saw/triangle are 150k, pulse is 200k, and simultaneous selections load the
-  330-ohm-shunted, approximately 100k unlinearized CA3280 input before its
-  nonlinear transfer. Both U464 output currents feed CEM3320 `IN A` directly;
-  the populated 100k feedback in parallel with the nominal 1M output impedance
-  converts them through the same 90.909k first-cell transimpedance.
+  two 330-ohm-shunted, approximately 100k unlinearized CA3280 inputs before
+  its nonlinear transfer. Saw reaches the positive input; pulse and
+  oscillator-B triangle reach the negative input. Both conductance-weighted
+  source sums are expressed in physical volts and preserve the
+  schematic-visible waveform DC because no coupling capacitor precedes U464.
+  Both U464 output currents feed CEM3320 `IN A` directly; the populated 100k
+  feedback in parallel with the nominal 1M output impedance converts them
+  through the same 90.909k first-cell transimpedance.
 - The three audio-level cells retain their original 128-position storage and
   0-10 V output domain. Q306 and Q302 convert oscillator A and B level through
   33k each; Q305 converts common noise level through 75k. Their normalized

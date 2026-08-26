@@ -13,20 +13,36 @@ pub struct WaveSelection {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct OscillatorSample {
-    /// Conductance-weighted AC representation delivered to the oscillator
-    /// mixer. One unit of conductance is one populated 150 kohm path.
-    pub audio: f32,
-    /// Sum of the selected waveform-input conductances relative to 150 kohm.
-    /// The CA3280 mixer uses this to recover the loading of its approximately
-    /// 100 kohm unlinearized input when more than one waveform is selected.
-    pub mixer_source_conductance: f32,
-    /// Board-level polarity delivered to oscillator-B Poly Mod.
-    pub modulation: f32,
+    /// Conductance-weighted physical source voltage delivered to the positive
+    /// oscillator-mixer input. SD431 routes saw here.
+    pub mixer_positive_source_volts: f32,
+    /// Selected positive-input conductance relative to one 150 kohm path.
+    pub mixer_positive_source_conductance: f32,
+    /// Conductance-weighted physical source voltage delivered to the negative
+    /// oscillator-mixer input. SD431 routes pulse and oscillator-B triangle
+    /// here, preserving their phase relationship to saw.
+    pub mixer_negative_source_volts: f32,
+    /// Selected negative-input conductance relative to one 150 kohm path.
+    pub mixer_negative_source_conductance: f32,
+    /// Conductance-weighted physical source voltage delivered to
+    /// oscillator-B Poly Mod. U451 level-shifts only the triangle path.
+    pub poly_mod_source_volts: f32,
+    /// Sum of the selected Poly Mod source conductances relative to one
+    /// 150 kohm path. All three sources meet one U428 input.
+    pub poly_mod_source_conductance: f32,
     pub wrapped: bool,
     /// Bipolar pulses and their fractional positions inside this internal
     /// sample, produced by capacitively coupling the pulse output into another
     /// CEM3340 hard-sync input.
     pub sync_events: [HardSyncEvent; 2],
+}
+
+impl OscillatorSample {
+    /// Unloaded differential source voltage, useful for oscillator-only
+    /// spectral probes. The signal path itself loads both inputs separately.
+    pub fn mixer_differential_source_volts(self) -> f32 {
+        self.mixer_positive_source_volts - self.mixer_negative_source_volts
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -78,15 +94,16 @@ const TRIANGLE_SYMMETRY: [f32; OUTPUT_PROFILE_COUNT] = [
 // The voice board uses 150 kohm inputs for saw/triangle and 200 kohm for
 // pulse. With +15/-5 V supplies, the data-sheet pulse formulas and the 4016
 // negative clamp give approximately -0.6 V and +14.1 V after selection.
-// Values below are expressed relative to a nominal 5 V saw half-excursion
-// and one 150 kohm input conductance. Loading by the CA3280 input itself is
-// applied at the VCA boundary, where all simultaneously selected paths are
-// known.
+// Values below retain circuit volts and are expressed relative to one 150
+// kohm input conductance. Loading by the CA3280 input itself is applied at the
+// VCA boundary, where all simultaneously selected paths are known.
 const SAW_TRIANGLE_MIXER_CONDUCTANCE: f32 = 1.0;
 const PULSE_MIXER_CONDUCTANCE: f32 = 150_000.0 / 200_000.0;
-const PULSE_RAW_AC_GAIN: f32 = 1.47;
-const PULSE_AC_GAIN: f32 = PULSE_RAW_AC_GAIN * PULSE_MIXER_CONDUCTANCE;
-const PULSE_MODULATION_OFFSET: f32 = 1.0125;
+const PULSE_LOWER_VOLTS: f32 = -0.6;
+const PULSE_UPPER_VOLTS: f32 = 14.1;
+// SD431 derives 2.27 V TRI REF and U451 subtracts it from OSC B's raw
+// positive-going triangle before the Poly Mod amount OTA.
+const TRIANGLE_POLY_MOD_REFERENCE_VOLTS: f32 = 2.27;
 // The correction spans two host samples at the four-times internal rate. A
 // wider polynomial transition is necessary when the 1%/99% hardware pulse
 // endpoints put both discontinuities inside one short reconstruction window.
@@ -159,40 +176,55 @@ impl Vco {
         let pulse_width = pulse_width.clamp(0.0, 1.0);
         let phase = self.phase;
         let profile = self.profile_index;
-        let mut audio = 0.0;
-        let mut modulation = 0.0;
-        let mut mixer_source_conductance = 0.0;
+        let mut mixer_positive_source_volts = 0.0;
+        let mut mixer_positive_source_conductance = 0.0;
+        let mut mixer_negative_source_volts = 0.0;
+        let mut mixer_negative_source_conductance = 0.0;
+        let mut poly_mod_source_volts = 0.0;
+        let mut poly_mod_source_conductance = 0.0;
 
         if waves.saw {
             let centered = band_limited_saw(phase, increment);
-            let half_range = (SAW_UPPER_VOLTS[profile] - SAW_LOWER_VOLTS[profile]) / 10.0;
-            let midpoint = (SAW_UPPER_VOLTS[profile] + SAW_LOWER_VOLTS[profile]) / 10.0;
-            audio += centered * half_range;
-            modulation += centered * half_range + midpoint;
-            mixer_source_conductance += SAW_TRIANGLE_MIXER_CONDUCTANCE;
+            let half_range = (SAW_UPPER_VOLTS[profile] - SAW_LOWER_VOLTS[profile]) * 0.5;
+            let midpoint = (SAW_UPPER_VOLTS[profile] + SAW_LOWER_VOLTS[profile]) * 0.5;
+            let source_volts = centered * half_range + midpoint;
+            mixer_positive_source_volts += source_volts;
+            poly_mod_source_volts += source_volts;
+            mixer_positive_source_conductance += SAW_TRIANGLE_MIXER_CONDUCTANCE;
+            poly_mod_source_conductance += SAW_TRIANGLE_MIXER_CONDUCTANCE;
         }
         if waves.triangle {
             let centered = triangle(phase, TRIANGLE_SYMMETRY[profile]);
-            let half_range = (TRIANGLE_UPPER_VOLTS[profile] - TRIANGLE_LOWER_VOLTS[profile]) / 10.0;
-            let shifted = centered * half_range;
-            audio += shifted;
-            modulation += shifted;
-            mixer_source_conductance += SAW_TRIANGLE_MIXER_CONDUCTANCE;
+            let half_range = (TRIANGLE_UPPER_VOLTS[profile] - TRIANGLE_LOWER_VOLTS[profile]) * 0.5;
+            let midpoint = (TRIANGLE_UPPER_VOLTS[profile] + TRIANGLE_LOWER_VOLTS[profile]) * 0.5;
+            let raw_source_volts = centered * half_range + midpoint;
+            mixer_negative_source_volts += raw_source_volts;
+            poly_mod_source_volts += raw_source_volts - TRIANGLE_POLY_MOD_REFERENCE_VOLTS;
+            mixer_negative_source_conductance += SAW_TRIANGLE_MIXER_CONDUCTANCE;
+            poly_mod_source_conductance += SAW_TRIANGLE_MIXER_CONDUCTANCE;
         }
         if waves.pulse {
-            let centered = band_limited_pulse(phase, increment, pulse_width) * PULSE_AC_GAIN;
-            audio += centered;
-            modulation += centered + PULSE_MODULATION_OFFSET;
-            mixer_source_conductance += PULSE_MIXER_CONDUCTANCE;
+            let centered = band_limited_pulse(phase, increment, pulse_width);
+            let half_range = (PULSE_UPPER_VOLTS - PULSE_LOWER_VOLTS) * 0.5;
+            let midpoint = (PULSE_UPPER_VOLTS + PULSE_LOWER_VOLTS) * 0.5;
+            let equivalent_source_volts =
+                (centered * half_range + midpoint) * PULSE_MIXER_CONDUCTANCE;
+            mixer_negative_source_volts += equivalent_source_volts;
+            poly_mod_source_volts += equivalent_source_volts;
+            mixer_negative_source_conductance += PULSE_MIXER_CONDUCTANCE;
+            poly_mod_source_conductance += PULSE_MIXER_CONDUCTANCE;
         }
 
         let sync_events = pulse_edges(phase, increment, pulse_width);
         let wrapped = self.advance_with_sync(increment, external_sync);
 
         OscillatorSample {
-            audio,
-            mixer_source_conductance,
-            modulation,
+            mixer_positive_source_volts,
+            mixer_positive_source_conductance,
+            mixer_negative_source_volts,
+            mixer_negative_source_conductance,
+            poly_mod_source_volts,
+            poly_mod_source_conductance,
             wrapped,
             sync_events,
         }
@@ -340,19 +372,28 @@ mod tests {
         let mut narrow_positive = 0;
         let mut wide_positive = 0;
         for _ in 0..1_000 {
-            narrow_positive += (narrow.next(100.0, 10_000.0, 0.25, PULSE).audio > 0.0) as usize;
-            wide_positive += (wide.next(100.0, 10_000.0, 0.75, PULSE).audio > 0.0) as usize;
+            narrow_positive += (narrow
+                .next(100.0, 10_000.0, 0.25, PULSE)
+                .mixer_negative_source_volts
+                > 0.0) as usize;
+            wide_positive += (wide
+                .next(100.0, 10_000.0, 0.75, PULSE)
+                .mixer_negative_source_volts
+                > 0.0) as usize;
         }
         assert!(narrow_positive < wide_positive);
     }
 
     #[test]
     fn pulse_dc_endpoints_are_stable_and_emit_no_sync_edges() {
-        for (width, expected) in [(0.0, -PULSE_AC_GAIN), (1.0, PULSE_AC_GAIN)] {
+        for (width, expected) in [
+            (0.0, PULSE_LOWER_VOLTS * PULSE_MIXER_CONDUCTANCE),
+            (1.0, PULSE_UPPER_VOLTS * PULSE_MIXER_CONDUCTANCE),
+        ] {
             let mut oscillator = Vco::default();
             for _ in 0..2_000 {
                 let sample = oscillator.next(440.0, 48_000.0, width, PULSE);
-                assert!((sample.audio - expected).abs() < 1.0e-6);
+                assert!((sample.mixer_negative_source_volts - expected).abs() < 1.0e-6);
                 assert_eq!(sample.sync_events, [HardSyncEvent::default(); 2]);
             }
         }
@@ -369,8 +410,8 @@ mod tests {
         for _ in 0..10_000 {
             let narrow_sample = narrow.next(100.0, 10_000.0, 0.01, PULSE);
             let wide_sample = wide.next(100.0, 10_000.0, 0.99, PULSE);
-            narrow_sum += narrow_sample.audio;
-            wide_sum += wide_sample.audio;
+            narrow_sum += narrow_sample.mixer_negative_source_volts;
+            wide_sum += wide_sample.mixer_negative_source_volts;
             narrow_edges += narrow_sample
                 .sync_events
                 .iter()
@@ -384,9 +425,11 @@ mod tests {
         }
         let narrow_mean = narrow_sum / 10_000.0;
         let wide_mean = wide_sum / 10_000.0;
-        assert!((narrow_mean + wide_mean).abs() < 1.0e-4);
-        assert!((narrow_mean / PULSE_AC_GAIN + 0.98).abs() < 0.01);
-        assert!((wide_mean / PULSE_AC_GAIN - 0.98).abs() < 0.01);
+        let midpoint = (PULSE_UPPER_VOLTS + PULSE_LOWER_VOLTS) * 0.5 * PULSE_MIXER_CONDUCTANCE;
+        let half_range = (PULSE_UPPER_VOLTS - PULSE_LOWER_VOLTS) * 0.5 * PULSE_MIXER_CONDUCTANCE;
+        assert!((narrow_mean + wide_mean - 2.0 * midpoint).abs() < 2.0e-3);
+        assert!(((narrow_mean - midpoint) / half_range + 0.98).abs() < 0.01);
+        assert!(((wide_mean - midpoint) / half_range - 0.98).abs() < 0.01);
         assert!((narrow_edges as isize - 200).abs() <= 2);
         assert!((wide_edges as isize - 200).abs() <= 2);
     }
@@ -432,8 +475,9 @@ mod tests {
     fn sync_edges_exist_even_when_pulse_is_not_selected_for_audio() {
         let mut oscillator = Vco::with_phase(0.45);
         let sample = oscillator.next(1_000.0, 10_000.0, 0.50, WaveSelection::default());
-        assert_eq!(sample.audio, 0.0);
-        assert_eq!(sample.modulation, 0.0);
+        assert_eq!(sample.mixer_positive_source_volts, 0.0);
+        assert_eq!(sample.mixer_negative_source_volts, 0.0);
+        assert_eq!(sample.poly_mod_source_volts, 0.0);
         assert_eq!(sample.sync_events[0].pulse, HardSyncPulse::Negative);
     }
 
@@ -471,8 +515,9 @@ mod tests {
         assert!((oscillator.phase() - expected_phase).abs() < 1.0e-6);
 
         let expected_audio =
-            band_limited_saw(0.20, 0.10) * (SAW_UPPER_VOLTS[0] - SAW_LOWER_VOLTS[0]) / 10.0;
-        assert!((sample.audio - expected_audio).abs() < 1.0e-6);
+            band_limited_saw(0.20, 0.10) * (SAW_UPPER_VOLTS[0] - SAW_LOWER_VOLTS[0]) * 0.5
+                + (SAW_UPPER_VOLTS[0] + SAW_LOWER_VOLTS[0]) * 0.5;
+        assert!((sample.mixer_positive_source_volts - expected_audio).abs() < 1.0e-6);
     }
 
     #[test]
@@ -495,7 +540,7 @@ mod tests {
                     },
                 ],
             );
-            assert!(sample.audio.is_finite());
+            assert!(sample.mixer_differential_source_volts().is_finite());
             assert!((0.0..1.0).contains(&oscillator.phase()));
         }
     }
@@ -510,10 +555,12 @@ mod tests {
         };
         for _ in 0..10_000 {
             let sample = oscillator.next(12_000.0, 48_000.0, 0.37, waves);
-            assert!(sample.audio.is_finite());
-            assert!(sample.modulation.is_finite());
-            assert!(sample.audio.abs() <= 3.1);
-            assert!(sample.modulation.abs() <= 4.8);
+            assert!(sample.mixer_positive_source_volts.is_finite());
+            assert!(sample.mixer_negative_source_volts.is_finite());
+            assert!(sample.poly_mod_source_volts.is_finite());
+            assert!(sample.mixer_positive_source_volts.abs() <= 11.0);
+            assert!(sample.mixer_negative_source_volts.abs() <= 16.0);
+            assert!(sample.poly_mod_source_volts.abs() <= 25.0);
         }
     }
 
@@ -529,17 +576,35 @@ mod tests {
     }
 
     #[test]
-    fn triangle_is_level_shifted_bipolar_and_has_half_the_saw_excursion() {
+    fn triangle_audio_is_raw_while_poly_mod_is_level_shifted() {
         let profile = 4;
-        let triangle_low = triangle(0.0, TRIANGLE_SYMMETRY[profile])
-            * (TRIANGLE_UPPER_VOLTS[profile] - TRIANGLE_LOWER_VOLTS[profile])
-            / 10.0;
-        let triangle_high = triangle(TRIANGLE_SYMMETRY[profile], TRIANGLE_SYMMETRY[profile])
-            * (TRIANGLE_UPPER_VOLTS[profile] - TRIANGLE_LOWER_VOLTS[profile])
-            / 10.0;
-        let saw_peak_to_peak = 2.0 * (SAW_UPPER_VOLTS[profile] - SAW_LOWER_VOLTS[profile]) / 10.0;
+        let mut low = Vco::with_phase_and_profile(0.0, profile);
+        let mut high = Vco::with_phase_and_profile(TRIANGLE_SYMMETRY[profile], profile);
+        let waves = WaveSelection {
+            saw: false,
+            triangle: true,
+            pulse: false,
+        };
+        let low = low.next(0.0, 48_000.0, 0.5, waves);
+        let high = high.next(0.0, 48_000.0, 0.5, waves);
+        let triangle_low = low.mixer_negative_source_volts;
+        let triangle_high = high.mixer_negative_source_volts;
+        let saw_peak_to_peak = SAW_UPPER_VOLTS[profile] - SAW_LOWER_VOLTS[profile];
         let triangle_peak_to_peak = triangle_high - triangle_low;
-        assert!((triangle_high + triangle_low).abs() < 1.0e-6);
+        assert!((triangle_low - TRIANGLE_LOWER_VOLTS[profile]).abs() < 1.0e-6);
+        assert!((triangle_high - TRIANGLE_UPPER_VOLTS[profile]).abs() < 1.0e-6);
+        assert!(
+            (low.poly_mod_source_volts
+                - (TRIANGLE_LOWER_VOLTS[profile] - TRIANGLE_POLY_MOD_REFERENCE_VOLTS))
+                .abs()
+                < 1.0e-6
+        );
+        assert!(
+            (high.poly_mod_source_volts
+                - (TRIANGLE_UPPER_VOLTS[profile] - TRIANGLE_POLY_MOD_REFERENCE_VOLTS))
+                .abs()
+                < 1.0e-6
+        );
         assert!((triangle_peak_to_peak / saw_peak_to_peak - 0.508).abs() < 0.01);
     }
 
@@ -560,16 +625,23 @@ mod tests {
             },
         );
         let pulse_sample = pulse.next(0.0, 48_000.0, 0.5, PULSE);
-        assert!(saw_sample.modulation >= 0.0);
-        assert!(pulse_sample.modulation >= -0.1);
-        assert_eq!(triangle_sample.audio, triangle_sample.modulation);
+        assert!(saw_sample.poly_mod_source_volts >= 0.0);
+        assert!(pulse_sample.poly_mod_source_volts >= -0.5);
+        assert!(
+            (triangle_sample.mixer_negative_source_volts
+                - triangle_sample.poly_mod_source_volts
+                - TRIANGLE_POLY_MOD_REFERENCE_VOLTS)
+                .abs()
+                < 1.0e-6
+        );
     }
 
     #[test]
     fn voice_board_resistors_make_pulse_slightly_hotter_than_saw() {
-        let saw_peak = (SAW_UPPER_VOLTS[4] - SAW_LOWER_VOLTS[4]) / 10.0;
-        assert!(PULSE_AC_GAIN > saw_peak);
-        assert!(PULSE_AC_GAIN / saw_peak < 1.11);
+        let saw_peak_to_peak = SAW_UPPER_VOLTS[4] - SAW_LOWER_VOLTS[4];
+        let pulse_peak_to_peak = (PULSE_UPPER_VOLTS - PULSE_LOWER_VOLTS) * PULSE_MIXER_CONDUCTANCE;
+        assert!(pulse_peak_to_peak > saw_peak_to_peak);
+        assert!(pulse_peak_to_peak / saw_peak_to_peak < 1.11);
     }
 
     #[test]
@@ -589,10 +661,16 @@ mod tests {
         );
         let disconnected = oscillator.next(0.0, 48_000.0, 0.5, WaveSelection::default());
 
-        assert_eq!(saw.mixer_source_conductance, 1.0);
-        assert_eq!(pulse.mixer_source_conductance, 0.75);
-        assert_eq!(all.mixer_source_conductance, 2.75);
-        assert_eq!(disconnected.mixer_source_conductance, 0.0);
+        assert_eq!(saw.mixer_positive_source_conductance, 1.0);
+        assert_eq!(saw.mixer_negative_source_conductance, 0.0);
+        assert_eq!(pulse.mixer_positive_source_conductance, 0.0);
+        assert_eq!(pulse.mixer_negative_source_conductance, 0.75);
+        assert_eq!(all.mixer_positive_source_conductance, 1.0);
+        assert_eq!(all.mixer_negative_source_conductance, 1.75);
+        assert_eq!(all.poly_mod_source_conductance, 2.75);
+        assert_eq!(disconnected.mixer_positive_source_conductance, 0.0);
+        assert_eq!(disconnected.mixer_negative_source_conductance, 0.0);
+        assert_eq!(disconnected.poly_mod_source_conductance, 0.0);
     }
 
     #[test]

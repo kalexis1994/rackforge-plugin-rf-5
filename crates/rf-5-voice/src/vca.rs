@@ -123,7 +123,6 @@ const MASTER_VCA_NOMINAL_LIMIT_VOLTS: f32 = DATASHEET_LINEARIZED_LIMIT_VOLTS
 const UNLINEARIZED_INPUT_RESISTANCE_OHMS: f32 = 100_000.0;
 const MIXER_REFERENCE_SOURCE_RESISTANCE_OHMS: f32 = 150_000.0;
 const MIXER_INPUT_SHUNT_RESISTANCE_OHMS: f32 = 330.0;
-const OSCILLATOR_SOURCE_VOLTS_PER_UNIT: f32 = 5.0;
 
 // U464's two current outputs feed CEM3320 IN A directly. The first cell's
 // populated 100 kohm feedback sees the nominal 1 megohm CEM3320 output
@@ -305,23 +304,30 @@ pub fn oscillator_mixer(
         MixerChannel::OscillatorA => profile.oscillator_a,
         MixerChannel::OscillatorB => profile.oscillator_b,
     };
-    oscillator_mixer_to_filter_volts(input, 1.0, control, half)
+    oscillator_mixer_to_filter_volts(input, 1.0, 0.0, 0.0, control, half)
 }
 
-/// One oscillator mixer half including the finite CA3280 input loading shared
-/// by every simultaneously selected waveform resistor.
+/// One oscillator mixer half including the independent finite loading at both
+/// 330-ohm-shunted CA3280 inputs.
 ///
-/// `source_conductance` is relative to one 150 kohm path: saw and triangle are
-/// 1.0 each, while the populated 200 kohm pulse path is 0.75. `input` already
-/// contains the corresponding conductance-weighted source-voltage sum.
+/// Conductances are relative to one 150 kohm path. SD431 routes saw to the
+/// positive input, while pulse and oscillator-B triangle reach the negative
+/// input. Each source-voltage argument is already conductance-weighted.
 pub fn oscillator_mixer_loaded(
-    input: f32,
-    source_conductance: f32,
+    positive_source_volts: f32,
+    positive_source_conductance: f32,
+    negative_source_volts: f32,
+    negative_source_conductance: f32,
     control: f32,
     voice_index: usize,
     channel: MixerChannel,
 ) -> f32 {
-    if !input.is_finite() || !source_conductance.is_finite() || source_conductance <= 0.0 {
+    if !positive_source_volts.is_finite()
+        || !positive_source_conductance.is_finite()
+        || !negative_source_volts.is_finite()
+        || !negative_source_conductance.is_finite()
+        || (positive_source_conductance <= 0.0 && negative_source_conductance <= 0.0)
+    {
         return 0.0;
     }
     let profile = MIXER_PROFILES[voice_index % MIXER_PROFILES.len()];
@@ -329,7 +335,14 @@ pub fn oscillator_mixer_loaded(
         MixerChannel::OscillatorA => profile.oscillator_a,
         MixerChannel::OscillatorB => profile.oscillator_b,
     };
-    oscillator_mixer_to_filter_volts(input, source_conductance, control, half)
+    oscillator_mixer_to_filter_volts(
+        positive_source_volts,
+        positive_source_conductance,
+        negative_source_volts,
+        negative_source_conductance,
+        control,
+        half,
+    )
 }
 
 /// The single common noise-level OTA before noise reaches all five filters.
@@ -457,6 +470,8 @@ pub fn poly_mod_oscillator_b_current_amps(
     unlinearized_conductance_mixer_output_current_amps(
         input,
         source_conductance,
+        0.0,
+        0.0,
         control,
         POLY_MOD_OSCILLATOR_B_CONTROL_RESISTANCE_OHMS,
         POLY_MOD_OSCILLATOR_B_PROFILES[voice_index % POLY_MOD_OSCILLATOR_B_PROFILES.len()],
@@ -524,14 +539,18 @@ pub fn master_output(input: f32, control_current_ratio: f32) -> f32 {
 }
 
 fn oscillator_mixer_to_filter_volts(
-    input: f32,
-    source_conductance: f32,
+    positive_source_volts: f32,
+    positive_source_conductance: f32,
+    negative_source_volts: f32,
+    negative_source_conductance: f32,
     control: f32,
     profile: OtaHalfProfile,
 ) -> f32 {
     unlinearized_conductance_mixer_output_current_amps(
-        input,
-        source_conductance,
+        positive_source_volts,
+        positive_source_conductance,
+        negative_source_volts,
+        negative_source_conductance,
         control,
         OSCILLATOR_MIX_CONTROL_RESISTANCE_OHMS,
         profile,
@@ -539,30 +558,44 @@ fn oscillator_mixer_to_filter_volts(
 }
 
 fn unlinearized_conductance_mixer_output_current_amps(
-    input: f32,
-    source_conductance: f32,
+    positive_source_volts: f32,
+    positive_source_conductance: f32,
+    negative_source_volts: f32,
+    negative_source_conductance: f32,
     control: f32,
     control_resistance_ohms: f32,
     profile: OtaHalfProfile,
 ) -> f32 {
-    if !input.is_finite()
-        || !source_conductance.is_finite()
-        || source_conductance <= 0.0
+    if !positive_source_volts.is_finite()
+        || !positive_source_conductance.is_finite()
+        || !negative_source_volts.is_finite()
+        || !negative_source_conductance.is_finite()
+        || (positive_source_conductance <= 0.0 && negative_source_conductance <= 0.0)
         || !control.is_finite()
         || control <= 0.0
     {
         return 0.0;
     }
 
-    let source_current_amps =
-        input / MIXER_REFERENCE_SOURCE_RESISTANCE_OHMS * OSCILLATOR_SOURCE_VOLTS_PER_UNIT;
+    let positive_input_volts =
+        unlinearized_input_voltage(positive_source_volts, positive_source_conductance);
+    let negative_input_volts =
+        unlinearized_input_voltage(negative_source_volts, negative_source_conductance);
+    let differential_input_volts =
+        (positive_input_volts - negative_input_volts) * profile.input_drive_ratio;
+    let iabc_amps = ten_volt_control_current_amps(control, control_resistance_ohms);
+    ota_output_current_amps(differential_input_volts, iabc_amps, profile)
+}
+
+fn unlinearized_input_voltage(source_volts: f32, source_conductance: f32) -> f32 {
+    if source_conductance <= 0.0 {
+        return 0.0;
+    }
+    let source_current_amps = source_volts / MIXER_REFERENCE_SOURCE_RESISTANCE_OHMS;
     let input_conductance_siemens = source_conductance / MIXER_REFERENCE_SOURCE_RESISTANCE_OHMS
         + 1.0 / MIXER_INPUT_SHUNT_RESISTANCE_OHMS
         + 1.0 / UNLINEARIZED_INPUT_RESISTANCE_OHMS;
-    let differential_input_volts =
-        source_current_amps / input_conductance_siemens * profile.input_drive_ratio;
-    let iabc_amps = ten_volt_control_current_amps(control, control_resistance_ohms);
-    ota_output_current_amps(differential_input_volts, iabc_amps, profile)
+    source_current_amps / input_conductance_siemens
 }
 
 fn unlinearized_ota_loaded_voltage(
@@ -822,8 +855,7 @@ mod tests {
     fn mixer_currents_reach_the_filter_through_populated_transimpedances() {
         assert!((90_900.0..=90_920.0).contains(&FILTER_FIRST_CELL_TRANSIMPEDANCE_OHMS));
 
-        let source_current_amps =
-            OSCILLATOR_SOURCE_VOLTS_PER_UNIT / MIXER_REFERENCE_SOURCE_RESISTANCE_OHMS;
+        let source_current_amps = 5.0 / MIXER_REFERENCE_SOURCE_RESISTANCE_OHMS;
         let input_conductance_siemens = 1.0 / MIXER_REFERENCE_SOURCE_RESISTANCE_OHMS
             + 1.0 / MIXER_INPUT_SHUNT_RESISTANCE_OHMS
             + 1.0 / UNLINEARIZED_INPUT_RESISTANCE_OHMS;
@@ -832,7 +864,7 @@ mod tests {
 
         for voice in 0..5 {
             for channel in [MixerChannel::OscillatorA, MixerChannel::OscillatorB] {
-                let one_saw = oscillator_mixer(1.0, 1.0, voice, channel);
+                let one_saw = oscillator_mixer(5.0, 1.0, voice, channel);
                 assert!((4.0..=4.8).contains(&one_saw));
             }
         }
@@ -963,7 +995,7 @@ mod tests {
 
     #[test]
     fn unlinearized_mixer_limits_before_the_linearized_final_vca() {
-        let mixer_input = 10.0;
+        let mixer_input = 50.0;
         let final_input = 2.5;
         let unlinearized = oscillator_mixer(mixer_input, 1.0, 2, MixerChannel::OscillatorA).abs();
         let linearized = final_voice(final_input, 1.0, 2).abs();
@@ -1088,7 +1120,7 @@ mod tests {
         for voice in 0..5 {
             for channel in [MixerChannel::OscillatorA, MixerChannel::OscillatorB] {
                 assert_eq!(
-                    oscillator_mixer_loaded(0.75, 1.0, 0.6, voice, channel),
+                    oscillator_mixer_loaded(0.75, 1.0, 0.0, 0.0, 0.6, voice, channel),
                     oscillator_mixer(0.75, 0.6, voice, channel)
                 );
             }
@@ -1097,8 +1129,10 @@ mod tests {
 
     #[test]
     fn parallel_waveform_paths_load_the_finite_mixer_input() {
-        let one_path = oscillator_mixer_loaded(0.5, 1.0, 1.0, 2, MixerChannel::OscillatorA);
-        let two_equal_paths = oscillator_mixer_loaded(1.0, 2.0, 1.0, 2, MixerChannel::OscillatorA);
+        let one_path =
+            oscillator_mixer_loaded(0.5, 1.0, 0.0, 0.0, 1.0, 2, MixerChannel::OscillatorA);
+        let two_equal_paths =
+            oscillator_mixer_loaded(1.0, 2.0, 0.0, 0.0, 1.0, 2, MixerChannel::OscillatorA);
         let unloaded_linear_sum = one_path * 2.0;
         assert!(two_equal_paths > one_path);
         assert!(two_equal_paths < unloaded_linear_sum);
@@ -1110,24 +1144,44 @@ mod tests {
             + 1.0 / MIXER_INPUT_SHUNT_RESISTANCE_OHMS
             + 1.0 / UNLINEARIZED_INPUT_RESISTANCE_OHMS;
         let expected_input_ratio = 2.0 * one_path_conductance / two_path_conductance;
-        let small_one = oscillator_mixer_loaded(0.001, 1.0, 1.0, 2, MixerChannel::OscillatorA);
-        let small_two = oscillator_mixer_loaded(0.002, 2.0, 1.0, 2, MixerChannel::OscillatorA);
+        let small_one =
+            oscillator_mixer_loaded(0.001, 1.0, 0.0, 0.0, 1.0, 2, MixerChannel::OscillatorA);
+        let small_two =
+            oscillator_mixer_loaded(0.002, 2.0, 0.0, 0.0, 1.0, 2, MixerChannel::OscillatorA);
         assert!((small_two / small_one - expected_input_ratio).abs() < 1.0e-5);
     }
 
     #[test]
     fn pulse_path_uses_its_populated_200k_conductance() {
-        let loaded = oscillator_mixer_loaded(0.75, 0.75, 1.0, 2, MixerChannel::OscillatorA);
+        let loaded =
+            oscillator_mixer_loaded(0.75, 0.75, 0.0, 0.0, 1.0, 2, MixerChannel::OscillatorA);
         let reference = oscillator_mixer(0.75, 1.0, 2, MixerChannel::OscillatorA);
         assert!(loaded > reference);
         assert!(loaded < reference * 1.12);
     }
 
     #[test]
+    fn schematic_input_polarities_are_loaded_independently() {
+        let positive =
+            oscillator_mixer_loaded(5.0, 1.0, 0.0, 0.0, 1.0, 2, MixerChannel::OscillatorB);
+        let negative =
+            oscillator_mixer_loaded(0.0, 0.0, 5.0, 1.0, 1.0, 2, MixerChannel::OscillatorB);
+        let cancelled =
+            oscillator_mixer_loaded(5.0, 1.0, 5.0, 1.0, 1.0, 2, MixerChannel::OscillatorB);
+        assert!(positive > 0.0);
+        assert!((positive + negative).abs() < 1.0e-7);
+        assert!(cancelled.abs() < 1.0e-7);
+
+        let unequal_loading =
+            oscillator_mixer_loaded(5.0, 1.0, 3.75, 0.75, 1.0, 2, MixerChannel::OscillatorB);
+        assert_ne!(unequal_loading, 0.0);
+    }
+
+    #[test]
     fn absent_or_invalid_mixer_sources_are_silent() {
         for source in [0.0, -1.0, f32::NAN, f32::INFINITY] {
             assert_eq!(
-                oscillator_mixer_loaded(1.0, source, 1.0, 0, MixerChannel::OscillatorA),
+                oscillator_mixer_loaded(1.0, source, 0.0, 0.0, 1.0, 0, MixerChannel::OscillatorA,),
                 0.0
             );
         }
@@ -1197,12 +1251,12 @@ mod tests {
             assert!(low < high);
 
             let linearized = poly_mod_filter_envelope_current_amps(1.0, 1.0, voice);
-            let unlinearized = poly_mod_oscillator_b_current_amps(5.0, 1.0, 1.0, voice);
+            let unlinearized = poly_mod_oscillator_b_current_amps(20.0, 1.0, 1.0, voice);
             let linearized_small = poly_mod_filter_envelope_current_amps(0.001, 1.0, voice) / 0.001;
             let unlinearized_small =
                 poly_mod_oscillator_b_current_amps(0.001, 1.0, 1.0, voice) / 0.001;
             let linearized_retained = linearized / linearized_small;
-            let unlinearized_retained = unlinearized / (5.0 * unlinearized_small);
+            let unlinearized_retained = unlinearized / (20.0 * unlinearized_small);
             assert!(
                 linearized_retained > 0.85,
                 "voice {voice} linearized retained {linearized_retained}"
@@ -1219,7 +1273,7 @@ mod tests {
         assert_eq!(POLY_MOD_BUS_LOAD_RESISTANCE_OHMS, 30_000.0);
 
         for voice in 0..5 {
-            let oscillator_current = poly_mod_oscillator_b_current_amps(1.0, 1.0, 1.0, voice);
+            let oscillator_current = poly_mod_oscillator_b_current_amps(5.0, 1.0, 1.0, voice);
             let envelope_current = poly_mod_filter_envelope_current_amps(1.0, 1.0, voice);
             assert!(oscillator_current > 0.0);
             assert!(envelope_current > 0.0);

@@ -225,8 +225,8 @@ impl Voice {
                 self.oscillator_b
                     .next(frequency_b, internal_rate, pulse_width_b, waves_b);
             let poly_oscillator_b_current = vca::poly_mod_oscillator_b_current_amps(
-                sample_b.modulation,
-                sample_b.mixer_source_conductance,
+                sample_b.poly_mod_source_volts,
+                sample_b.poly_mod_source_conductance,
                 poly_oscillator_b_amount,
                 self.voice_index,
             );
@@ -267,14 +267,18 @@ impl Voice {
                 common_filter_octaves + poly_filter_octaves,
             );
             let mixer = vca::oscillator_mixer_loaded(
-                sample_a.audio,
-                sample_a.mixer_source_conductance,
+                sample_a.mixer_positive_source_volts,
+                sample_a.mixer_positive_source_conductance,
+                sample_a.mixer_negative_source_volts,
+                sample_a.mixer_negative_source_conductance,
                 level_a,
                 self.voice_index,
                 vca::MixerChannel::OscillatorA,
             ) + vca::oscillator_mixer_loaded(
-                sample_b.audio,
-                sample_b.mixer_source_conductance,
+                sample_b.mixer_positive_source_volts,
+                sample_b.mixer_positive_source_conductance,
+                sample_b.mixer_negative_source_volts,
+                sample_b.mixer_negative_source_conductance,
                 level_b,
                 self.voice_index,
                 vca::MixerChannel::OscillatorB,

@@ -86,7 +86,7 @@ fn alias_ratio(
         let mut output = 0.0;
         for _ in 0..4 {
             let internal = oscillator.next(frequency, internal_rate, pulse_width, waves);
-            if let Some(sample) = decimator.push(internal.audio) {
+            if let Some(sample) = decimator.push(internal.mixer_differential_source_volts()) {
                 output = sample;
             }
         }
@@ -127,7 +127,7 @@ fn hard_sync_alias_ratio(sample_rate: f32, fundamental_bin: usize) -> f32 {
                 saw,
                 master.sync_events,
             );
-            if let Some(sample) = decimator.push(slave.audio) {
+            if let Some(sample) = decimator.push(slave.mixer_differential_source_volts()) {
                 output = sample;
             }
         }

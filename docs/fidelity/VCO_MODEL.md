@@ -61,9 +61,10 @@ Waveforms sum before their oscillator level. Enabling a second waveform can
 therefore raise level and drive later blocks harder; RF-5 does not normalize
 the selection count. Saw, triangle and pulse now retain their data-sheet
 voltage relationships and the populated board's 150/200 kohm input weighting.
-Oscillator B exposes separate audio and Poly Mod representations so its
-level-shifted triangle can remain bipolar without incorrectly centering saw and
-pulse modulation.
+Oscillator B exposes separate physical mixer and Poly Mod voltages. The audio
+mixer receives the raw positive-going triangle, while only U451's dedicated
+Poly Mod route subtracts the 2.27 V reference; saw and pulse retain their
+electrical bias in both paths.
 
 ## Exposed controls in this block
 

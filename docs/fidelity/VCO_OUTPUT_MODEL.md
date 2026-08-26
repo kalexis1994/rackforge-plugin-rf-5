@@ -30,31 +30,35 @@ profile. Its saw upper/lower endpoints, triangle upper/lower endpoints and
 triangle symmetry all remain inside the published CEM3340 ranges. These are a
 validation population, not measurements from one particular instrument.
 
-One oscillator evaluation now produces two related signals:
+One oscillator evaluation now produces two related electrical signals:
 
-- `audio` removes the fixed electrical midpoint for the oscillator mixer while
-  retaining the duty-dependent mean and DC endpoints, and carries the
-  conductance-weighted sum of the selected 150/200 kohm waveform paths;
-- `mixer_source_conductance` reports the parallel conductance of those active
-  paths relative to one 150 kohm resistor. The value reconstructs the finite
-  CA3280 input loading independently in both U464's audio mixer and U428's
-  oscillator-B Poly Mod amount stage;
-- `modulation` preserves the board-level polarity entering oscillator-B Poly
-  Mod.
+- the paired `mixer_positive_*` and `mixer_negative_*` values carry independent
+  conductance-weighted source volts and conductances for U464's two inputs.
+  SD431 routes saw through 150 kohm to the positive input, while pulse through
+  200 kohm and oscillator-B triangle through 150 kohm reach the negative
+  input. Both 330 ohm shunts and both approximately 100 kohm OTA inputs are
+  loaded independently. The raw waveform DC is retained because SD431 has no
+  coupling capacitor before U464;
+- `poly_mod_source_volts` preserves the board-level polarity entering
+  oscillator-B Poly Mod. Saw and pulse arrive directly, while U451 subtracts
+  the populated 2.27 V TRI REF from the raw oscillator-B triangle. Its
+  separate conductance field describes the common U428 input where all three
+  sources meet.
 
 Both are generated from the same phase, pulse width, waveform switches and
 band-limited edges. They cannot drift apart temporally. The resulting nominal
 relationships are:
 
-- saw audio excursion is the 1.0 reference;
-- triangle is approximately 0.5 because its voltage excursion and input
-  resistor differ from neither side of that ratio;
-- pulse is approximately 1.1025 times saw before finite CA3280 input loading,
-  after its larger voltage excursion and 200/150 kohm resistor ratio are
-  combined; its 200 kohm source is then loaded independently at the mixer;
-- saw modulation is positive-going;
-- pulse modulation spans approximately -0.09 to +2.115 normalized units;
-- triangle modulation is bipolar and equals its audio-domain waveform.
+- saw reaches its profiled approximately 0-10 V data-sheet endpoints;
+- raw triangle reaches its profiled approximately 0-5 V endpoints and has
+  approximately half the saw excursion;
+- pulse reaches approximately -0.45 to +10.575 equivalent source volts after
+  its larger voltage excursion and 200/150 kohm resistor ratio are combined;
+- U464 subtracts pulse and triangle input-node voltages from saw rather than
+  treating selected waveforms as same-polarity host samples;
+- saw and pulse preserve those same one-sided electrical levels in Poly Mod;
+- triangle Poly Mod spans approximately -2.27 to +2.73 V after U451, instead
+  of reusing the raw positive-going audio path.
 
 The public pulse-width pot is first quantized to the physical 128 codes and
 then mapped to approximately 1-99% duty cycle. Modulation is added at the
@@ -63,19 +67,20 @@ At either limit the numerical pulse is stable DC and produces no false
 hard-sync transitions; the modeled output coupling rejects that DC at the host
 boundary.
 
-Selected waveforms still add before both oscillator amount VCAs. The shared
-waveform boundary retains their total source conductance so each approximately
-100 kohm unlinearized CA3280 input loads one selected waveform differently
-from two or three parallel paths. Oscillator B's `modulation` sum and this
-conductance feed Poly Mod independently of its audio mixer level, exactly as
-the separate board routing requires.
+Selected waveforms still meet before both oscillator amount VCAs, but U464's
+positive and negative input sums remain separate until its differential pair.
+Each approximately 100 kohm input and 330 ohm shunt therefore loads only its
+own selected resistors. Oscillator B's Poly Mod sum and conductance feed U428
+independently of its audio mixer level, exactly as the separate board routing
+requires.
 
 ## Numerical treatment
 
 Saw and pulse retain PolyBLEP edge correction, and the full signal path remains
-four-times oversampled. Triangle now uses each VCO profile's 45-55% rise/fall
-symmetry instead of assuming a perfect 50% shape. No state or public parameter
-was added.
+four-times oversampled. Triangle uses each VCO profile's 45-55% rise/fall
+symmetry instead of assuming a perfect 50% shape. U464 and U428 consume the
+equivalent source volts directly, so there is no hidden five-volts-per-unit
+conversion at either CA3280 boundary. No state or public parameter was added.
 
 ## Bounded uncertainty
 
@@ -87,25 +92,28 @@ hypothesis. The following remain open:
 - exact populated PWM threshold and transient behavior at modulation
   overtravel;
 - high-frequency rounding and output-buffer impedance at the populated board;
-- static DC propagation through the mixer and filter before the now-modeled
-  final 4.34 Hz output coupling network;
+- exact populated DC operating-point displacement through the mixer and
+  filter before the modeled final 4.34 Hz output coupling network;
 - correlations between amplitude, symmetry, scale error and temperature;
 - waveform captures from a calibrated Revision 3 instrument.
 
-The audio representation removes each waveform's static midpoint because its
-propagation through the intervening mixer and filter remains unknown. The
-modeled final coupling network now independently rejects any residual steady
-DC before the host boundary. The modulation representation retains the source
-polarity where it changes musical behaviour. This split is explicit and
-replaceable when full-path measurements become available.
+The candidate now preserves every schematic-visible DC component through the
+unlinearized mixer and nonlinear filter. That operating point can change
+saturation and therefore audible harmonics even though the modeled final
+coupling network rejects the remaining steady DC before the host boundary.
+The exact populated displacement is still a bounded hypothesis until a full
+voice-card waveform capture becomes available.
 
 ## Acceptance tests
 
 - all ten profiles remain inside every published endpoint and symmetry limit;
-- triangle is bipolar and approximately half the saw excursion;
+- raw audio triangle is positive-going and approximately half the saw
+  excursion, while its U451 Poly Mod path is offset by exactly 2.27 V;
 - pulse is slightly hotter than saw after the board resistor ratio;
 - every waveform selection reports its exact populated relative conductance;
-- saw/pulse Poly Mod remain one-sided while triangle remains bipolar;
+- equal positive/negative source nodes cancel and unequal 150/200 kohm paths
+  retain their independent loading;
+- saw/pulse Poly Mod retain their electrical bias while triangle crosses zero;
 - every waveform combination stays finite at the oversampled rate;
 - all 128 panel codes are monotonic from 1% to 99%, while modulation can reach
   stable 0/100% DC without emitting sync edges;
