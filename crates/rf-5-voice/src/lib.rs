@@ -27,7 +27,6 @@ use vco::{Vco, WaveSelection};
 const INITIAL_PHASE_A: [f32; 5] = [0.07, 0.31, 0.58, 0.83, 0.19];
 const INITIAL_PHASE_B: [f32; 5] = [0.67, 0.11, 0.42, 0.74, 0.93];
 const OSCILLATOR_OVERSAMPLING: usize = 4;
-const FILTER_ENVELOPE_DEPTH_OCTAVES: f32 = 6.5;
 const FILTER_MINIMUM_HZ: f32 = 16.351_599;
 const FILTER_PANEL_OCTAVES: f32 = 10.0;
 const FILTER_KEYBOARD_BASE_NOTE: f32 = 36.0;
@@ -211,11 +210,11 @@ impl Voice {
             parameter_enabled(settings, Parameter::PolyModOscillatorAPulseWidth);
         let poly_filter = parameter_enabled(settings, Parameter::PolyModFilter);
         let filter_resonance = quantize_analog_pot(settings.get(Parameter::FilterResonance));
-        let direct_filter_envelope = vca::filter_envelope_amount(
+        let direct_filter_envelope = vca::filter_envelope_cutoff_octaves(
             filter_envelope,
             quantize_analog_pot(settings.get(Parameter::FilterEnvelopeAmount)),
             self.voice_index,
-        ) * FILTER_ENVELOPE_DEPTH_OCTAVES;
+        );
         let filter_cutoff = quantize_analog_pot(settings.get(Parameter::FilterCutoff));
         let filter_keyboard = parameter_enabled(settings, Parameter::FilterKeyboard);
         let common_filter_octaves = direct_filter_envelope + modulation.filter_octaves;

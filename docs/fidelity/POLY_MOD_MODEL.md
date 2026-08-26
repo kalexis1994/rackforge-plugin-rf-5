@@ -19,9 +19,10 @@ waveforms contribute to the source bus. Hard sync is a separate route.
 - Filter attack, decay, sustain, release and direct cutoff amount use the
   original 128-position panel quantization boundary.
 - The two physical halves of U422 are modeled together on each voice: one
-  linearized transfer controls direct filter-envelope amount and the other
-  controls the Poly Mod envelope source. The latter is explicitly inverted at
-  the summing node.
+  controls direct filter-envelope amount and the other controls the Poly Mod
+  envelope source. The direct half now produces U433 summing current from the
+  populated 4.75k IABC, 121k diode-bias, 475k/47.5k input and 100k common-CV
+  reference networks. The latter is explicitly inverted at the summing node.
 - Oscillator B is evaluated first during each 4x internal substep. Its selected
   waveform sum passes through one profiled unlinearized CA3280 amount VCA per
   voice before the audio mixer level. Saw and pulse retain their board-level
@@ -55,15 +56,22 @@ therefore retains one explicit 1.2 V/unit bus anchor. A populated-unit PMOD
 voltage measurement can replace it and recalibrate all three destinations
 together without changing their accepted circuit ratios.
 
-The direct filter-envelope cutoff depth is also an isolated candidate. Both
-envelopes now use the CEM3310 true-RC candidate documented in
-`ENVELOPE_MODEL.md`; exact panel taper remains unmeasured.
+The direct filter-envelope path no longer owns an isolated octave-depth
+constant. At the provisional 0-5 V common S/H span, the populated network and
+CA3280 data-sheet equations produce approximately 4.56 octaves at a nominal
+5 V CEM3310 peak. That S/H span remains the sole replaceable electrical anchor;
+a populated-unit voltage measurement will rescale the IABC current without
+changing the accepted circuit. Both envelopes use the CEM3310 true-RC
+candidate documented in `ENVELOPE_MODEL.md`; exact panel taper remains
+unmeasured.
 
 ## Acceptance tests
 
 - full filter-envelope Poly Mod makes oscillator A descend rather than ascend;
 - oscillator-B Poly Mod remains audible with oscillator-B mixer level at zero;
 - paired direct/Poly Mod envelope halves remain close but non-identical;
+- direct envelope depth follows U422/U433 current and resistor ratios rather
+  than a free maximum-octaves constant;
 - Poly Mod amount rises monotonically and its two CA3280 modes retain their
   distinct strong-signal ranges;
 - frequency and filter destinations produce distinct renders;

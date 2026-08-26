@@ -33,6 +33,24 @@ const FINAL_VCA_NOMINAL_LIMIT_UNITS: f32 = DATASHEET_LINEARIZED_LIMIT_VOLTS
 // sample-rate-dependent smoothing approximation.
 const ENVELOPE_NOMINAL_PEAK_VOLTS: f32 = 5.0;
 const ENVELOPE_MAXIMUM_PEAK_VOLTS: f32 = 5.3;
+// The direct filter-envelope half of SD431 U422 is reconstructed as a current
+// path into U433 rather than as a normalized VCA followed by an arbitrary
+// octave range. The still-provisional common S/H boundary supplies 0-5 V to
+// R449. R451 programs the linearizing diodes across the nominal +/-15 V
+// supply, and the serviced balance network gives the inverting input its AC
+// return through R450 and R453 plus the 100k trimmer's centre Thevenin value.
+// Intersil gives RD = 52 / ID(mA) * 1.34 for the diode network. U433's 100k
+// common-CV resistor defines 10 uA as one octave of filter control current.
+const FILTER_ENVELOPE_AMOUNT_CV_SPAN_VOLTS: f32 = 5.0;
+const FILTER_ENVELOPE_IABC_RESISTANCE_OHMS: f32 = 4_750.0;
+const FILTER_ENVELOPE_DIODE_RESISTANCE_OHMS: f32 = 121_000.0;
+const FILTER_ENVELOPE_SOURCE_RESISTANCE_OHMS: f32 = 475_000.0;
+const FILTER_ENVELOPE_BALANCE_SERIES_RESISTANCE_OHMS: f32 = 475_000.0;
+const FILTER_ENVELOPE_INPUT_RETURN_RESISTANCE_OHMS: f32 = 47_500.0;
+const FILTER_ENVELOPE_BALANCE_TRIM_THEVENIN_OHMS: f32 = 25_000.0;
+const FILTER_ENVELOPE_DIODE_DYNAMIC_OHM_AMPS: f32 = 52.0e-3 * 1.34;
+const FILTER_ENVELOPE_SUPPLY_SPAN_VOLTS: f32 = 30.0;
+const FILTER_SUM_COMMON_INPUT_RESISTANCE_OHMS: f32 = 100_000.0;
 const VCA_CONTROL_SERIES_RESISTANCE_OHMS: f32 = 3_300.0 + 3_300.0;
 #[cfg(test)]
 const Q410_REFERENCE_CURRENT_AMPS: f32 = 100.0e-6;
@@ -316,14 +334,41 @@ pub fn wheel_mod_source(lfo: f32, noise: f32, source_mix: f32) -> f32 {
     )
 }
 
-/// The direct filter-envelope amount half of U422 on one voice card.
-pub fn filter_envelope_amount(input: f32, control: f32, voice_index: usize) -> f32 {
-    ota_transfer(
-        input,
-        control,
-        LINEARIZED_INPUT_DRIVE,
-        ENVELOPE_AMOUNT_PROFILES[voice_index % ENVELOPE_AMOUNT_PROFILES.len()].direct_filter,
-    )
+/// Filter-cutoff displacement produced by the direct envelope half of U422.
+///
+/// The result is in octaves because it is expressed relative to the 10 uA
+/// that a one-volt common filter CV sends through U433's populated 100 kohm
+/// input. Only the 0-5 V amount-cell span remains a replaceable candidate.
+pub fn filter_envelope_cutoff_octaves(envelope: f32, amount: f32, voice_index: usize) -> f32 {
+    if !envelope.is_finite() || envelope <= 0.0 || !amount.is_finite() || amount <= 0.0 {
+        return 0.0;
+    }
+
+    let profile =
+        ENVELOPE_AMOUNT_PROFILES[voice_index % ENVELOPE_AMOUNT_PROFILES.len()].direct_filter;
+    let iabc_amps = amount.clamp(0.0, 1.0) * FILTER_ENVELOPE_AMOUNT_CV_SPAN_VOLTS
+        / FILTER_ENVELOPE_IABC_RESISTANCE_OHMS;
+    let diode_current_amps =
+        FILTER_ENVELOPE_SUPPLY_SPAN_VOLTS / FILTER_ENVELOPE_DIODE_RESISTANCE_OHMS;
+    let diode_dynamic_resistance_ohms = FILTER_ENVELOPE_DIODE_DYNAMIC_OHM_AMPS / diode_current_amps;
+    let balance_return_resistance_ohms = 1.0
+        / (1.0 / FILTER_ENVELOPE_INPUT_RETURN_RESISTANCE_OHMS
+            + 1.0
+                / (FILTER_ENVELOPE_BALANCE_SERIES_RESISTANCE_OHMS
+                    + FILTER_ENVELOPE_BALANCE_TRIM_THEVENIN_OHMS));
+    let input_loop_resistance_ohms =
+        FILTER_ENVELOPE_SOURCE_RESISTANCE_OHMS + balance_return_resistance_ohms;
+    let envelope_volts = (envelope * ENVELOPE_NOMINAL_PEAK_VOLTS).min(ENVELOPE_MAXIMUM_PEAK_VOLTS);
+    let differential_input_volts = envelope_volts * diode_dynamic_resistance_ohms
+        / (input_loop_resistance_ohms + diode_dynamic_resistance_ohms)
+        * profile.input_drive_ratio;
+    let small_signal_output_current_amps =
+        iabc_amps * CA3280_TRANSCONDUCTANCE_SIEMENS_PER_AMP * differential_input_volts;
+    let peak_output_current_amps = iabc_amps * CA3280_PEAK_OUTPUT_CURRENT_RATIO;
+    let output_current_amps = peak_output_current_amps
+        * libm::tanhf(small_signal_output_current_amps / peak_output_current_amps)
+        * profile.transconductance_ratio;
+    output_current_amps * FILTER_SUM_COMMON_INPUT_RESISTANCE_OHMS
 }
 
 /// The second, inverted-at-the-summing-node U422 envelope amount path.
@@ -519,7 +564,7 @@ mod tests {
                     0.0
                 );
                 assert_eq!(final_voice(input, 0.0, voice), 0.0);
-                assert_eq!(filter_envelope_amount(input, 0.0, voice), 0.0);
+                assert_eq!(filter_envelope_cutoff_octaves(input, 0.0, voice), 0.0);
                 assert_eq!(poly_mod_filter_envelope(input, 0.0, voice), 0.0);
                 assert_eq!(poly_mod_oscillator_b(input, 0.0, voice), 0.0);
             }
@@ -534,6 +579,24 @@ mod tests {
         let middle = oscillator_mixer(0.5, 0.5, 2, MixerChannel::OscillatorA).abs();
         let high = oscillator_mixer(0.5, 1.0, 2, MixerChannel::OscillatorA).abs();
         assert!(low < middle && middle < high);
+    }
+
+    #[test]
+    fn direct_filter_envelope_reaches_u433_through_the_populated_current_path() {
+        let diode_current =
+            FILTER_ENVELOPE_SUPPLY_SPAN_VOLTS / FILTER_ENVELOPE_DIODE_RESISTANCE_OHMS;
+        let diode_resistance = FILTER_ENVELOPE_DIODE_DYNAMIC_OHM_AMPS / diode_current;
+        assert!((240.0e-6..=255.0e-6).contains(&diode_current));
+        assert!((270.0..=295.0).contains(&diode_resistance));
+
+        for voice in 0..5 {
+            let quarter = filter_envelope_cutoff_octaves(1.0, 0.25, voice);
+            let half = filter_envelope_cutoff_octaves(1.0, 0.5, voice);
+            let full = filter_envelope_cutoff_octaves(1.0, 1.0, voice);
+            assert!(quarter > 0.0 && quarter < half && half < full);
+            assert!((4.2..=4.9).contains(&full));
+            assert_eq!(filter_envelope_cutoff_octaves(0.0, 1.0, voice), 0.0);
+        }
     }
 
     #[test]
