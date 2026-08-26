@@ -22,12 +22,18 @@ wheel in RF-5.
   frequency-CV input versus the CEM3340's standard 100 kohm, one-volt-per-octave
   input and the 0-10 V DAC range establish 9.0909 octaves, or approximately
   545.3:1. The 20 Hz upper anchor remains an isolated calibration hypothesis,
-  which currently places the lower endpoint near 0.0367 Hz.
+  which currently places the lower endpoint near 0.0367 Hz. SD334's populated
+  0.1 uF C381 timing capacitor and the CEM3340 equation
+  `f = 3 I_EG / (2 V_CC C_F)` make the same candidate equivalent to 20 uA at
+  the upper endpoint and 36.7 nA at the lower endpoint; the latter is slightly
+  below the data sheet's preferred 50 nA accurate-range boundary.
 - Saw, triangle and square are independently summable. Their AC-centered
   render now preserves the nominal CEM3340/SD334 current-domain relationship:
-  saw is the 1.0 reference, triangle is 0.5 and pulse is approximately 1.176.
-  The last figure combines the accepted 14.7 V clamped pulse excursion with
-  its 200 kohm path versus the saw's nominal 10 V and 160 kohm path.
+  saw and triangle are both the 1.0 reference, while pulse is approximately
+  1.176. U380's equal 100 kohm input and feedback resistors double the raw 5 V
+  triangle span around its reference before its 160 kohm input path, matching
+  the saw's 10 V span and 160 kohm path. The pulse figure combines the accepted
+  14.7 V clamped excursion with its 200 kohm path.
 - The LFO and noise sources pass through the two profiled, unlinearized halves
   of common CA3280 U378. The 0-10 V source-mix CV drives grounded-base 2N4250
   Q307 through 8.2 kohm and drives Q309 in the opposite direction against the
@@ -59,12 +65,15 @@ wheel in RF-5.
 
 The manual provides qualitative slow/faster-ramp checks but no absolute LFO
 frequency endpoints. RF-5 therefore accepts the circuit-derived sweep width
-while isolating the 20 Hz upper anchor in the LFO module rather than treating
-it as measured hardware fact. A populated-unit timing measurement can replace
-that one anchor without changing the control law. Wheel Mod destination ratios
-and the W-MOD source voltage are now circuit-derived. Populated-unit
-measurements can refine the transistor/OTA population without restoring a
-host normalization boundary.
+and populated timing capacitor while isolating the 20 Hz/20 uA upper anchor in
+the LFO module rather than treating it as measured hardware fact. A populated-
+unit timing measurement can replace that one anchor without changing the
+control law. The lowest approximately 0.45 octave lies below the CEM3340 data
+sheet's preferred 50 nA accurate-current range and is correspondingly more
+device-sensitive. Wheel Mod destination ratios, U380 triangle gain and the
+W-MOD source voltage are now circuit-derived. Populated-unit measurements can
+refine the transistor/OTA population without restoring a host normalization
+boundary.
 
 The original Wheel Mod source-mix control now current-mixes the LFO with the
 shared MM5837-class noise candidate through its physical CA3280 rather than a
@@ -77,10 +86,12 @@ and spectral assumptions are documented separately in
 
 - the frequency mapping is monotonic, exposes 128 distinct panel steps and
   spans the circuit-derived 9.0909 octaves;
+- the populated 0.1 uF timing capacitor maps the isolated endpoint candidate
+  to 20 uA at maximum and approximately 36.7 nA at minimum;
 - square-wave positive and negative intervals are equal within one sample;
 - simultaneously selected waveforms sum on one shared bus;
-- source amplitudes follow the accepted CEM3340 voltage and SD334 resistor
-  ratios instead of ideal equal-amplitude shapes;
+- source amplitudes follow the accepted CEM3340 voltage, U380's 2x triangle
+  conditioning and SD334 resistor ratios instead of raw chip amplitudes;
 - source-mix endpoints completely isolate the opposite OTA half, intermediate
   Q307/Q309 currents move monotonically in opposite directions and zero input
   has no balance offset;

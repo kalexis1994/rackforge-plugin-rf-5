@@ -19,17 +19,34 @@ const CIRCUIT_SWEEP_OCTAVES: f32 = PANEL_CONTROL_RANGE_VOLTS
     / POPULATED_FREQUENCY_INPUT_OHMS;
 
 // Twenty hertz remains an explicit calibration hypothesis, not a measurement.
-// Keeping the uncertain anchor separate prevents it from contaminating the
-// source-backed exponential law and makes later measured replacement local.
+// SD334 populates C381 at 0.1 uF and the CEM3340 data sheet gives
+// f = 3 I_EG / (2 V_CC C_F). The resulting 20 uA high-end generator current
+// and 36.7 nA low-end current keep that uncertainty explicit and testable.
 const CANDIDATE_MAXIMUM_HZ: f32 = 20.0;
+#[cfg(test)]
+const CEM3340_POSITIVE_SUPPLY_VOLTS: f32 = 15.0;
+#[cfg(test)]
+const POPULATED_TIMING_CAPACITANCE_FARADS: f32 = 0.1e-6;
 
-// The SD334 Wheel Mod board sends the CEM3340 saw and shifted triangle through
-// 160 kohm paths and pulse through 200 kohm. Combining those resistors with
-// the accepted nominal 10 V saw, 5 V triangle and 14.7 V clamped pulse spans
-// gives these relative current-domain excursions at the source summing node.
+// SD334 sends saw and U380-conditioned triangle through 160 kohm paths and
+// pulse through 200 kohm. U380's equal 100 kohm input/feedback resistors give
+// the triangle a signal gain of two around its reference, so its original 5 V
+// span becomes the same 10 V span as saw before both reach the OTA input.
+const CEM3340_SAW_SPAN_VOLTS: f32 = 10.0;
+const CEM3340_TRIANGLE_SPAN_VOLTS: f32 = 5.0;
+const CEM3340_PULSE_SPAN_VOLTS: f32 = 14.7;
+const U380_TRIANGLE_INPUT_OHMS: f32 = 100_000.0;
+const U380_TRIANGLE_FEEDBACK_OHMS: f32 = 100_000.0;
+const LFO_SAW_AND_TRIANGLE_INPUT_OHMS: f32 = 160_000.0;
+const LFO_PULSE_INPUT_OHMS: f32 = 200_000.0;
+const U380_TRIANGLE_SIGNAL_GAIN: f32 = 1.0 + U380_TRIANGLE_FEEDBACK_OHMS / U380_TRIANGLE_INPUT_OHMS;
+const SAW_INPUT_CURRENT_SPAN_AMPS: f32 = CEM3340_SAW_SPAN_VOLTS / LFO_SAW_AND_TRIANGLE_INPUT_OHMS;
 const SAW_GAIN: f32 = 1.0;
-const TRIANGLE_GAIN: f32 = 0.5;
-const PULSE_GAIN: f32 = 1.176;
+const TRIANGLE_GAIN: f32 = (CEM3340_TRIANGLE_SPAN_VOLTS * U380_TRIANGLE_SIGNAL_GAIN
+    / LFO_SAW_AND_TRIANGLE_INPUT_OHMS)
+    / SAW_INPUT_CURRENT_SPAN_AMPS;
+const PULSE_GAIN: f32 =
+    (CEM3340_PULSE_SPAN_VOLTS / LFO_PULSE_INPUT_OHMS) / SAW_INPUT_CURRENT_SPAN_AMPS;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct LfoWaveSelection {
@@ -87,6 +104,15 @@ pub fn frequency_hz(control: f32) -> f32 {
 }
 
 #[cfg(test)]
+fn exponential_generator_current_amps(frequency_hz: f32) -> f32 {
+    frequency_hz.max(0.0)
+        * 2.0
+        * CEM3340_POSITIVE_SUPPLY_VOLTS
+        * POPULATED_TIMING_CAPACITANCE_FARADS
+        / 3.0
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -109,6 +135,17 @@ mod tests {
         let expected = libm::powf(2.0, 10.0 / 1.1);
         assert!((ratio - expected).abs() < 0.001);
         assert!((ratio - 545.30).abs() < 0.1);
+    }
+
+    #[test]
+    fn populated_timing_capacitance_bounds_the_candidate_generator_current() {
+        let minimum_hz = frequency_hz(0.0);
+        let maximum_current = exponential_generator_current_amps(frequency_hz(1.0));
+        let minimum_current = exponential_generator_current_amps(minimum_hz);
+
+        assert!((maximum_current - 20.0e-6).abs() < 1.0e-10);
+        assert!((minimum_current - 36.675e-9).abs() < 0.01e-9);
+        assert!(maximum_current < 100.0e-6);
     }
 
     #[test]
@@ -158,7 +195,7 @@ mod tests {
     }
 
     #[test]
-    fn board_weighting_preserves_cem3340_output_relationships() {
+    fn board_weighting_includes_u380_triangle_conditioning() {
         let mut saw = Lfo::default();
         let mut triangle = Lfo::default();
         let mut pulse = Lfo::default();
@@ -195,5 +232,8 @@ mod tests {
             ),
             PULSE_GAIN
         );
+        assert_eq!(U380_TRIANGLE_SIGNAL_GAIN, 2.0);
+        assert_eq!(TRIANGLE_GAIN, SAW_GAIN);
+        assert!((PULSE_GAIN - 1.176).abs() < 1.0e-6);
     }
 }
