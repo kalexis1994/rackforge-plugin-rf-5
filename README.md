@@ -29,7 +29,9 @@ global programmable Release switch now drives both
 envelopes, and every original RF-5 patch is packed through the recovered V8.1
 24-byte program format with 24 seven-bit pots and 22 mapped switches. Separate
 CA3280 mixer, final-voice and master-volume
-transfers now feed the documented five-input summer and output buffer, while a
+transfers now feed the documented five-input summer, C4189 coupling network and
+1-kohm-loaded NE5534 output follower. The final host mapping is linear, so it
+cannot compress before the reconstructed analog stages, while a
 source-backed control scheduler recreates the held 6/11 ms panel cycle. It
 retains the physical window ADC's 34 mV hysteresis boundary and the V8.1
 two-scan same-direction pot qualification, while program and state recalls

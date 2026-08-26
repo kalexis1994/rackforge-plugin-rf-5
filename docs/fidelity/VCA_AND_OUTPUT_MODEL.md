@@ -122,12 +122,18 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
   loading. Their currents meet at R4108's 30k load and the resulting voltage
   is bounded at the data sheet's guaranteed minimum +/-12 V output swing
   before U431's follower and the three destination networks.
-- The NE5534 and its 1 kohm shunt/560 ohm output-isolation network are treated
-  as linear inside their headroom. The 560 ohm resistor is not modeled as a
-  fixed divider because the external load is unspecified. All modeled audio
-  stages exchange circuit volts; one explicit candidate conversion after the
-  coupling network maps two circuit volts to one host unit before the smooth
-  full-scale boundary. It cannot change analog overload behavior.
+- U481 is now an explicit NE5534 voltage follower on the populated +/-15 V
+  rails. R4544 permanently loads its output with 1 kohm and R4543 contributes
+  the measured 560 ohm jack source resistance. The accepted manufacturer
+  boundaries are 24 Vpp guaranteed and 26 Vpp typical into at least 600 ohm,
+  38 mA typical output current and 13 V/us typical slew rate. The high-
+  impedance RackForge input leaves R4543 unloaded; a finite external-load
+  fixture verifies the divider without silently assuming a particular mixer.
+- All modeled audio stages exchange circuit volts through the jack. One
+  explicit candidate conversion maps four jack volts to one host unit only
+  after U481. The mapping is strictly linear and replaces the former host
+  `tanh`, which compressed strong chords before any physical stage reached its
+  own overload boundary.
 - Master volume is direct, is not delayed by the CPU control scheduler and is
   preserved when programs change.
 
@@ -144,9 +150,9 @@ printed bitmap, so the approximately four-division limit and sixth-order knee
 are explicit bounded interpretations rather than digitized device
 measurements. The oscillator and noise current networks no longer require a
 one-saw loading normalization. Q410 temperature, overload-knee spread,
-populated-device matching, external output load and the final two-volts-per-
-host-unit conversion remain hypotheses. The former two-volts-per-internal-unit
-audio scale has been removed from the analog path.
+populated-device matching, external output load and the final four-volts-per-
+host-unit conversion remain hypotheses. Neither that conversion nor a digital
+full-scale limiter is present inside the analog path.
 The five-volt volume reference follows the documented analog control domain,
 but its populated rail and R113 end-to-end tolerance are unmeasured. U479's
 approximately 100 uA/V centre slope is read from the printed Figure 3A bitmap,
@@ -190,11 +196,18 @@ recorded sweeps from a serviced reference instrument.
   rate, its 100 ms capacitor decay matches the analytic value at
   44.1/48/96/192 kHz, and it retains the expected approximately 97.7%
   amplitude at 20 Hz;
+- the loaded NE5534 remains exactly linear through its guaranteed +/-12 V
+  span at 44.1/48/96/192 kHz, is bounded by its typical +/-13 V swing, draws
+  less than the published current capability through R4544 and preserves the
+  documented 560 ohm source resistance under a finite-load fixture;
+- the final circuit-volts-to-host conversion is linear above unity and cannot
+  masquerade as analog saturation;
 - program changes preserve the physical master volume.
 - the decimator preserves DC gain, produces exactly one output per four
   internal samples, passes 10 kHz essentially flat and rejects a 60 kHz
   internal tone below -80 dB relative to its input RMS.
 
 Primary evidence: TM1000D.2 sections 2-5 and 2-8, schematics SD431-SD435 and
-SD430, service adjustments 4-21 and 4-22, the CA3280 data sheet and Fairchild's
-2N4248/2N4249/2N4250 data. Provenance is recorded in `SOURCE_LEDGER.md`.
+SD430, service adjustments 4-21 and 4-22, the CA3280 and NE5534 data sheets and
+Fairchild's 2N4248/2N4249/2N4250 data. Provenance is recorded in
+`SOURCE_LEDGER.md`.

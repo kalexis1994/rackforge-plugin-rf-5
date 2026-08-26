@@ -2,9 +2,10 @@
 //!
 //! Five equal-value input resistors feed the inverting voice summer. Its
 //! output reaches a linearized CA3280 master VCA, the C4189 coupling network
-//! and an NE5534 output buffer. Every value through the coupling capacitor is
-//! expressed in circuit volts; one explicit adapter-boundary constant maps
-//! those volts to the host's dimensionless full-scale domain.
+//! and the loaded NE5534 voltage follower on SD430. Every value through the
+//! output jack is expressed in circuit volts; one explicit adapter-boundary
+//! constant maps those volts to the host's dimensionless domain without
+//! adding a second, fictitious saturation stage.
 
 use rf_5_voice::vca;
 
@@ -12,18 +13,32 @@ use rf_5_voice::vca;
 // resistors into the high-impedance U480 follower. Active and inactive cards
 // therefore form an exact passive five-input average, not an arbitrary gain.
 const VOICE_SUMMER_EQUAL_RESISTOR_GAIN: f32 = 1.0 / 5.0;
-// External load and interface headroom are not specified by the instrument.
-// Preserve the accepted 2 V-per-host-unit listening calibration only here,
-// after the complete analog circuit model, until a reference output sweep is
-// available. This value cannot alter any analog overload or interaction.
-const CANDIDATE_CIRCUIT_VOLTS_PER_HOST_UNIT: f32 = 2.0;
-const HOST_OUTPUT_CEILING: f32 = 0.98;
+// External load and interface reference level are not specified by the
+// instrument. Four circuit volts per host unit leaves the strongest accepted
+// five-voice condition below digital full scale while keeping this conversion
+// strictly linear. It cannot alter analog overload or interaction and remains
+// one replaceable calibration boundary until a reference output sweep exists.
+const CANDIDATE_CIRCUIT_VOLTS_PER_HOST_UNIT: f32 = 4.0;
 
 // SD430: C4189 couples the U479 master VCA to the U481 output buffer. The
 // following node sees R4562 and R4541 to ground.
 const COUPLING_CAPACITANCE_FARADS: f32 = 2.2e-6;
 const COUPLING_LOAD_A_OHMS: f32 = 20_000.0;
 const COUPLING_LOAD_B_OHMS: f32 = 100_000.0;
+
+// SD430 buffers the C4189 node with U481, an NE5534 voltage follower on
+// +/-15 V rails. R4544 permanently loads its output with 1 kohm before R4543
+// adds 560 ohm of jack isolation. The manufacturer guarantees at least 24 Vpp
+// at 600 ohm and gives 26 Vpp, 38 mA and 13 V/us as typical values. The high-Z
+// RackForge boundary leaves the series resistor unloaded, but the permanent
+// one-kilohm board load and the device limits remain explicit here.
+const OUTPUT_BUFFER_LOAD_OHMS: f32 = 1_000.0;
+const OUTPUT_ISOLATION_OHMS: f32 = 560.0;
+#[cfg(test)]
+const OUTPUT_BUFFER_GUARANTEED_SWING_VOLTS: f32 = 12.0;
+const OUTPUT_BUFFER_TYPICAL_SWING_VOLTS: f32 = 13.0;
+const OUTPUT_BUFFER_SHORT_CIRCUIT_CURRENT_AMPS: f32 = 38.0e-3;
+const OUTPUT_BUFFER_SLEW_VOLTS_PER_SECOND: f32 = 13.0e6;
 
 // PCB1 R113 is a 10 kohm linear panel pot. SD430 loads its wiper with R4555
 // and C4184 before U480 buffers it into the Q411 current converter. The
@@ -41,12 +56,14 @@ pub struct OutputStage {
     // residue.
     coupling_capacitor_voltage: f64,
     master_volume_cv_volts: f64,
+    output_buffer_voltage: f64,
 }
 
 impl OutputStage {
     pub fn reset(&mut self) {
         self.coupling_capacitor_voltage = 0.0;
         self.master_volume_cv_volts = 0.0;
+        self.output_buffer_voltage = 0.0;
     }
 
     pub fn next(&mut self, voice_sum: f32, master_volume: f32, sample_rate: f32) -> f32 {
@@ -63,8 +80,8 @@ impl OutputStage {
         let master_control = self.master_volume_control(master_volume, sample_rate);
         let master_vca = vca::master_output(summer, master_control);
         let coupled_volts = self.ac_couple(master_vca, sample_rate);
-        let host_input = coupled_volts / CANDIDATE_CIRCUIT_VOLTS_PER_HOST_UNIT;
-        HOST_OUTPUT_CEILING * libm::tanhf(host_input / HOST_OUTPUT_CEILING)
+        let jack_volts = self.output_buffer(coupled_volts, sample_rate);
+        host_from_jack_volts(jack_volts)
     }
 
     fn master_volume_control(&mut self, panel: f32, sample_rate: f32) -> f32 {
@@ -89,6 +106,37 @@ impl OutputStage {
             input + (self.coupling_capacitor_voltage - input) * retained;
         (input - self.coupling_capacitor_voltage) as f32
     }
+
+    fn output_buffer(&mut self, input: f32, sample_rate: f32) -> f32 {
+        // The 1 kohm board load asks for at most 13 mA at the typical swing,
+        // comfortably inside the 38 mA typical current capability. Keep the
+        // current boundary in the calculation so a future measured load can
+        // replace the present high-impedance interface without changing the
+        // device model.
+        let current_limited_swing =
+            OUTPUT_BUFFER_SHORT_CIRCUIT_CURRENT_AMPS * OUTPUT_BUFFER_LOAD_OHMS;
+        let swing = OUTPUT_BUFFER_TYPICAL_SWING_VOLTS.min(current_limited_swing);
+        let target = input.clamp(-swing, swing);
+        let maximum_step = f64::from(OUTPUT_BUFFER_SLEW_VOLTS_PER_SECOND / sample_rate);
+        let delta =
+            (f64::from(target) - self.output_buffer_voltage).clamp(-maximum_step, maximum_step);
+        self.output_buffer_voltage += delta;
+        jack_voltage_for_load(self.output_buffer_voltage as f32, f32::INFINITY)
+    }
+}
+
+fn host_from_jack_volts(jack_volts: f32) -> f32 {
+    jack_volts / CANDIDATE_CIRCUIT_VOLTS_PER_HOST_UNIT
+}
+
+fn jack_voltage_for_load(buffer_volts: f32, external_load_ohms: f32) -> f32 {
+    if external_load_ohms.is_infinite() && external_load_ohms.is_sign_positive() {
+        return buffer_volts;
+    }
+    if !external_load_ohms.is_finite() || external_load_ohms <= 0.0 {
+        return 0.0;
+    }
+    buffer_volts * external_load_ohms / (external_load_ohms + OUTPUT_ISOLATION_OHMS)
 }
 
 fn coupling_load_ohms() -> f32 {
@@ -179,7 +227,7 @@ mod tests {
     }
 
     #[test]
-    fn output_is_symmetric_finite_and_bounded() {
+    fn output_is_symmetric_finite_and_physically_bounded() {
         for index in -20_000..=20_000 {
             let input = index as f32 * 0.01;
             let mut positive_stage = OutputStage::default();
@@ -187,9 +235,60 @@ mod tests {
             let positive = positive_stage.next(input, 1.0, SAMPLE_RATE);
             let negative = negative_stage.next(-input, 1.0, SAMPLE_RATE);
             assert!(positive.is_finite());
-            assert!(positive.abs() <= HOST_OUTPUT_CEILING);
+            assert!(
+                positive.abs()
+                    <= OUTPUT_BUFFER_TYPICAL_SWING_VOLTS / CANDIDATE_CIRCUIT_VOLTS_PER_HOST_UNIT
+            );
             assert!((positive + negative).abs() < 1.0e-6);
         }
+    }
+
+    #[test]
+    fn ne5534_follower_is_linear_inside_its_guaranteed_swing() {
+        for sample_rate in [44_100.0, 48_000.0, 96_000.0, 192_000.0] {
+            for input in [
+                -OUTPUT_BUFFER_GUARANTEED_SWING_VOLTS,
+                -4.0,
+                0.0,
+                4.0,
+                OUTPUT_BUFFER_GUARANTEED_SWING_VOLTS,
+            ] {
+                let mut stage = OutputStage::default();
+                assert_eq!(stage.output_buffer(input, sample_rate), input);
+            }
+        }
+    }
+
+    #[test]
+    fn ne5534_follower_obeys_swing_current_and_slew_boundaries() {
+        let maximum_load_current = OUTPUT_BUFFER_TYPICAL_SWING_VOLTS / OUTPUT_BUFFER_LOAD_OHMS;
+        assert!(maximum_load_current < OUTPUT_BUFFER_SHORT_CIRCUIT_CURRENT_AMPS);
+
+        let mut stage = OutputStage::default();
+        assert_eq!(
+            stage.output_buffer(100.0, SAMPLE_RATE),
+            OUTPUT_BUFFER_TYPICAL_SWING_VOLTS
+        );
+        assert_eq!(
+            stage.output_buffer(-100.0, SAMPLE_RATE),
+            -OUTPUT_BUFFER_TYPICAL_SWING_VOLTS
+        );
+    }
+
+    #[test]
+    fn output_isolation_resistor_respects_external_load() {
+        assert_eq!(jack_voltage_for_load(4.0, f32::INFINITY), 4.0);
+        let loaded = jack_voltage_for_load(4.0, 100_000.0);
+        assert!((loaded - 3.977_724_8).abs() < 1.0e-6);
+        assert_eq!(jack_voltage_for_load(4.0, 0.0), 0.0);
+    }
+
+    #[test]
+    fn host_boundary_is_linear_and_does_not_replace_analog_overload() {
+        assert_eq!(host_from_jack_volts(0.0), 0.0);
+        assert_eq!(host_from_jack_volts(2.0), 0.5);
+        assert_eq!(host_from_jack_volts(4.0), 1.0);
+        assert_eq!(host_from_jack_volts(8.0), 2.0);
     }
 
     #[test]
