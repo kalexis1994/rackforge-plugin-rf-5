@@ -8,13 +8,21 @@ The target architecture combines two voltage-controlled oscillators per voice,
 the original one-edge CEM3340 hard-sync path, audio-rate polyphonic modulation,
 a four-pole resonant low-pass filter, separate filter and amplifier envelopes,
 unison and performance controls. All factory programs and interface assets
-will be original RF-5 content.
+needed at runtime are embedded in the plugin. The catalog combines RF-5-authored
+content with a bit-exact V8.1 projection of the original forty-program set.
 
 ## Current status
 
 The active candidate uses one platform-independent real-time signal path in
 the distributed WebAssembly component. It contains dual band-limited
 oscillators, fractional hard sync and a nonlinear per-voice filter/VCA path.
+On hosts that implement RackForge `parallel_render_v1`, the five physical voice
+cards render concurrently in isolated worker instances. The coordinator alone
+advances shared control circuitry and mixes the cards in fixed physical order;
+the required classic export remains a bit-identical sequential fallback. The
+package is still one portable WebAssembly component, not a set of native builds.
+The state and determinism contract is documented in
+[`docs/PARALLEL_RENDER.md`](docs/PARALLEL_RENDER.md).
 Saw and pulse edges use a two-host-sample PolyBLEP correction, while oscillator
 B's asymmetric triangle uses a local PolyBLAMP correction at both slope
 transitions. A four-times-oversampled path with a 127-tap anti-alias decimator
@@ -30,7 +38,7 @@ direct R104 Master Tune path now reaches both VCO master summers continuously,
 outside the scanned and programmable control domain. The global programmable
 Release switch now sends V8.1's exact fixed `0x64` write—equivalent to physical
 pot code `0x16`—through both release sample/hold cells and envelopes, and every
-original RF-5 patch is packed through the recovered V8.1
+RF-5-authored patch is packed through the recovered V8.1
 24-byte program format with 24 seven-bit pots and 22 mapped switches. Separate
 CA3280 mixer, final-voice and master-volume
 transfers now feed the documented five-input summer, C4189 coupling network and
@@ -89,10 +97,19 @@ measurements still pass through the evidence gates in
 
 The integrated RF-5 control surface is now active. It is rendered by a Rust
 WebAssembly module, binds every one of the sixty-three public controls exactly once,
-keeps both program banks below the hardware panel and reorganizes its five
+keeps all three program banks below the hardware panel and reorganizes its five
 sections at phone, tablet and desktop widths. Pointer capture gives knobs the
 same relative vertical drag on mouse and touch, while RackForge parameter
 attributes keep host-owned context menus and MIDI Link available.
+Automatic controller defaults use eleven Control Profile v1 declarations;
+their exact mappings and deliberately unbound roles are documented in
+[`docs/RACKFORGE_CONTROL_MAPPING.md`](docs/RACKFORGE_CONTROL_MAPPING.md).
+
+The `RF-5 Original 40` bank is generated from Sequential's official Group 5
+SysEx data. Its forty 24-byte records retain all 960 V8.1 record bytes,
+including their 22 stored switch bits, without reading knob positions from patch-sheet
+images. Provenance, conversion rules and reproducibility hashes are documented
+in [`docs/fidelity/ORIGINAL_FACTORY_PROGRAMS.md`](docs/fidelity/ORIGINAL_FACTORY_PROGRAMS.md).
 
 The `RF-5 Audition` factory bank provides
 twenty-nine immediately playable listening programs for Wheel/Poly Mod, LFO range and polarity,

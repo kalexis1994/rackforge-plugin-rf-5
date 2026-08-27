@@ -5,3 +5,5 @@
 /.cargo/config.toml
 /plugin/package/component.wasm
 *.rfplugin
+__pycache__/
+*.pyc

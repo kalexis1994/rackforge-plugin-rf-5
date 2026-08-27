@@ -23,7 +23,8 @@ do not become user-selectable authenticity modes.
    - Record provenance, redistribution status and confidence in the ledger.
 2. **Control and program contract**
    - Map physical ranges, tapers, switches and modulation routings.
-   - Define deterministic state and original RF-5 factory programs.
+   - Define deterministic state, project-authored evaluation programs and the
+     separately sourced original forty-program compatibility bank.
 3. **Dual VCO voice core**
    - Model tuning law, waveform geometry, pulse width, oscillator sync, drift and
      per-voice dispersion without aliasing shortcuts becoming audible.
@@ -55,6 +56,7 @@ do not become user-selectable authenticity modes.
 - Every front-panel musical control is implemented and mappable.
 - Five-voice allocation, unison and performance MIDI are deterministic.
 - No known fidelity gap exceeds its agreed uncertainty threshold.
-- Factory programs are original, balanced for live use and cover bass, brass,
-  keys, pads, leads, sync and Poly Mod sounds.
+- The original forty-program bank is source-identical at the V8.1 record
+  boundary; RF-5-authored programs remain separately identified and cover
+  live-use and diagnostic extremes.
 - The `.rfplugin` contains everything required to play immediately.

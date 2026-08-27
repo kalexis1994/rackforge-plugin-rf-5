@@ -98,8 +98,10 @@ positions and only actually stored controls replace the current patch.
 Master Volume, RF-5's machine-character control and Scale Mode remain outside
 the patch, as they do not occupy those bytes.
 
-RF-5 factory content remains original. The raw layout is an engineering fact;
-the original program data is not part of the product.
+RF-5's Baseline and Audition content remains project-authored. The separate
+Original 40 bank projects the official digital Group 5 values directly into
+this raw layout; see
+[`ORIGINAL_FACTORY_PROGRAMS.md`](ORIGINAL_FACTORY_PROGRAMS.md).
 
 ## Consequences for the engine
 

@@ -508,6 +508,7 @@ mod browser {
 
     fn bank_label(bank: &str) -> String {
         match bank {
+            "factory.rf5.original" => "ORIGINAL 40 PROGRAMS".to_owned(),
             "factory.rf5.baseline" => "BASELINE PROGRAMS".to_owned(),
             "factory.rf5.audition" => "AUDITION PROGRAMS".to_owned(),
             _ => escape_html(bank),

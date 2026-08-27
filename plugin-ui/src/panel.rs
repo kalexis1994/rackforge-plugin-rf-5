@@ -231,11 +231,21 @@ mod tests {
             ("synth.envelope.amp.sustain", "amp-sustain"),
             ("synth.envelope.amp.release", "amp-release"),
             ("synth.lfo.rate", "lfo-frequency"),
-            ("plugin.output.level", "master-volume"),
         ] {
             assert!(
                 bindings.contains(&expected),
                 "missing semantic binding {expected:?}"
+            );
+        }
+        assert_eq!(bindings.len(), 11, "unexpected semantic alias or omission");
+        for reserved in [
+            "rackforge.master.level",
+            "rackforge.master.pan",
+            "plugin.output.level",
+        ] {
+            assert!(
+                !bindings.iter().any(|(role, _)| *role == reserved),
+                "host-owned output role must remain unbound: {reserved}"
             );
         }
     }

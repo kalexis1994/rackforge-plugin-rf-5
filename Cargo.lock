@@ -142,7 +142,7 @@ dependencies = [
 [[package]]
 name = "rackforge-plugin-sdk"
 version = "0.1.2"
-source = "git+https://github.com/kalexis1994/rackforge.git?rev=37915a58529b5f57508207fb5f936c279afa0944#37915a58529b5f57508207fb5f936c279afa0944"
+source = "git+https://github.com/kalexis1994/rackforge.git?rev=03fdb0ea75850405cf57683ae957eec109e85daa#03fdb0ea75850405cf57683ae957eec109e85daa"
 
 [[package]]
 name = "rackforge-rf-5"
@@ -150,6 +150,7 @@ version = "0.1.0"
 dependencies = [
  "rackforge-plugin-sdk",
  "rf-5-dsp",
+ "serde_json",
 ]
 
 [[package]]

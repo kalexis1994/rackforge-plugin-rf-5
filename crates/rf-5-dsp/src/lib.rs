@@ -8,6 +8,7 @@ mod glide;
 mod lfo;
 mod master_tune;
 mod noise;
+mod original_programs_data;
 mod output;
 mod pitch_wheel;
 mod programs;
@@ -22,7 +23,7 @@ use rf_5_contract::{
     hardware::{ControlVoltageDestination, decode_program, encode_program, quantize_analog_pot},
 };
 use rf_5_voice::{
-    Voice, VoiceModulation,
+    Voice, VoiceModulation, VoiceSettings,
     autotune::{AutoTune, Oscillator},
     drift::VcoDriftBank,
     scale::ScaleProgram,
@@ -43,6 +44,102 @@ const PRE_MACHINE_OPERATIONS_STATE_BYTES: usize = PRE_MACHINE_OPERATIONS_PARAMET
 // passive potentiometer. A short reconstruction filter removes controller
 // steps without adding perceptible lag to a physical wheel gesture.
 const MOD_WHEEL_DEZIPPER_TIME_SECONDS: f32 = 0.003;
+const MAX_PENDING_VOICE_COMMANDS: usize = VOICE_COUNT * 4;
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[repr(u8)]
+pub enum VoiceCommandKind {
+    #[default]
+    Reset = 0,
+    Start = 1,
+    Retune = 2,
+    Release = 3,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[repr(C)]
+pub struct VoiceCommand {
+    pub unit: u8,
+    pub kind: VoiceCommandKind,
+    pub channel: u8,
+    pub note: u8,
+    pub velocity: u8,
+    pub reserved: [u8; 3],
+    pub epoch: u32,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+#[repr(C)]
+pub struct VoiceCalibration {
+    pub oscillator_a_semitones: f32,
+    pub oscillator_b_semitones: f32,
+    pub filter_octaves: f32,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+#[repr(C)]
+pub struct CommonVoiceFrame {
+    pub settings: VoiceSettings,
+    pub modulation: VoiceModulation,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PreparedSample {
+    pub common: CommonVoiceFrame,
+    pub calibration: [VoiceCalibration; VOICE_COUNT],
+    pub a440: f32,
+    pub master_volume: f32,
+    pub tuning: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ParallelVoiceUnit {
+    voice: Voice,
+    epoch: u32,
+}
+
+impl ParallelVoiceUnit {
+    pub fn synchronize_epoch(&mut self, epoch: u32) {
+        if self.epoch != epoch {
+            self.voice = Voice::default();
+            self.epoch = epoch;
+        }
+    }
+
+    pub fn apply_command(&mut self, command: VoiceCommand) {
+        if command.kind == VoiceCommandKind::Reset {
+            self.voice = Voice::default();
+            self.epoch = command.epoch;
+            return;
+        }
+        self.synchronize_epoch(command.epoch);
+        match command.kind {
+            VoiceCommandKind::Reset => {}
+            VoiceCommandKind::Start => self.voice.start(
+                command.channel,
+                command.note,
+                command.velocity,
+                command.unit as usize,
+            ),
+            VoiceCommandKind::Retune => self.voice.retune(command.channel, command.note),
+            VoiceCommandKind::Release => self.voice.release(),
+        }
+    }
+
+    pub fn next(
+        &mut self,
+        sample_rate: f32,
+        common: CommonVoiceFrame,
+        calibration: VoiceCalibration,
+    ) -> f32 {
+        let mut modulation = common.modulation;
+        modulation.oscillator_a_semitones += calibration.oscillator_a_semitones;
+        modulation.oscillator_b_semitones += calibration.oscillator_b_semitones;
+        modulation.filter_octaves += calibration.filter_octaves;
+        self.voice
+            .next_prepared(sample_rate, &common.settings, modulation)
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default)]
 struct HeldNote {
@@ -171,6 +268,10 @@ pub struct Engine {
     wheel_control_currents: WheelControlCurrentCache,
     noise_control_current: ControlCurrentCache,
     glide_rate: ControlCurrentCache,
+    capture_voice_commands: bool,
+    pending_voice_commands: [VoiceCommand; MAX_PENDING_VOICE_COMMANDS],
+    pending_voice_command_count: usize,
+    voice_epoch: u32,
 }
 
 impl Default for Engine {
@@ -214,6 +315,10 @@ impl Default for Engine {
             wheel_control_currents: WheelControlCurrentCache::default(),
             noise_control_current: ControlCurrentCache::default(),
             glide_rate: ControlCurrentCache::default(),
+            capture_voice_commands: false,
+            pending_voice_commands: [VoiceCommand::default(); MAX_PENDING_VOICE_COMMANDS],
+            pending_voice_command_count: 0,
+            voice_epoch: 0,
         }
     }
 }
@@ -250,8 +355,98 @@ impl Engine {
     }
 
     pub fn reset_voices(&mut self) {
-        self.voices = [Voice::default(); VOICE_COUNT];
+        self.reset_voice_cards();
         self.poly_allocator.reset();
+    }
+
+    /// Enables the bounded command journal used by the parallel adapter.
+    /// Sequential/offline callers leave it disabled and pay no queueing cost.
+    pub fn capture_voice_commands(&mut self, enabled: bool) {
+        self.capture_voice_commands = enabled;
+        self.pending_voice_command_count = 0;
+    }
+
+    pub fn voice_epoch(&self) -> u32 {
+        self.voice_epoch
+    }
+
+    pub fn sample_rate(&self) -> f32 {
+        self.sample_rate
+    }
+
+    pub fn drain_voice_commands(&mut self, destination: &mut [VoiceCommand]) -> usize {
+        let count = self.pending_voice_command_count.min(destination.len());
+        destination[..count].copy_from_slice(&self.pending_voice_commands[..count]);
+        self.pending_voice_command_count = 0;
+        count
+    }
+
+    fn push_voice_command(&mut self, command: VoiceCommand) {
+        if !self.capture_voice_commands {
+            return;
+        }
+        debug_assert!(self.pending_voice_command_count < self.pending_voice_commands.len());
+        if let Some(slot) = self
+            .pending_voice_commands
+            .get_mut(self.pending_voice_command_count)
+        {
+            *slot = command;
+            self.pending_voice_command_count += 1;
+        }
+    }
+
+    fn reset_voice_cards(&mut self) {
+        self.voices = [Voice::default(); VOICE_COUNT];
+        self.voice_epoch = self.voice_epoch.wrapping_add(1).max(1);
+        for unit in 0..VOICE_COUNT {
+            self.push_voice_command(VoiceCommand {
+                unit: unit as u8,
+                kind: VoiceCommandKind::Reset,
+                epoch: self.voice_epoch,
+                ..VoiceCommand::default()
+            });
+        }
+    }
+
+    fn start_voice(&mut self, unit: usize, channel: u8, note: u8, velocity: u8) {
+        self.voices[unit].start(channel, note, velocity, unit);
+        self.push_voice_command(VoiceCommand {
+            unit: unit as u8,
+            kind: VoiceCommandKind::Start,
+            channel,
+            note,
+            velocity,
+            epoch: self.voice_epoch,
+            ..VoiceCommand::default()
+        });
+    }
+
+    fn retune_voice(&mut self, unit: usize, channel: u8, note: u8) {
+        self.voices[unit].retune(channel, note);
+        self.push_voice_command(VoiceCommand {
+            unit: unit as u8,
+            kind: VoiceCommandKind::Retune,
+            channel,
+            note,
+            epoch: self.voice_epoch,
+            ..VoiceCommand::default()
+        });
+    }
+
+    fn release_voice(&mut self, unit: usize) {
+        self.voices[unit].release();
+        self.push_voice_command(VoiceCommand {
+            unit: unit as u8,
+            kind: VoiceCommandKind::Release,
+            epoch: self.voice_epoch,
+            ..VoiceCommand::default()
+        });
+    }
+
+    pub fn voice_initialized(&self, unit: usize) -> bool {
+        self.voices
+            .get(unit)
+            .is_some_and(|voice| voice.is_initialized())
     }
 
     /// Re-runs the ten-channel oscillator calibration and captures the present
@@ -344,7 +539,7 @@ impl Engine {
             return;
         }
         let voice_index = self.poly_allocator.assign(channel, note);
-        self.voices[voice_index].start(channel, note, velocity, voice_index);
+        self.start_voice(voice_index, channel, note, velocity);
     }
 
     pub fn note_off(&mut self, channel: u8, note: u8) {
@@ -365,9 +560,9 @@ impl Engine {
             }
             return;
         }
-        for voice in &mut self.voices {
-            if voice.matches(channel, note) {
-                voice.release();
+        for voice_index in 0..VOICE_COUNT {
+            if self.voices[voice_index].matches(channel, note) {
+                self.release_voice(voice_index);
             }
         }
     }
@@ -379,9 +574,9 @@ impl Engine {
     }
 
     fn release_all_voices(&mut self) {
-        for voice in &mut self.voices {
-            if voice.is_active() {
-                voice.release();
+        for voice_index in 0..VOICE_COUNT {
+            if self.voices[voice_index].is_active() {
+                self.release_voice(voice_index);
             }
         }
     }
@@ -397,11 +592,11 @@ impl Engine {
             }
             return;
         }
-        for voice in &mut self.voices {
-            if let Some((channel, note)) = voice.identity()
+        for voice_index in 0..VOICE_COUNT {
+            if let Some((channel, note)) = self.voices[voice_index].identity()
                 && !self.held_notes.contains(channel, note)
             {
-                voice.release();
+                self.release_voice(voice_index);
             }
         }
     }
@@ -432,6 +627,18 @@ impl Engine {
     }
 
     pub fn next_sample(&mut self) -> f32 {
+        let prepared = self.prepare_next_sample();
+        let mut voice_sum = 0.0;
+        for voice_index in 0..VOICE_COUNT {
+            voice_sum += self.render_prepared_voice(voice_index, prepared);
+        }
+        self.finish_prepared_sample(prepared, voice_sum)
+    }
+
+    /// Advances every global/control-plane circuit for one host sample and
+    /// returns the immutable values needed by the five physical voice cards.
+    /// Voice-card state and the common output stage are deliberately untouched.
+    pub fn prepare_next_sample(&mut self) -> PreparedSample {
         let tuning = self.is_tuning();
         let control_tick = self.controls.next(self.settings, self.sample_rate);
         if control_tick.cycle_started {
@@ -542,11 +749,8 @@ impl Engine {
                 vca::common_noise_with_control_current(audio_noise_sample, noise_control_current)
             },
         };
-        let mut sample = 0.0;
-        for (voice_index, voice) in self.voices.iter_mut().enumerate() {
-            if !voice.is_initialized() {
-                continue;
-            }
+        let mut calibration = [VoiceCalibration::default(); VOICE_COUNT];
+        for (voice_index, voice) in self.voices.iter().enumerate() {
             let note = voice.note();
             let tuning_a = tuning::oscillator_a_tuning_semitones(
                 note,
@@ -559,15 +763,14 @@ impl Engine {
                 parameter_enabled(applied_settings, Parameter::OscillatorBKeyboard),
                 parameter_enabled(applied_settings, Parameter::OscillatorBLowFrequency),
             );
-            let mut calibrated_modulation = modulation;
-            calibrated_modulation.oscillator_a_semitones += self
+            calibration[voice_index].oscillator_a_semitones = self
                 .cv
                 .oscillator_semitones(voice_index, false)
                 - tuning_a
                 + self
                     .vco_drift
                     .correction_semitones(voice_index, Oscillator::A, drift_character);
-            calibrated_modulation.oscillator_b_semitones += self
+            calibration[voice_index].oscillator_b_semitones = self
                 .cv
                 .oscillator_semitones(voice_index, true)
                 - tuning_b
@@ -578,23 +781,53 @@ impl Engine {
                 note,
                 parameter_enabled(applied_settings, Parameter::FilterKeyboard),
             );
-            calibrated_modulation.filter_octaves +=
+            calibration[voice_index].filter_octaves =
                 self.cv.filter_keyboard_octaves(voice_index) - filter_keyboard;
-            sample += voice.next(self.sample_rate, &applied_settings, calibrated_modulation);
         }
         let a440 = self.reference_tone.next(
             !tuning && parameter_enabled(applied_settings, Parameter::A440),
             self.sample_rate,
         );
-        let output = self.output.next(
-            if tuning { 0.0 } else { sample + a440 },
-            applied_settings.get(Parameter::MasterVolume),
-            self.sample_rate,
-        );
         if self.tune_cycle.advance() {
             self.tune_oscillators();
         }
-        output
+        PreparedSample {
+            common: CommonVoiceFrame {
+                settings: VoiceSettings::from_settings(&applied_settings),
+                modulation,
+            },
+            calibration,
+            a440,
+            master_volume: applied_settings.get(Parameter::MasterVolume),
+            tuning,
+        }
+    }
+
+    pub fn render_prepared_voice(&mut self, voice_index: usize, prepared: PreparedSample) -> f32 {
+        let Some(voice) = self.voices.get_mut(voice_index) else {
+            return 0.0;
+        };
+        if !voice.is_initialized() {
+            return 0.0;
+        }
+        let calibration = prepared.calibration[voice_index];
+        let mut modulation = prepared.common.modulation;
+        modulation.oscillator_a_semitones += calibration.oscillator_a_semitones;
+        modulation.oscillator_b_semitones += calibration.oscillator_b_semitones;
+        modulation.filter_octaves += calibration.filter_octaves;
+        voice.next_prepared(self.sample_rate, &prepared.common.settings, modulation)
+    }
+
+    pub fn finish_prepared_sample(&mut self, prepared: PreparedSample, voice_sum: f32) -> f32 {
+        self.output.next(
+            if prepared.tuning {
+                0.0
+            } else {
+                voice_sum + prepared.a440
+            },
+            prepared.master_volume,
+            self.sample_rate,
+        )
     }
 
     fn advance_mod_wheel(&mut self) -> f32 {
@@ -611,11 +844,15 @@ impl Engine {
         let Some(program) = programs::find(id) else {
             return false;
         };
-        let mut source = Settings::default();
-        if !source.apply_patch_array(program.values) {
-            return false;
-        }
-        self.settings = decode_program(encode_program(source), self.settings);
+        self.settings = if let Some(raw) = program.raw_v81 {
+            decode_program(raw, self.settings)
+        } else {
+            let mut source = Settings::default();
+            if !source.apply_patch_array(program.values) {
+                return false;
+            }
+            decode_program(encode_program(source), self.settings)
+        };
         self.audition_mod_wheel = program.audition_mod_wheel;
         self.controls.notify_recall(self.settings, self.sample_rate);
         self.rebuild_allocation_for_mode();
@@ -740,15 +977,15 @@ impl Engine {
     fn start_unison(&mut self, channel: u8, note: u8, velocity: u8) {
         self.retarget_glide(note);
         self.glide_waiting_for_unison_cv = true;
-        for (voice_index, voice) in self.voices.iter_mut().enumerate() {
-            voice.start(channel, note, velocity, voice_index);
+        for voice_index in 0..VOICE_COUNT {
+            self.start_voice(voice_index, channel, note, velocity);
         }
     }
 
     fn retune_unison(&mut self, channel: u8, note: u8) {
         self.retarget_glide(note);
-        for voice in &mut self.voices {
-            voice.retune(channel, note);
+        for voice_index in 0..VOICE_COUNT {
+            self.retune_voice(voice_index, channel, note);
         }
     }
 
@@ -781,8 +1018,7 @@ impl Engine {
     }
 
     fn rebuild_allocation_for_mode(&mut self) {
-        self.voices = [Voice::default(); VOICE_COUNT];
-        self.poly_allocator.reset();
+        self.reset_voices();
         self.glide_initialized = false;
         self.glide_waiting_for_unison_cv = false;
         if self.unison_enabled() {
@@ -800,7 +1036,7 @@ impl Engine {
 
     fn note_on_without_tracking(&mut self, channel: u8, note: u8, velocity: u8) {
         let voice_index = self.poly_allocator.assign(channel, note);
-        self.voices[voice_index].start(channel, note, velocity, voice_index);
+        self.start_voice(voice_index, channel, note, velocity);
     }
 
     fn voice_notes(&self) -> [u8; VOICE_COUNT] {
@@ -1272,6 +1508,28 @@ mod tests {
         assert!((signatures[0] - signatures[1]).abs() > 1.0);
         assert!((signatures[1] - signatures[2]).abs() > 1.0);
         assert!((signatures[0] - signatures[2]).abs() > 1.0);
+    }
+
+    #[test]
+    fn original_programs_are_finite_and_audible() {
+        for program in original_programs_data::ORIGINAL_PROGRAMS {
+            let mut engine = Engine::default();
+            assert!(engine.prepare(48_000.0));
+            assert!(engine.load_program(program.id));
+            engine.note_on(0, 48, 127);
+
+            let mut peak = 0.0_f32;
+            for _ in 0..96_000 {
+                let sample = engine.next_sample();
+                assert!(
+                    sample.is_finite(),
+                    "non-finite original program {}",
+                    program.id
+                );
+                peak = peak.max(sample.abs());
+            }
+            assert!(peak > 1.0e-4, "silent original program {}", program.id);
+        }
     }
 
     #[test]

@@ -19,7 +19,12 @@ This is one reference, not an averaged family model. RF-5 therefore excludes:
 - the SSM-based Revision 1/2 filter and voice topology;
 - later instruments, reissues and switchable multi-revision behaviour;
 - any runtime dependency on original EPROM or program memory;
-- factory programs, trade dress and manufacturer artwork.
+- trade dress and manufacturer artwork.
+
+The original forty factory-program values are admitted as data, not as a
+change to the frozen hardware target. They are projected from an official
+digital Group 5 dump into the already reconstructed V8.1 record and documented
+in [`ORIGINAL_FACTORY_PROGRAMS.md`](ORIGINAL_FACTORY_PROGRAMS.md).
 
 ## Board and signal boundary
 

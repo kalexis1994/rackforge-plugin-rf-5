@@ -339,7 +339,6 @@
     { "role": "synth.envelope.amp.decay", "parameter_index": 6 },
     { "role": "synth.envelope.amp.sustain", "parameter_index": 7 },
     { "role": "synth.envelope.amp.release", "parameter_index": 8 },
-    { "role": "synth.lfo.rate", "parameter_index": 23 },
-    { "role": "plugin.output.level", "parameter_index": 0 }
+    { "role": "synth.lfo.rate", "parameter_index": 23 }
   ]
 }

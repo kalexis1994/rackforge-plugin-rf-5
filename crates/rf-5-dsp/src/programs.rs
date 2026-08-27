@@ -5,11 +5,14 @@
 //! physical modulation wheel. The override is machine state, never patch
 //! state, and the first incoming CC1 immediately replaces it.
 
-#[cfg(test)]
-use rf_5_contract::Settings;
 use rf_5_contract::{
-    PATCH_PARAMETER_COUNT, Parameter, hardware::OSCILLATOR_FREQUENCY_CONCERT_NORMALIZED,
+    PATCH_PARAMETER_COUNT, Parameter, Settings,
+    hardware::{
+        OSCILLATOR_FREQUENCY_CONCERT_NORMALIZED, PROGRAM_BYTES, ProgramByte, decode_program,
+    },
 };
+
+use crate::original_programs_data::ORIGINAL_PROGRAMS;
 
 const BASELINE_INIT: [f32; PATCH_PARAMETER_COUNT] = [
     0.72,
@@ -223,6 +226,7 @@ const BASELINE_LEAD: [f32; PATCH_PARAMETER_COUNT] = [
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Program {
     pub values: [f32; PATCH_PARAMETER_COUNT],
+    pub raw_v81: Option<[ProgramByte; PROGRAM_BYTES]>,
     pub audition_mod_wheel: Option<f32>,
 }
 
@@ -230,6 +234,18 @@ impl Program {
     const fn normal(values: [f32; PATCH_PARAMETER_COUNT]) -> Self {
         Self {
             values,
+            raw_v81: None,
+            audition_mod_wheel: None,
+        }
+    }
+
+    fn original(raw: [ProgramByte; PROGRAM_BYTES]) -> Self {
+        let decoded = decode_program(raw, Settings::default()).as_array();
+        let mut values = [0.0; PATCH_PARAMETER_COUNT];
+        values.copy_from_slice(&decoded[..PATCH_PARAMETER_COUNT]);
+        Self {
+            values,
+            raw_v81: Some(raw),
             audition_mod_wheel: None,
         }
     }
@@ -282,6 +298,7 @@ impl Program {
 
         Self {
             values,
+            raw_v81: None,
             audition_mod_wheel: Some(match route {
                 AuditionRoute::Vibrato => 0.42,
                 AuditionRoute::PulseWidth => 0.72,
@@ -634,6 +651,9 @@ enum AuditionRoute {
 }
 
 pub(crate) fn find(id: &str) -> Option<Program> {
+    if let Some(original) = ORIGINAL_PROGRAMS.iter().find(|program| program.id == id) {
+        return Some(Program::original(original.raw));
+    }
     Some(match id {
         "baseline-init" => Program::normal(BASELINE_INIT),
         "baseline-warm" => Program::normal(BASELINE_WARM),
@@ -716,6 +736,26 @@ mod tests {
             let program = find(id).expect("catalog program exists");
             let mut settings = Settings::default();
             assert!(settings.apply_patch_array(program.values));
+        }
+        for original in ORIGINAL_PROGRAMS {
+            let program = find(original.id).expect("original program exists");
+            let mut settings = Settings::default();
+            assert!(settings.apply_patch_array(program.values));
+        }
+    }
+
+    #[test]
+    fn original_programs_preserve_every_v81_storage_bit() {
+        for original in ORIGINAL_PROGRAMS {
+            let program = find(original.id).expect("original program exists");
+            assert_eq!(program.raw_v81, Some(original.raw));
+
+            let mut settings = Settings::default();
+            assert!(settings.apply_patch_array(program.values));
+            assert_eq!(
+                rf_5_contract::hardware::encode_program(settings),
+                original.raw
+            );
         }
     }
 

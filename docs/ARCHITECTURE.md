@@ -95,3 +95,7 @@ gate are documented in
 [`fidelity/REALTIME_CIRCUIT_BUDGET.md`](fidelity/REALTIME_CIRCUIT_BUDGET.md).
 Deterministic listening scenes that exercise this architecture without a UI
 are documented in [`AUDITION_RENDERER.md`](AUDITION_RENDERER.md).
+The five physical voice cards can be dispatched to RackForge-owned workers
+without duplicating shared control state. State ownership, frame-exact command
+delivery, deterministic mixing and the bit-identical sequential fallback are
+documented in [`PARALLEL_RENDER.md`](PARALLEL_RENDER.md).

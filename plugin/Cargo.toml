@@ -22,3 +22,6 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 rackforge-plugin-sdk.workspace = true
 rf-5-dsp = { workspace = true, default-features = false }
+
+[dev-dependencies]
+serde_json.workspace = true

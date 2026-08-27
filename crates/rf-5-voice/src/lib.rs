@@ -85,6 +85,7 @@ const FILTER_SERVICE_REFERENCE_NOTE: u8 = 69;
 const FILTER_SERVICE_REFERENCE_HZ: f32 = 440.0;
 
 #[derive(Clone, Copy, Debug, Default)]
+#[repr(C)]
 pub struct VoiceModulation {
     pub oscillator_a_semitones: f32,
     pub oscillator_b_semitones: f32,
@@ -92,6 +93,95 @@ pub struct VoiceModulation {
     pub oscillator_b_pulse_width: f32,
     pub filter_octaves: f32,
     pub noise: f32,
+}
+
+/// The subset of the scanned panel state consumed by one physical voice.
+///
+/// Keeping this as an explicit, plain-float snapshot lets the coordinator
+/// distribute the common control state once per sample without asking worker
+/// instances to duplicate the CPU scanner or sample/hold network. It is also
+/// materially smaller than transporting the complete public parameter bank.
+#[derive(Clone, Copy, Debug, Default)]
+#[repr(C)]
+pub struct VoiceSettings {
+    pub amp_attack: f32,
+    pub amp_decay: f32,
+    pub amp_sustain: f32,
+    pub amp_release: f32,
+    pub filter_attack: f32,
+    pub filter_decay: f32,
+    pub filter_sustain: f32,
+    pub filter_release: f32,
+    pub filter_cutoff: f32,
+    pub filter_resonance: f32,
+    pub filter_envelope_amount: f32,
+    pub oscillator_a_frequency: f32,
+    pub oscillator_a_level: f32,
+    pub oscillator_a_pulse_width: f32,
+    pub oscillator_b_frequency: f32,
+    pub oscillator_b_detune: f32,
+    pub oscillator_b_level: f32,
+    pub oscillator_b_pulse_width: f32,
+    pub poly_mod_filter_envelope_amount: f32,
+    pub poly_mod_oscillator_b_amount: f32,
+    pub vintage_spread: f32,
+    pub wheel_mod_source_mix: f32,
+    pub oscillator_a_saw: f32,
+    pub oscillator_a_pulse: f32,
+    pub oscillator_b_saw: f32,
+    pub oscillator_b_triangle: f32,
+    pub oscillator_b_pulse: f32,
+    pub oscillator_sync: f32,
+    pub oscillator_b_keyboard: f32,
+    pub oscillator_b_low_frequency: f32,
+    pub poly_mod_oscillator_a_frequency: f32,
+    pub poly_mod_oscillator_a_pulse_width: f32,
+    pub poly_mod_filter: f32,
+    pub filter_keyboard: f32,
+    pub wheel_mod_filter: f32,
+}
+
+impl VoiceSettings {
+    pub fn from_settings(settings: &Settings) -> Self {
+        Self {
+            amp_attack: settings.get(Parameter::AmpAttack),
+            amp_decay: settings.get(Parameter::AmpDecay),
+            amp_sustain: settings.get(Parameter::AmpSustain),
+            amp_release: settings.get(Parameter::AmpRelease),
+            filter_attack: settings.get(Parameter::FilterAttack),
+            filter_decay: settings.get(Parameter::FilterDecay),
+            filter_sustain: settings.get(Parameter::FilterSustain),
+            filter_release: settings.get(Parameter::FilterRelease),
+            filter_cutoff: settings.get(Parameter::FilterCutoff),
+            filter_resonance: settings.get(Parameter::FilterResonance),
+            filter_envelope_amount: settings.get(Parameter::FilterEnvelopeAmount),
+            oscillator_a_frequency: settings.get(Parameter::OscillatorAFrequency),
+            oscillator_a_level: settings.get(Parameter::OscillatorALevel),
+            oscillator_a_pulse_width: settings.get(Parameter::OscillatorAPulseWidth),
+            oscillator_b_frequency: settings.get(Parameter::OscillatorBFrequency),
+            oscillator_b_detune: settings.get(Parameter::OscillatorBDetune),
+            oscillator_b_level: settings.get(Parameter::OscillatorBLevel),
+            oscillator_b_pulse_width: settings.get(Parameter::OscillatorBPulseWidth),
+            poly_mod_filter_envelope_amount: settings.get(Parameter::PolyModFilterEnvelopeAmount),
+            poly_mod_oscillator_b_amount: settings.get(Parameter::PolyModOscillatorBAmount),
+            vintage_spread: settings.get(Parameter::VintageSpread),
+            wheel_mod_source_mix: settings.get(Parameter::WheelModSourceMix),
+            oscillator_a_saw: settings.get(Parameter::OscillatorASaw),
+            oscillator_a_pulse: settings.get(Parameter::OscillatorAPulse),
+            oscillator_b_saw: settings.get(Parameter::OscillatorBSaw),
+            oscillator_b_triangle: settings.get(Parameter::OscillatorBTriangle),
+            oscillator_b_pulse: settings.get(Parameter::OscillatorBPulse),
+            oscillator_sync: settings.get(Parameter::OscillatorSync),
+            oscillator_b_keyboard: settings.get(Parameter::OscillatorBKeyboard),
+            oscillator_b_low_frequency: settings.get(Parameter::OscillatorBLowFrequency),
+            poly_mod_oscillator_a_frequency: settings.get(Parameter::PolyModOscillatorAFrequency),
+            poly_mod_oscillator_a_pulse_width: settings
+                .get(Parameter::PolyModOscillatorAPulseWidth),
+            poly_mod_filter: settings.get(Parameter::PolyModFilter),
+            filter_keyboard: settings.get(Parameter::FilterKeyboard),
+            wheel_mod_filter: settings.get(Parameter::WheelModFilter),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -282,6 +372,19 @@ impl Voice {
         settings: &Settings,
         modulation: VoiceModulation,
     ) -> f32 {
+        self.next_prepared(
+            sample_rate,
+            &VoiceSettings::from_settings(settings),
+            modulation,
+        )
+    }
+
+    pub fn next_prepared(
+        &mut self,
+        sample_rate: f32,
+        settings: &VoiceSettings,
+        modulation: VoiceModulation,
+    ) -> f32 {
         // A never-allocated voice has no hardware state to preserve yet. Its
         // phase/profile seeds are installed by `start`, so running the full
         // oversampled signal path here would only create state that `start`
@@ -293,17 +396,17 @@ impl Voice {
         let allocated = self.active;
         let filter_envelope = self.filter_envelope.next(
             sample_rate,
-            quantize_analog_pot(settings.get(Parameter::FilterAttack)),
-            quantize_analog_pot(settings.get(Parameter::FilterDecay)),
-            quantize_analog_pot(settings.get(Parameter::FilterSustain)),
-            quantize_analog_pot(settings.get(Parameter::FilterRelease)),
+            quantize_analog_pot(settings.filter_attack),
+            quantize_analog_pot(settings.filter_decay),
+            quantize_analog_pot(settings.filter_sustain),
+            quantize_analog_pot(settings.filter_release),
         );
         let amplifier_envelope = self.amplifier_envelope.next(
             sample_rate,
-            quantize_analog_pot(settings.get(Parameter::AmpAttack)),
-            quantize_analog_pot(settings.get(Parameter::AmpDecay)),
-            quantize_analog_pot(settings.get(Parameter::AmpSustain)),
-            quantize_analog_pot(settings.get(Parameter::AmpRelease)),
+            quantize_analog_pot(settings.amp_attack),
+            quantize_analog_pot(settings.amp_decay),
+            quantize_analog_pot(settings.amp_sustain),
+            quantize_analog_pot(settings.amp_release),
         );
         if self.amplifier_envelope.is_idle() {
             self.active = false;
@@ -322,48 +425,48 @@ impl Voice {
     fn next_signal_path(
         &mut self,
         sample_rate: f32,
-        settings: &Settings,
+        settings: &VoiceSettings,
         modulation: VoiceModulation,
         filter_envelope: f32,
         amplifier_envelope: f32,
         render_audio: bool,
     ) -> f32 {
         let waves_a = WaveSelection {
-            saw: parameter_enabled(settings, Parameter::OscillatorASaw),
+            saw: enabled(settings.oscillator_a_saw),
             triangle: false,
-            pulse: parameter_enabled(settings, Parameter::OscillatorAPulse),
+            pulse: enabled(settings.oscillator_a_pulse),
         };
         let waves_b = WaveSelection {
-            saw: parameter_enabled(settings, Parameter::OscillatorBSaw),
-            triangle: parameter_enabled(settings, Parameter::OscillatorBTriangle),
-            pulse: parameter_enabled(settings, Parameter::OscillatorBPulse),
+            saw: enabled(settings.oscillator_b_saw),
+            triangle: enabled(settings.oscillator_b_triangle),
+            pulse: enabled(settings.oscillator_b_pulse),
         };
         let pulse_width_a = pulse_width::add_modulation(
-            pulse_width::panel_duty_cycle(settings.get(Parameter::OscillatorAPulseWidth)),
+            pulse_width::panel_duty_cycle(settings.oscillator_a_pulse_width),
             modulation.oscillator_a_pulse_width,
         );
         let pulse_width_b = pulse_width::add_modulation(
-            pulse_width::panel_duty_cycle(settings.get(Parameter::OscillatorBPulseWidth)),
+            pulse_width::panel_duty_cycle(settings.oscillator_b_pulse_width),
             modulation.oscillator_b_pulse_width,
         );
-        let level_a = quantize_analog_pot(settings.get(Parameter::OscillatorALevel));
-        let level_b = quantize_analog_pot(settings.get(Parameter::OscillatorBLevel));
+        let level_a = quantize_analog_pot(settings.oscillator_a_level);
+        let level_b = quantize_analog_pot(settings.oscillator_b_level);
         let level_a_control_current = self
             .oscillator_a_level_current
             .get(level_a, vca::oscillator_mixer_control_current_amps);
         let level_b_control_current = self
             .oscillator_b_level_current
             .get(level_b, vca::oscillator_mixer_control_current_amps);
-        let sync = parameter_enabled(settings, Parameter::OscillatorSync);
+        let sync = enabled(settings.oscillator_sync);
         let frequency_a = self
             .oscillator_a_frequency
-            .oscillator_a(self.note, settings.get(Parameter::OscillatorAFrequency));
+            .oscillator_a(self.note, settings.oscillator_a_frequency);
         let frequency_b = self.oscillator_b_frequency.oscillator_b(
             self.note,
-            settings.get(Parameter::OscillatorBFrequency),
-            settings.get(Parameter::OscillatorBDetune),
-            parameter_enabled(settings, Parameter::OscillatorBKeyboard),
-            parameter_enabled(settings, Parameter::OscillatorBLowFrequency),
+            settings.oscillator_b_frequency,
+            settings.oscillator_b_detune,
+            enabled(settings.oscillator_b_keyboard),
+            enabled(settings.oscillator_b_low_frequency),
         ) * self
             .oscillator_b_modulation_ratio
             .get(modulation.oscillator_b_semitones);
@@ -371,7 +474,7 @@ impl Voice {
         let filter_rate = sample_rate.max(1.0) * FILTER_OVERSAMPLING as f32;
         let mut output = None;
         let poly_filter_envelope_amount =
-            quantize_analog_pot(settings.get(Parameter::PolyModFilterEnvelopeAmount));
+            quantize_analog_pot(settings.poly_mod_filter_envelope_amount);
         let poly_filter_envelope_control_current = self.poly_mod_filter_envelope_current.get(
             poly_filter_envelope_amount,
             vca::poly_mod_filter_envelope_control_current_amps,
@@ -381,20 +484,17 @@ impl Voice {
             poly_filter_envelope_control_current,
             self.voice_index,
         );
-        let poly_oscillator_b_amount =
-            quantize_analog_pot(settings.get(Parameter::PolyModOscillatorBAmount));
+        let poly_oscillator_b_amount = quantize_analog_pot(settings.poly_mod_oscillator_b_amount);
         let poly_oscillator_b_control_current = self.poly_mod_oscillator_b_current.get(
             poly_oscillator_b_amount,
             vca::poly_mod_oscillator_b_control_current_amps,
         );
-        let poly_frequency_a = parameter_enabled(settings, Parameter::PolyModOscillatorAFrequency);
-        let poly_pulse_width_a =
-            parameter_enabled(settings, Parameter::PolyModOscillatorAPulseWidth);
-        let poly_filter = parameter_enabled(settings, Parameter::PolyModFilter);
+        let poly_frequency_a = enabled(settings.poly_mod_oscillator_a_frequency);
+        let poly_pulse_width_a = enabled(settings.poly_mod_oscillator_a_pulse_width);
+        let poly_filter = enabled(settings.poly_mod_filter);
         let poly_mod_routed = poly_frequency_a || poly_pulse_width_a || poly_filter;
-        let filter_resonance = quantize_analog_pot(settings.get(Parameter::FilterResonance));
-        let filter_envelope_amount =
-            quantize_analog_pot(settings.get(Parameter::FilterEnvelopeAmount));
+        let filter_resonance = quantize_analog_pot(settings.filter_resonance);
+        let filter_envelope_amount = quantize_analog_pot(settings.filter_envelope_amount);
         let filter_envelope_control_current = self.filter_envelope_current.get(
             filter_envelope_amount,
             vca::filter_envelope_control_current_amps,
@@ -404,8 +504,8 @@ impl Voice {
             filter_envelope_control_current,
             self.voice_index,
         );
-        let filter_cutoff = quantize_analog_pot(settings.get(Parameter::FilterCutoff));
-        let filter_keyboard = parameter_enabled(settings, Parameter::FilterKeyboard);
+        let filter_cutoff = quantize_analog_pot(settings.filter_cutoff);
+        let filter_keyboard = enabled(settings.filter_keyboard);
         let common_filter_octaves = direct_filter_envelope + modulation.filter_octaves;
         let amplifier_vca_control = vca::amplifier_envelope_control(amplifier_envelope);
         let common_frequency_a = frequency_a
@@ -419,8 +519,8 @@ impl Voice {
             common_filter_octaves,
         );
         #[cfg(feature = "held-filter-two-times")]
-        let noise_rate_filter_modulation = parameter_enabled(settings, Parameter::WheelModFilter)
-            && settings.get(Parameter::WheelModSourceMix) > 0.5
+        let noise_rate_filter_modulation = enabled(settings.wheel_mod_filter)
+            && settings.wheel_mod_source_mix > 0.5
             && modulation.filter_octaves != 0.0;
 
         for _ in 0..OSCILLATOR_OVERSAMPLING {
@@ -522,7 +622,7 @@ impl Voice {
                         cutoff_log2_hz,
                         filter_resonance,
                         oscillator_rate,
-                        settings.get(Parameter::VintageSpread),
+                        settings.vintage_spread,
                         amplifier_vca_control,
                     );
                     self.held_voice_sample = voice_sample;
@@ -545,7 +645,7 @@ impl Voice {
                     averaged_cutoff,
                     filter_resonance,
                     filter_rate,
-                    settings.get(Parameter::VintageSpread),
+                    settings.vintage_spread,
                     amplifier_vca_control,
                 );
                 let interpolated = (self.held_voice_sample + next_voice_sample) * 0.5;
@@ -560,7 +660,7 @@ impl Voice {
                 cutoff_log2_hz,
                 filter_resonance,
                 filter_rate,
-                settings.get(Parameter::VintageSpread),
+                settings.vintage_spread,
                 amplifier_vca_control,
             );
             #[cfg(feature = "host-rate")]
@@ -597,8 +697,8 @@ impl Voice {
     }
 }
 
-fn parameter_enabled(settings: &Settings, parameter: Parameter) -> bool {
-    settings.get(parameter) >= 0.5
+fn enabled(value: f32) -> bool {
+    value >= 0.5
 }
 
 fn semitone_ratio(semitones: f32) -> f32 {
@@ -847,7 +947,7 @@ mod tests {
         modulated.start(0, 36, 127, 0);
         let _ = dry.next_signal_path(
             48_000.0,
-            &dry_settings,
+            &VoiceSettings::from_settings(&dry_settings),
             VoiceModulation::default(),
             1.0,
             1.0,
@@ -855,7 +955,7 @@ mod tests {
         );
         let _ = modulated.next_signal_path(
             48_000.0,
-            &modulated_settings,
+            &VoiceSettings::from_settings(&modulated_settings),
             VoiceModulation::default(),
             1.0,
             1.0,
