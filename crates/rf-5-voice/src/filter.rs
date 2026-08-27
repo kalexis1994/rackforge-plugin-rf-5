@@ -57,6 +57,10 @@ const OUTPUT_BUFFER_GROUND_OHMS: f32 = 100_000.0;
 const OUTPUT_BUFFER_SWING_MINIMUM_VOLTS: f32 = 12.0;
 #[cfg(test)]
 const OUTPUT_BUFFER_SWING_TYPICAL_VOLTS: f32 = 13.5;
+#[cfg(test)]
+const OUTPUT_BUFFER_SLEW_MINIMUM_VOLTS_PER_SECOND: f32 = 8.0e6;
+#[cfg(test)]
+const OUTPUT_BUFFER_SLEW_TYPICAL_VOLTS_PER_SECOND: f32 = 13.0e6;
 const OUTPUT_BUFFER_SOFT_KNEE_ORDER: f32 = 32.0;
 #[cfg(test)]
 const FINAL_VCA_INPUT_OHMS: f32 = 20_000.0;
@@ -80,6 +84,7 @@ struct FilterProfile {
     resonance_gm_ratio: f32,
     resonance_input_ohms: f32,
     output_buffer_swing_volts: f32,
+    output_buffer_slew_volts_per_second: f32,
     output_clip_vpp: f32,
     passband_second_harmonic: f32,
 }
@@ -95,6 +100,7 @@ const FILTER_PROFILES: [FilterProfile; 5] = [
         resonance_gm_ratio: 0.82,
         resonance_input_ohms: 3_600.0,
         output_buffer_swing_volts: 12.2,
+        output_buffer_slew_volts_per_second: 8.4e6,
         output_clip_vpp: 11.0,
         passband_second_harmonic: 0.0014,
     },
@@ -103,6 +109,7 @@ const FILTER_PROFILES: [FilterProfile; 5] = [
         resonance_gm_ratio: 0.95,
         resonance_input_ohms: 2_700.0,
         output_buffer_swing_volts: 13.1,
+        output_buffer_slew_volts_per_second: 10.1e6,
         output_clip_vpp: 12.6,
         passband_second_harmonic: 0.0021,
     },
@@ -111,6 +118,7 @@ const FILTER_PROFILES: [FilterProfile; 5] = [
         resonance_gm_ratio: 0.87,
         resonance_input_ohms: 3_300.0,
         output_buffer_swing_volts: 12.8,
+        output_buffer_slew_volts_per_second: 11.2e6,
         output_clip_vpp: 12.0,
         passband_second_harmonic: 0.0018,
     },
@@ -119,6 +127,7 @@ const FILTER_PROFILES: [FilterProfile; 5] = [
         resonance_gm_ratio: 0.84,
         resonance_input_ohms: 3_600.0,
         output_buffer_swing_volts: 13.4,
+        output_buffer_slew_volts_per_second: 12.9e6,
         output_clip_vpp: 13.4,
         passband_second_harmonic: 0.0028,
     },
@@ -127,6 +136,7 @@ const FILTER_PROFILES: [FilterProfile; 5] = [
         resonance_gm_ratio: 0.96,
         resonance_input_ohms: 2_700.0,
         output_buffer_swing_volts: 12.5,
+        output_buffer_slew_volts_per_second: 9.3e6,
         output_clip_vpp: 10.5,
         passband_second_harmonic: 0.0011,
     },
@@ -157,6 +167,30 @@ struct TptMemory {
     state: f32,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+struct OutputBuffer {
+    voltage: f32,
+}
+
+impl OutputBuffer {
+    fn predict(self, input: f32, sample_rate: f32, profile: FilterProfile) -> (f32, f32) {
+        let (target, target_slope) = output_buffer_with_slope(input, profile);
+        let maximum_step = profile.output_buffer_slew_volts_per_second / sample_rate.max(1.0);
+        let delta = target - self.voltage;
+        if delta.abs() <= maximum_step {
+            (target, target_slope)
+        } else {
+            (self.voltage + delta.signum() * maximum_step, 0.0)
+        }
+    }
+
+    fn next(&mut self, input: f32, sample_rate: f32, profile: FilterProfile) -> f32 {
+        let output = self.predict(input, sample_rate, profile).0;
+        self.voltage = output;
+        output
+    }
+}
+
 impl TptMemory {
     fn predict(self, input: f32, coefficient: f32) -> (f32, f32) {
         ((input - self.state) * coefficient + self.state, coefficient)
@@ -173,6 +207,7 @@ impl TptMemory {
 #[derive(Clone, Copy, Debug, Default)]
 struct ResonanceReturn {
     output_coupling: TptMemory,
+    output_buffer: OutputBuffer,
     input_shunt: TptMemory,
 }
 
@@ -183,7 +218,9 @@ impl ResonanceReturn {
             self.output_coupling.predict(output, coupling_coefficient);
         let buffer_drive = (output - coupling_lowpass) * output_buffer_gain();
         let buffer_drive_slope = (1.0 - coupling_lowpass_slope) * output_buffer_gain();
-        let (buffer_output, buffer_shape_slope) = output_buffer_with_slope(buffer_drive, profile);
+        let (buffer_output, buffer_shape_slope) =
+            self.output_buffer
+                .predict(buffer_drive, sample_rate, profile);
         let buffer_output_slope = buffer_drive_slope * buffer_shape_slope;
 
         let shunt_coefficient = one_pole_coefficient(resonance_input_pole_hz(profile), sample_rate);
@@ -203,7 +240,7 @@ impl ResonanceReturn {
         let coupling_coefficient = one_pole_coefficient(output_coupling_corner_hz(), sample_rate);
         let coupling_lowpass = self.output_coupling.next(output, coupling_coefficient);
         let buffer_drive = (output - coupling_lowpass) * output_buffer_gain();
-        let buffer_output = output_buffer(buffer_drive, profile);
+        let buffer_output = self.output_buffer.next(buffer_drive, sample_rate, profile);
 
         let shunt_coefficient = one_pole_coefficient(resonance_input_pole_hz(profile), sample_rate);
         let shunt_lowpass = self.input_shunt.next(buffer_output, shunt_coefficient);
@@ -421,6 +458,7 @@ fn output_buffer_gain() -> f32 {
     1.0 + OUTPUT_BUFFER_FEEDBACK_OHMS / OUTPUT_BUFFER_GROUND_OHMS
 }
 
+#[cfg(test)]
 fn output_buffer(value: f32, profile: FilterProfile) -> f32 {
     output_buffer_with_slope(value, profile).0
 }
@@ -604,6 +642,11 @@ mod tests {
                 (OUTPUT_BUFFER_SWING_MINIMUM_VOLTS..=OUTPUT_BUFFER_SWING_TYPICAL_VOLTS)
                     .contains(&profile.output_buffer_swing_volts)
             );
+            assert!(
+                (OUTPUT_BUFFER_SLEW_MINIMUM_VOLTS_PER_SECOND
+                    ..=OUTPUT_BUFFER_SLEW_TYPICAL_VOLTS_PER_SECOND)
+                    .contains(&profile.output_buffer_slew_volts_per_second)
+            );
             assert!((10.0..=14.0).contains(&profile.output_clip_vpp));
             assert!((0.001..=0.003).contains(&profile.passband_second_harmonic));
         }
@@ -723,6 +766,35 @@ mod tests {
             );
             let third = libm::sqrtf(third_sine * third_sine + third_cosine * third_cosine);
             assert!(third / fundamental < 0.0002);
+        }
+    }
+
+    #[test]
+    fn u474_slew_is_inside_the_published_population_and_stateful() {
+        for profile in FILTER_PROFILES {
+            let sample_rate = 192_000.0 * 4.0;
+            let maximum_step = profile.output_buffer_slew_volts_per_second / sample_rate;
+            let mut buffer = OutputBuffer::default();
+            let positive = buffer.next(100.0, sample_rate, profile);
+            assert!(positive > 0.0 && positive <= maximum_step);
+            let negative = buffer.next(-100.0, sample_rate, profile);
+            assert!(negative < positive);
+            assert!((negative - positive).abs() <= maximum_step + 1.0e-6);
+        }
+    }
+
+    #[test]
+    fn u474_prediction_matches_the_committed_slew_step() {
+        for sample_rate in [44_100.0, 48_000.0, 96_000.0, 192_000.0] {
+            for profile in FILTER_PROFILES {
+                let internal_rate = sample_rate * 4.0;
+                let mut buffer = OutputBuffer::default();
+                for input in [10.0, -20.0, 4.0, 100.0, -100.0] {
+                    let predicted = buffer.predict(input, internal_rate, profile).0;
+                    let committed = buffer.next(input, internal_rate, profile);
+                    assert_eq!(predicted, committed);
+                }
+            }
         }
     }
 

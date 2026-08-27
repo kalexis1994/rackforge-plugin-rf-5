@@ -18,23 +18,40 @@ wheel in RF-5.
 - One engine-owned, free-running phase is evaluated once per output sample and
   distributed to every active and inactive voice.
 - Frequency follows an exponential mapping from the scanned 7-bit panel value.
-  Its span is no longer a free 0.08-20 Hz guess: the populated 110 kohm
-  frequency-CV input versus the CEM3340's standard 100 kohm, one-volt-per-octave
-  input and the 0-10 V DAC range establish 9.0909 octaves, or approximately
-  545.3:1. The 20 Hz upper anchor remains an isolated calibration hypothesis,
-  which currently places the lower endpoint near 0.0367 Hz. SD334's populated
-  0.1 uF C381 timing capacitor and the CEM3340 equation
-  `f = 3 I_EG / (2 V_CC C_F)` make the same candidate equivalent to 20 uA at
-  the upper endpoint and 36.7 nA at the lower endpoint; the latter is slightly
-  below the data sheet's preferred 50 nA accurate-range boundary.
-- Saw, triangle and square are independently summable. Their AC-centered
-  render now preserves the nominal CEM3340/SD334 current-domain relationship:
-  saw and triangle are both the 1.0 reference, while pulse is approximately
-  1.041. U380's equal 100 kohm input and feedback resistors double the raw 5 V
-  triangle span around its reference before its 160 kohm input path, matching
-  the saw's 10 V span and 160 kohm path. The pulse figure solves the CEM3340's
-  published high-current output equation against SD334's populated 10 kohm
-  pull-down to ground, producing a 13.009 V excursion before its 200 kohm path.
+  Both its span and absolute anchor now come from SD334 rather than an admitted
+  listening guess. C382 is the actual 1 uF timing capacitor; C381 belongs to
+  soft sync. R3138's 2.21 Mohm feed establishes 6.787 uA of reference current,
+  while the 681 kohm/+15 V and 101 kohm/+5 V paths establish the zero-code
+  frequency-control current. The 0-10 V DAC joins them through R3136's 110
+  kohm path. R3107, R3108 and R3137 populate the CEM3340 multiplier with 30.1
+  kohm, 5.62 kohm and 1.82 kohm respectively.
+- RF-5 evaluates the manufacturer's three linked equations rather than
+  reducing this network to an ideal one-volt-per-octave approximation:
+  `I_OM = 22 V_T/R_T * (1 - I_C R_Z/3 V)`, `V_B = I_OM R_S`,
+  `I_EG = I_REF exp(-V_B/V_T)` and
+  `f = 3 I_EG/(2 V_CC C_F)`. Thermal voltage cancels from the combined nominal
+  law. The unbounded populated circuit spans 9.3753 octaves and requests
+  approximately 0.908 uA to 603.2 uA from the exponential generator, placing
+  the slow endpoint at approximately 0.09083 Hz.
+- The CEM3340 data sheet publishes a 400/570/800 uA minimum/typical/maximum
+  timing-capacitor current rather than an exact overload curve. RF-5 therefore
+  applies a deliberately narrow, high-order continuous knee at the 570 uA
+  typical point. It leaves the specified sub-100 uA accurate region unchanged,
+  preserves all 128 distinct panel steps and rounds the nominal fast endpoint
+  to approximately 55.8 Hz instead of imposing an invented hard clip.
+- Saw, triangle and square are independently summable, but they do not share a
+  generic bipolar normalization. The manual states that all raw CEM3340
+  outputs are positive-going and that triangle alone must be level-shifted for
+  smooth vibrato. SD334 implements that distinction directly: saw remains
+  approximately 0-10 V through U377/R3133's 300 ohm/160 kohm path and loaded
+  pulse remains 0-13.009 V through U377/R3132's 300 ohm/200 kohm path.
+- Triangle alone crosses U377 into U380. R3148/R3147 are equal 100 kohm
+  reference/feedback resistors, so U380 applies `2 * V_triangle - 4.97 V`.
+  The nominal 0-5 V raw triangle consequently becomes approximately -4.97 to
+  +5.03 V before R3131's 160 kohm path. Saw and square therefore produce the
+  original upward modulation displacement, while triangle remains almost
+  symmetric around the unmodulated pitch/filter/PWM position. All three paths
+  are converted to one five-volt/160-kohm current coordinate before U378.
 - The LFO and noise sources pass through the two profiled, unlinearized halves
   of common CA3280 U378. The 0-10 V source-mix CV drives grounded-base 2N4250
   Q307 through 8.2 kohm and drives Q309 in the opposite direction against the
@@ -43,7 +60,8 @@ wheel in RF-5.
   0.82 peak-output-current ratio. The 160k/330-ohm LFO input, 20k/330-ohm
   noise input and shared R3113 10 kohm output load produce W-MOD circuit volts
   directly; the service balance trims retain zero feed-through at zero input.
-- One LFO unit represents the nominal 5 V saw half-excursion. Pink noise uses
+- One LFO unit represents five circuit volts in R3131's 160 kohm current
+  coordinate; it is a unit conversion, not a bipolar source assumption. Pink noise uses
   the MM5837's guaranteed 12 Vpp logic separation before SD334's already
   modeled 100k/47k low-pass gain.
 - Wheel Mod amount is the passive/live performance level after that dual-OTA
@@ -64,17 +82,19 @@ wheel in RF-5.
 
 ## Bounded uncertainty
 
-The manual provides qualitative slow/faster-ramp checks but no absolute LFO
-frequency endpoints. RF-5 therefore accepts the circuit-derived sweep width
-and populated timing capacitor while isolating the 20 Hz/20 uA upper anchor in
-the LFO module rather than treating it as measured hardware fact. A populated-
-unit timing measurement can replace that one anchor without changing the
-control law. The lowest approximately 0.45 octave lies below the CEM3340 data
-sheet's preferred 50 nA accurate-current range and is correspondingly more
-device-sensitive. Wheel Mod destination ratios, U380 triangle gain and the
-W-MOD source voltage are now circuit-derived. Populated-unit measurements can
-refine the transistor/OTA population without restoring a host normalization
-boundary.
+The schematic and CEM3340 equations now close the absolute nominal LFO law;
+there is no remaining free 20 Hz anchor. The slow endpoint is above the data
+sheet's preferred 50 nA accurate-current boundary. At the opposite end, the
+raw populated equation asks for approximately 603.2 uA, just above the 570 uA
+typical timing-current ceiling but within its published 400-800 uA population
+range. The data sheet says the oscillator flattens in its uppermost octaves but
+does not publish the knee shape. The isolated continuous knee is consequently
+a bounded device-overload candidate: a populated-unit timing sweep can refine
+the last fast codes without changing the reconstructed reference, scale,
+timing-capacitor or DAC networks. Wheel Mod destination ratios, U380 triangle
+gain and the W-MOD source voltage are circuit-derived. Populated-unit
+measurements can refine the transistor/OTA population without restoring a host
+normalization boundary.
 
 The original Wheel Mod source-mix control now current-mixes the LFO with the
 shared MM5837-class noise candidate through its physical CA3280 rather than a
@@ -85,15 +105,21 @@ and spectral assumptions are documented separately in
 
 ## Acceptance tests
 
-- the frequency mapping is monotonic, exposes 128 distinct panel steps and
-  spans the circuit-derived 9.0909 octaves;
-- the populated 0.1 uF timing capacitor maps the isolated endpoint candidate
-  to 20 uA at maximum and approximately 36.7 nA at minimum;
-- square-wave positive and negative intervals are equal within one sample;
+- the frequency mapping is monotonic and exposes 128 distinct panel steps;
+- the populated scale network produces the 9.3753-octave unbounded sweep;
+- the 2.21 Mohm reference feed, fixed-current inputs and 1 uF timing capacitor
+  reproduce approximately 0.908 uA/0.09083 Hz at panel minimum and request
+  approximately 603.2 uA at panel maximum;
+- the published typical timing-current ceiling leaves the accurate region
+  unchanged, continuously rounds only the fastest codes and produces an
+  approximately 55.8 Hz nominal endpoint;
+- square-wave high and zero intervals are equal within one sample and never
+  become negative;
 - simultaneously selected waveforms sum on one shared bus;
-- source amplitudes follow the accepted CEM3340 voltage, U380's 2x triangle
-  conditioning, loaded pulse output and SD334 resistor ratios instead of raw
-  chip amplitudes;
+- saw and pulse retain their positive-going DC displacement while U380 alone
+  level-shifts triangle to approximately -4.97/+5.03 V;
+- source amplitudes follow the accepted CEM3340 voltages, 4016 on-resistance,
+  U380 triangle conditioning, loaded pulse output and SD334 160k/200k paths;
 - source-mix endpoints completely isolate the opposite OTA half, intermediate
   Q307/Q309 currents move monotonically in opposite directions and zero input
   has no balance offset;

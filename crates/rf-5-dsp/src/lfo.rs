@@ -2,55 +2,64 @@
 //!
 //! The Rev 3 service manual establishes the single-oscillator topology, the
 //! three additive shapes and the square wave's 50% duty cycle. The populated
-//! 110 kohm frequency-CV input establishes the panel sweep width; the absolute
-//! upper-frequency anchor remains isolated until measurements can narrow it.
+//! SD334 timing, reference and scale networks now establish the absolute
+//! frequency law. The CEM3340's published finite timing-capacitor current
+//! bounds retain the remaining populated-device uncertainty at the fast end.
 
 use rf_5_contract::hardware::quantize_analog_pot;
 use rf_5_voice::vco::cem3340_loaded_pulse_high_volts;
 
-// A standard 100 kohm CEM3340 control input produces one octave per volt. The
-// SD334 LFO instead populates 110 kohm and the control DAC traverses 0-10 V,
-// giving 10 * 100/110 = 9.0909 octaves. This fixes the sweep ratio from the
-// circuit even though no accepted source specifies either absolute endpoint.
-const STANDARD_ONE_VOLT_PER_OCTAVE_INPUT_OHMS: f32 = 100_000.0;
+// SD334 does not use an arbitrary rate calibration. Its CEM3340 is populated
+// with the data-sheet scale network, a 1 uF timing capacitor and a 2.21 Mohm
+// reference-current feed. Two fixed currents establish the zero-code bias and
+// the 0-10 V DAC adds the panel sweep through R3136.
 const POPULATED_FREQUENCY_INPUT_OHMS: f32 = 110_000.0;
 const PANEL_CONTROL_RANGE_VOLTS: f32 = 10.0;
-const CIRCUIT_SWEEP_OCTAVES: f32 = PANEL_CONTROL_RANGE_VOLTS
-    * STANDARD_ONE_VOLT_PER_OCTAVE_INPUT_OHMS
-    / POPULATED_FREQUENCY_INPUT_OHMS;
-
-// Twenty hertz remains an explicit calibration hypothesis, not a measurement.
-// SD334 populates C381 at 0.1 uF and the CEM3340 data sheet gives
-// f = 3 I_EG / (2 V_CC C_F). The resulting 20 uA high-end generator current
-// and 36.7 nA low-end current keep that uncertainty explicit and testable.
-const CANDIDATE_MAXIMUM_HZ: f32 = 20.0;
-#[cfg(test)]
 const CEM3340_POSITIVE_SUPPLY_VOLTS: f32 = 15.0;
-#[cfg(test)]
-const POPULATED_TIMING_CAPACITANCE_FARADS: f32 = 0.1e-6;
+const CEM3340_REFERENCE_RESISTANCE_OHMS: f32 = 2_210_000.0;
+const CEM3340_BASE_RESISTANCE_OHMS: f32 = 1_820.0;
+const CEM3340_SCALE_ZERO_RESISTANCE_OHMS: f32 = 30_100.0;
+const CEM3340_SCALE_TIMING_RESISTANCE_OHMS: f32 = 5_620.0;
+const FIXED_POSITIVE_SUPPLY_INPUT_OHMS: f32 = 681_000.0;
+const FIXED_FIVE_VOLT_INPUT_OHMS: f32 = 101_000.0;
+const FIXED_REFERENCE_VOLTS: f32 = 5.0;
+const POPULATED_TIMING_CAPACITANCE_FARADS: f32 = 1.0e-6;
 
-// SD334 sends saw and U380-conditioned triangle through 160 kohm paths and
-// pulse through 200 kohm. U380's equal 100 kohm input/feedback resistors give
-// the triangle a signal gain of two around its reference, so its original 5 V
-// span becomes the same 10 V span as saw before both reach the OTA input.
+// The data sheet gives 400/570/800 uA minimum/typical/maximum timing-capacitor
+// current. A high-order continuous limiter reaches the nominal-device ceiling
+// without producing duplicate panel steps or changing the accurate sub-100 uA
+// portion of the law. Its order is deliberately isolated because the data
+// sheet specifies the ceiling but not the overload-knee shape.
+const CEM3340_TYPICAL_MAX_TIMING_CURRENT_AMPS: f32 = 570.0e-6;
+const TIMING_CURRENT_KNEE_ORDER: f32 = 16.0;
+
+// SD334 does not AC-centre the complete LFO bus. Saw and pulse remain
+// positive-going through their 4016 switches, while only triangle crosses
+// U380's level shifter. R3148/R3147 give the triangle a non-inverting gain of
+// two around the measured 4.97 V reference, making its 0-5 V raw waveform
+// approximately -4.97 to +5.03 V. One returned unit is five circuit volts at
+// R3131's 160 kohm reference path; pulse is converted to the same current
+// coordinate through its populated 200 kohm path.
 const CEM3340_SAW_SPAN_VOLTS: f32 = 10.0;
 const CEM3340_TRIANGLE_SPAN_VOLTS: f32 = 5.0;
 const LFO_PULSE_PULLDOWN_VOLTS: f32 = 0.0;
 const LFO_PULSE_PULLDOWN_RESISTANCE_OHMS: f32 = 10_000.0;
 const CEM3340_PULSE_SPAN_VOLTS: f32 =
     cem3340_loaded_pulse_high_volts(LFO_PULSE_PULLDOWN_VOLTS, LFO_PULSE_PULLDOWN_RESISTANCE_OHMS);
+const U380_REFERENCE_VOLTS: f32 = 4.97;
 const U380_TRIANGLE_INPUT_OHMS: f32 = 100_000.0;
 const U380_TRIANGLE_FEEDBACK_OHMS: f32 = 100_000.0;
 const LFO_SAW_AND_TRIANGLE_INPUT_OHMS: f32 = 160_000.0;
 const LFO_PULSE_INPUT_OHMS: f32 = 200_000.0;
+const CD4016_TYPICAL_ON_RESISTANCE_OHMS: f32 = 300.0;
+const LFO_REFERENCE_VOLTS_PER_UNIT: f32 = 5.0;
 const U380_TRIANGLE_SIGNAL_GAIN: f32 = 1.0 + U380_TRIANGLE_FEEDBACK_OHMS / U380_TRIANGLE_INPUT_OHMS;
-const SAW_INPUT_CURRENT_SPAN_AMPS: f32 = CEM3340_SAW_SPAN_VOLTS / LFO_SAW_AND_TRIANGLE_INPUT_OHMS;
-const SAW_GAIN: f32 = 1.0;
-const TRIANGLE_GAIN: f32 = (CEM3340_TRIANGLE_SPAN_VOLTS * U380_TRIANGLE_SIGNAL_GAIN
-    / LFO_SAW_AND_TRIANGLE_INPUT_OHMS)
-    / SAW_INPUT_CURRENT_SPAN_AMPS;
-const PULSE_GAIN: f32 =
-    (CEM3340_PULSE_SPAN_VOLTS / LFO_PULSE_INPUT_OHMS) / SAW_INPUT_CURRENT_SPAN_AMPS;
+const SWITCHED_SAW_INPUT_OHMS: f32 =
+    LFO_SAW_AND_TRIANGLE_INPUT_OHMS + CD4016_TYPICAL_ON_RESISTANCE_OHMS;
+const SWITCHED_PULSE_INPUT_OHMS: f32 = LFO_PULSE_INPUT_OHMS + CD4016_TYPICAL_ON_RESISTANCE_OHMS;
+const SAW_CURRENT_COORDINATE_RATIO: f32 = LFO_SAW_AND_TRIANGLE_INPUT_OHMS / SWITCHED_SAW_INPUT_OHMS;
+const PULSE_CURRENT_COORDINATE_RATIO: f32 =
+    LFO_SAW_AND_TRIANGLE_INPUT_OHMS / SWITCHED_PULSE_INPUT_OHMS;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct LfoWaveSelection {
@@ -76,9 +85,18 @@ impl Lfo {
         waves: LfoWaveSelection,
     ) -> f32 {
         let phase = self.phase;
-        let saw = (phase * 2.0 - 1.0) * SAW_GAIN;
-        let triangle = (1.0 - 4.0 * (phase - 0.5).abs()) * TRIANGLE_GAIN;
-        let square = if phase < 0.5 { PULSE_GAIN } else { -PULSE_GAIN };
+        let saw_volts = phase * CEM3340_SAW_SPAN_VOLTS;
+        let raw_triangle_volts = (1.0 - (phase * 2.0 - 1.0).abs()) * CEM3340_TRIANGLE_SPAN_VOLTS;
+        let conditioned_triangle_volts =
+            raw_triangle_volts * U380_TRIANGLE_SIGNAL_GAIN - U380_REFERENCE_VOLTS;
+        let pulse_volts = if phase < 0.5 {
+            CEM3340_PULSE_SPAN_VOLTS
+        } else {
+            0.0
+        };
+        let saw = saw_volts / LFO_REFERENCE_VOLTS_PER_UNIT * SAW_CURRENT_COORDINATE_RATIO;
+        let triangle = conditioned_triangle_volts / LFO_REFERENCE_VOLTS_PER_UNIT;
+        let square = pulse_volts / LFO_REFERENCE_VOLTS_PER_UNIT * PULSE_CURRENT_COORDINATE_RATIO;
         let mut output = 0.0;
         if waves.saw {
             output += saw;
@@ -104,16 +122,39 @@ impl Lfo {
 
 pub fn frequency_hz(control: f32) -> f32 {
     let control = quantize_analog_pot(control);
-    CANDIDATE_MAXIMUM_HZ * libm::powf(2.0, CIRCUIT_SWEEP_OCTAVES * (control - 1.0))
+    let control_volts = control * PANEL_CONTROL_RANGE_VOLTS;
+    let generator_current = bounded_exponential_generator_current_amps(control_volts);
+    3.0 * generator_current
+        / (2.0 * CEM3340_POSITIVE_SUPPLY_VOLTS * POPULATED_TIMING_CAPACITANCE_FARADS)
 }
 
-#[cfg(test)]
-fn exponential_generator_current_amps(frequency_hz: f32) -> f32 {
-    frequency_hz.max(0.0)
-        * 2.0
-        * CEM3340_POSITIVE_SUPPLY_VOLTS
-        * POPULATED_TIMING_CAPACITANCE_FARADS
-        / 3.0
+fn frequency_control_current_amps(control_volts: f32) -> f32 {
+    CEM3340_POSITIVE_SUPPLY_VOLTS / FIXED_POSITIVE_SUPPLY_INPUT_OHMS
+        + FIXED_REFERENCE_VOLTS / FIXED_FIVE_VOLT_INPUT_OHMS
+        + control_volts / POPULATED_FREQUENCY_INPUT_OHMS
+}
+
+fn unbounded_exponential_generator_current_amps(control_volts: f32) -> f32 {
+    let reference_current = CEM3340_POSITIVE_SUPPLY_VOLTS / CEM3340_REFERENCE_RESISTANCE_OHMS;
+    let control_current = frequency_control_current_amps(control_volts);
+
+    // CEM3340 data-sheet equations, combined:
+    // I_OM = 22 V_T / R_T * (1 - I_C R_Z / 3 V)
+    // V_B  = I_OM R_S
+    // I_EG = I_REF exp(-V_B / V_T)
+    // V_T cancels, leaving the populated resistors and summed control current.
+    let exponent = -22.0 * CEM3340_BASE_RESISTANCE_OHMS / CEM3340_SCALE_TIMING_RESISTANCE_OHMS
+        * (1.0 - control_current * CEM3340_SCALE_ZERO_RESISTANCE_OHMS / 3.0);
+    reference_current * libm::expf(exponent)
+}
+
+fn bounded_exponential_generator_current_amps(control_volts: f32) -> f32 {
+    let raw = unbounded_exponential_generator_current_amps(control_volts);
+    let ratio = raw / CEM3340_TYPICAL_MAX_TIMING_CURRENT_AMPS;
+    raw / libm::powf(
+        1.0 + libm::powf(ratio, TIMING_CURRENT_KNEE_ORDER),
+        1.0 / TIMING_CURRENT_KNEE_ORDER,
+    )
 }
 
 #[cfg(test)]
@@ -122,9 +163,8 @@ mod tests {
 
     #[test]
     fn circuit_frequency_mapping_is_monotonic_and_bounded() {
-        let minimum = CANDIDATE_MAXIMUM_HZ / libm::powf(2.0, CIRCUIT_SWEEP_OCTAVES);
-        assert!((frequency_hz(0.0) - minimum).abs() < 1.0e-6);
-        assert!((frequency_hz(1.0) - CANDIDATE_MAXIMUM_HZ).abs() < 1.0e-4);
+        assert!((frequency_hz(0.0) - 0.090_826_68).abs() < 1.0e-6);
+        assert!((frequency_hz(1.0) - 55.803_21).abs() < 0.001);
         let mut previous = frequency_hz(0.0);
         for step in 1..=127 {
             let current = frequency_hz(step as f32 / 127.0);
@@ -134,22 +174,45 @@ mod tests {
     }
 
     #[test]
-    fn populated_frequency_input_sets_the_full_sweep_ratio() {
-        let ratio = frequency_hz(1.0) / frequency_hz(0.0);
-        let expected = libm::powf(2.0, 10.0 / 1.1);
-        assert!((ratio - expected).abs() < 0.001);
-        assert!((ratio - 545.30).abs() < 0.1);
+    fn populated_scale_network_sets_the_unbounded_sweep() {
+        let minimum = unbounded_exponential_generator_current_amps(0.0);
+        let maximum = unbounded_exponential_generator_current_amps(PANEL_CONTROL_RANGE_VOLTS);
+        let ratio = maximum / minimum;
+        let expected_octaves =
+            10.0 * CEM3340_BASE_RESISTANCE_OHMS * 22.0 * CEM3340_SCALE_ZERO_RESISTANCE_OHMS
+                / (CEM3340_SCALE_TIMING_RESISTANCE_OHMS
+                    * 3.0
+                    * POPULATED_FREQUENCY_INPUT_OHMS
+                    * core::f32::consts::LN_2);
+        assert!((libm::log2f(ratio) - expected_octaves).abs() < 1.0e-5);
+        assert!((expected_octaves - 9.375_293).abs() < 1.0e-5);
+        assert!((ratio - 664.116_7).abs() < 0.01);
     }
 
     #[test]
-    fn populated_timing_capacitance_bounds_the_candidate_generator_current() {
-        let minimum_hz = frequency_hz(0.0);
-        let maximum_current = exponential_generator_current_amps(frequency_hz(1.0));
-        let minimum_current = exponential_generator_current_amps(minimum_hz);
+    fn populated_reference_and_timing_network_set_absolute_endpoints() {
+        let minimum_current = unbounded_exponential_generator_current_amps(0.0);
+        let maximum_current =
+            unbounded_exponential_generator_current_amps(PANEL_CONTROL_RANGE_VOLTS);
+        assert!((minimum_current - 0.908_266_9e-6).abs() < 1.0e-12);
+        assert!((maximum_current - 603.195_2e-6).abs() < 0.001e-6);
+        assert!(minimum_current > 50.0e-9);
+        assert!(maximum_current > CEM3340_TYPICAL_MAX_TIMING_CURRENT_AMPS);
+    }
 
-        assert!((maximum_current - 20.0e-6).abs() < 1.0e-10);
-        assert!((minimum_current - 36.675e-9).abs() < 0.01e-9);
-        assert!(maximum_current < 100.0e-6);
+    #[test]
+    fn finite_timing_current_only_rounds_the_fastest_steps() {
+        let accurate_region = 100.0e-6;
+        let bounded_accurate = bounded_exponential_generator_current_amps(7.0);
+        let raw_accurate = unbounded_exponential_generator_current_amps(7.0);
+        assert!(raw_accurate < accurate_region);
+        assert!((bounded_accurate / raw_accurate - 1.0).abs() < 1.0e-5);
+
+        let raw_max = unbounded_exponential_generator_current_amps(PANEL_CONTROL_RANGE_VOLTS);
+        let bounded_max = bounded_exponential_generator_current_amps(PANEL_CONTROL_RANGE_VOLTS);
+        assert!(bounded_max < raw_max);
+        assert!(bounded_max < CEM3340_TYPICAL_MAX_TIMING_CURRENT_AMPS);
+        assert!(bounded_max > 550.0e-6);
     }
 
     #[test]
@@ -166,24 +229,25 @@ mod tests {
     }
 
     #[test]
-    fn square_has_equal_positive_and_negative_halves() {
+    fn square_has_equal_high_and_low_halves_without_negative_voltage() {
         let mut lfo = Lfo::default();
         let waves = LfoWaveSelection {
             square: true,
             ..LfoWaveSelection::default()
         };
-        let sample_rate = 20_000.0;
-        let mut positive: i32 = 0;
-        let mut negative: i32 = 0;
+        let sample_rate = frequency_hz(1.0) * 1_000.0;
+        let mut high: i32 = 0;
+        let mut low: i32 = 0;
         for _ in 0..1_000 {
             let sample = lfo.next(sample_rate, 1.0, waves);
             if sample > 0.0 {
-                positive += 1;
+                high += 1;
             } else {
-                negative += 1;
+                assert_eq!(sample, 0.0);
+                low += 1;
             }
         }
-        assert!((positive - negative).abs() <= 2);
+        assert!((high - low).abs() <= 2);
     }
 
     #[test]
@@ -194,12 +258,14 @@ mod tests {
             triangle: true,
             square: true,
         };
-        let expected = -SAW_GAIN - TRIANGLE_GAIN + PULSE_GAIN;
+        let expected = -U380_REFERENCE_VOLTS / LFO_REFERENCE_VOLTS_PER_UNIT
+            + CEM3340_PULSE_SPAN_VOLTS / LFO_REFERENCE_VOLTS_PER_UNIT
+                * PULSE_CURRENT_COORDINATE_RATIO;
         assert!((lfo.next(48_000.0, 0.5, all) - expected).abs() < 1.0e-6);
     }
 
     #[test]
-    fn board_weighting_includes_u380_triangle_conditioning() {
+    fn board_weighting_preserves_unipolar_saw_and_pulse_but_centres_triangle() {
         let mut saw = Lfo::default();
         let mut triangle = Lfo::default();
         let mut pulse = Lfo::default();
@@ -212,33 +278,45 @@ mod tests {
                     ..LfoWaveSelection::default()
                 }
             ),
-            -SAW_GAIN
+            0.0
         );
-        assert_eq!(
-            triangle.next(
+        assert!(
+            (triangle.next(
                 48_000.0,
                 0.5,
                 LfoWaveSelection {
                     triangle: true,
                     ..LfoWaveSelection::default()
                 }
-            ),
-            -TRIANGLE_GAIN
+            ) + 0.994)
+                .abs()
+                < 1.0e-6
         );
-        assert_eq!(
-            pulse.next(
-                48_000.0,
-                0.5,
-                LfoWaveSelection {
-                    square: true,
-                    ..LfoWaveSelection::default()
-                }
-            ),
-            PULSE_GAIN
+        let pulse_high = pulse.next(
+            48_000.0,
+            0.5,
+            LfoWaveSelection {
+                square: true,
+                ..LfoWaveSelection::default()
+            },
         );
+        assert!(pulse_high > 2.0);
         assert_eq!(U380_TRIANGLE_SIGNAL_GAIN, 2.0);
-        assert_eq!(TRIANGLE_GAIN, SAW_GAIN);
-        assert!((PULSE_GAIN - 1.040_708).abs() < 1.0e-6);
+        assert!((SAW_CURRENT_COORDINATE_RATIO - 0.998_128_5).abs() < 1.0e-6);
+        assert!((pulse_high - 2.078_3).abs() < 0.000_1);
+    }
+
+    #[test]
+    fn u380_conditioned_triangle_is_nearly_symmetric_about_ground() {
+        let triangle_units = |phase: f32| {
+            let raw = (1.0 - (phase * 2.0 - 1.0).abs()) * CEM3340_TRIANGLE_SPAN_VOLTS;
+            (raw * U380_TRIANGLE_SIGNAL_GAIN - U380_REFERENCE_VOLTS) / LFO_REFERENCE_VOLTS_PER_UNIT
+        };
+        let low = triangle_units(0.0);
+        let high = triangle_units(0.5);
+        assert!((low + 0.994).abs() < 1.0e-6);
+        assert!((high - 1.006).abs() < 1.0e-6);
+        assert!((0.5 * (low + high) - 0.006).abs() < 1.0e-6);
     }
 
     #[test]

@@ -17,11 +17,15 @@ program in RackForge's program browser and play normally:
   0-10 V/200 kohm CEM3320 resonance-control path.
 - `Audition - Envelope Punch` uses short filter/amplifier decays so repeated
   notes expose the ten CEM3310 profiles;
+- `Audition - Envelope Phase Steps` repeats short gates with nonzero sustain so
+  the finite-buffer steps at attack, decay and release boundaries remain
+  audible without confusing them with a digital capacitor reset;
 - `Audition - Envelope Slow` holds a pad while the independent filter and
   amplifier CEM3310 trajectories evolve through the populated timing network.
 - `Audition - Release Switch Off` deliberately stores both Release pots at
-  maximum while the V8.1 program bit forces their common minimum, making the
-  global switch audible without a UI.
+  maximum while the V8.1 program bit forces both CV cells to `0x64`, equivalent
+  to physical pot code `0x16`, making the exact global tail audible without a
+  UI.
 - `Audition - CA3280 Drive` sends high-level five-note chords through all ten
   oscillator mixer halves, five final VCAs, the voice summer and master VCA;
 - `Audition - Common Noise VCA` mutes both oscillators and exposes the one
@@ -47,13 +51,22 @@ program in RackForge's program browser and play normally:
 - `Audition - Unison Glide Circuit` uses the service manual's medium panel-6
   position so the Q309/CA3280/C376 linear pitch transitions can be heard.
 - `Audition - LFO Slow Range` and `Audition - LFO Fast Range` expose two
-  widely separated points of the circuit-derived common-LFO sweep with the
-  same restrained vibrato routing.
+  widely separated points of the absolute SD334/CEM3340 common-LFO law with
+  the same restrained vibrato routing. The law's nominal panel endpoints are
+  approximately 0.0908 and 55.8 Hz; both audition positions remain below the
+  isolated timing-current overload knee.
+- `Audition - LFO Saw Unipolar` and `Audition - LFO Square Unipolar` isolate
+  the two positive-going SD334 paths. Unlike the triangle auditions, their
+  Wheel Mod movement rises from the unmodulated position instead of travelling
+  equally above and below it.
 - `Audition - Oscillator B Fine Zero` and `Audition - Oscillator B Fine
   Semitone` use the same two-saw setup at both documented FINE endpoints, so
   the unison start and one-semitone rise can be compared directly.
 - `Audition - Pulse Width 1%`, `50%` and `99%` isolate oscillator A's pulse at
   both documented panel endpoints and the nearest stored square-wave code.
+- `Audition - Filter Slew Transient` drives three-note attacks through the five
+  stateful TL082 profiles so their large-signal recovery remains audible inside
+  the physical resonance loop.
 
 These are diagnostic listening conditions rather than emulated factory
 patches. Each one temporarily places the modulation wheel at a documented
@@ -63,7 +76,7 @@ or alter the serialized patch format, is cleared by loading a normal program
 or state, survives audio-device preparation order, and is replaced by the
 first physical MIDI CC1 message.
 
-All twenty-five audition programs are covered by deterministic render probes for
+All twenty-nine audition programs are covered by deterministic render probes for
 finite output, usable level and bounded headroom. All catalog programs are
 also contract-validated, and the filter population is swept at every supported
 sample rate.

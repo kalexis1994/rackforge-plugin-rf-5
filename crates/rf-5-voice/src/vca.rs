@@ -156,7 +156,9 @@ const WHEEL_MOD_LFO_DIVIDER_LOW_OHMS: f32 = 20_000.0;
 const WHEEL_MOD_LFO_CONTROL_RESISTANCE_OHMS: f32 =
     1.0 / (1.0 / WHEEL_MOD_LFO_DIVIDER_HIGH_OHMS + 1.0 / WHEEL_MOD_LFO_DIVIDER_LOW_OHMS);
 
-// U380's selected LFO sum is represented relative to a nominal 10 Vpp saw.
+// One LFO unit is five circuit volts in R3131's 160 kohm current coordinate.
+// The LFO module has already preserved U380's bipolar triangle and converted
+// the unipolar saw/pulse 160k/200k paths into that shared coordinate.
 // U374's pink-noise value already contains its 100k/47k closed-loop gain; the
 // MM5837 data sheet guarantees each output level within 1.5 V of a 15 V supply
 // rail, establishing at least 12 Vpp, or 6 V peak about the centred signal.

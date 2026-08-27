@@ -32,7 +32,11 @@
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-pulse-width-square", "name": "Audition - Pulse Width 50%", "order": 21, "tags": ["rf5", "audition", "oscillator-a", "pulse-width", "square"] },
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-pulse-width-maximum", "name": "Audition - Pulse Width 99%", "order": 22, "tags": ["rf5", "audition", "oscillator-a", "pulse-width", "maximum"] },
     { "bank": "factory.rf5.audition", "editable": false, "id": "audition-oscillator-b-triangle", "name": "Audition - CEM3340 Triangle", "order": 23, "tags": ["rf5", "audition", "oscillator-b", "triangle", "cem3340"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-poly-mod-pulse-width", "name": "Audition - Audio-rate PWM", "order": 24, "tags": ["rf5", "audition", "oscillator-a", "pulse-width", "poly-mod", "pwm"] }
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-poly-mod-pulse-width", "name": "Audition - Audio-rate PWM", "order": 24, "tags": ["rf5", "audition", "oscillator-a", "pulse-width", "poly-mod", "pwm"] },
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-filter-slew-transient", "name": "Audition - Filter Slew Transient", "order": 25, "tags": ["rf5", "audition", "filter", "resonance", "tl082", "slew"] },
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-envelope-phase-steps", "name": "Audition - Envelope Phase Steps", "order": 26, "tags": ["rf5", "audition", "envelope", "cem3310", "transient"] },
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-lfo-saw-unipolar", "name": "Audition - LFO Saw Unipolar", "order": 27, "tags": ["rf5", "audition", "lfo", "saw", "wheel-mod", "unipolar"] },
+    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-lfo-square-unipolar", "name": "Audition - LFO Square Unipolar", "order": 28, "tags": ["rf5", "audition", "lfo", "square", "wheel-mod", "unipolar"] }
   ],
   "schema_version": 1
 }

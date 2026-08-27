@@ -35,6 +35,19 @@ pub const OSCILLATOR_CONTROL_VOLTAGE_BITS: u8 = 14;
 pub const DAC_FULL_SCALE_VOLTS: f32 = 10.67;
 pub const SOFTWARE_CONTROL_VOLTAGE_LIMIT_VOLTS: f32 = 10.0;
 
+/// V8.1 complements the six programmed envelope time pots around 0x7a before
+/// writing their common-CV cells (ROM 0x052d-0x055a).
+pub const ENVELOPE_TIME_CONTROL_COMPLEMENT_CODE: u8 = 0x7a;
+/// Fixed filter/amplifier Release CV written when the stored RELEASE switch is
+/// off in V8.1 (ROM 0x0543-0x0550).
+pub const RELEASE_DISABLED_CONTROL_CODE: u8 = 0x64;
+/// The fixed 0x64 write shares the normal 0x7a-minus-pot path, so its exact
+/// equivalent physical Release-pot code is 0x16 rather than the minimum code.
+pub const RELEASE_DISABLED_EQUIVALENT_POT_CODE: u8 =
+    ENVELOPE_TIME_CONTROL_COMPLEMENT_CODE - RELEASE_DISABLED_CONTROL_CODE;
+pub const RELEASE_DISABLED_EQUIVALENT_NORMALIZED: f32 =
+    RELEASE_DISABLED_EQUIVALENT_POT_CODE as f32 / (ANALOG_POT_STEPS - 1) as f32;
+
 pub const TUNE_CPU_CLOCK_HZ: u32 = 2_500_000;
 pub const TUNE_OSCILLATOR_COUNT: usize = AUDIO_OSCILLATOR_COUNT;
 pub const TUNE_OCTAVE_BIAS_COUNT: usize = 10;
@@ -535,6 +548,19 @@ pub fn decode_program(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn disabled_release_code_round_trips_through_the_v81_time_complement() {
+        assert_eq!(RELEASE_DISABLED_EQUIVALENT_POT_CODE, 0x16);
+        assert_eq!(
+            ENVELOPE_TIME_CONTROL_COMPLEMENT_CODE - RELEASE_DISABLED_EQUIVALENT_POT_CODE,
+            RELEASE_DISABLED_CONTROL_CODE
+        );
+        assert_eq!(
+            analog_pot_code(RELEASE_DISABLED_EQUIVALENT_NORMALIZED),
+            RELEASE_DISABLED_EQUIVALENT_POT_CODE
+        );
+    }
 
     #[test]
     fn analog_pot_scan_map_is_contiguous_and_complete() {

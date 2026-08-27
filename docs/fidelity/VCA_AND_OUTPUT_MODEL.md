@@ -55,8 +55,9 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
   and 3.4 non-inverting gain are applied once inside the filter model. U474's
   reconstructed load exceeds 10 kohm, and its profiled late knee is bounded by
   the TL082's published +/-12 V minimum and +/-13.5 V typical swing while
-  retaining the published 20 Vpp linearity. No separate normalized pre-VCA
-  gain or duplicate high-pass is added here.
+  retaining the published 20 Vpp linearity. Its profile-specific 8.4-12.9 V/us
+  slew state is shared by resonance and final-VCA feed. No separate normalized
+  pre-VCA gain or duplicate high-pass is added here.
 - The final-VCA signal transfer is separate from the generic linearized
   modulation OTA. Intersil Figure 3A supplies two bounded landmarks at 650 uA
   IABC and 200 uA diode current: a long linear centre and rounded current limit

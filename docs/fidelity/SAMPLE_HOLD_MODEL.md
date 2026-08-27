@@ -54,6 +54,12 @@ ten oscillator cells hold per-voice pitch CV after automatic-tune bias. The
 five filter cells hold per-voice keyboard tracking. Pitch and modulation wheels
 remain outside these stored program CVs.
 
+The two Release destinations also preserve V8.1's stored-switch branch. Normal
+attack, decay and release time writes use `0x7a - pot`; RELEASE off substitutes
+`0x64` for both release cells, exactly equivalent to pot code `0x16` (22/127).
+The override is applied at the CV target rather than inside a voice, so cell
+acquisition, refresh order and leakage remain part of the physical path.
+
 Scheduled visits now begin at the cell's present voltage, including accumulated
 droop, and apply the conservative greater-than-99.9999% acquisition bound. This
 preserves the physical capacitor boundary without creating a false multi-scan

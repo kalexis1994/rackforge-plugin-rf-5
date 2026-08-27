@@ -316,6 +316,22 @@ impl Program {
         Self::normal(values)
     }
 
+    fn filter_slew_transient() -> Self {
+        let mut program = Self::filter_drive();
+        program.values[Parameter::FilterCutoff as usize] = 0.30;
+        program.values[Parameter::FilterResonance as usize] = 0.82;
+        program.values[Parameter::FilterEnvelopeAmount as usize] = 0.76;
+        program.values[Parameter::FilterAttack as usize] = 0.0;
+        program.values[Parameter::FilterDecay as usize] = 0.08;
+        program.values[Parameter::FilterSustain as usize] = 0.0;
+        program.values[Parameter::FilterRelease as usize] = 0.06;
+        program.values[Parameter::AmpAttack as usize] = 0.0;
+        program.values[Parameter::AmpDecay as usize] = 0.14;
+        program.values[Parameter::AmpSustain as usize] = 0.45;
+        program.values[Parameter::AmpRelease as usize] = 0.08;
+        program
+    }
+
     fn envelope_punch() -> Self {
         let mut values = BASELINE_WARM;
         values[Parameter::FilterCutoff as usize] = 0.30;
@@ -329,6 +345,22 @@ impl Program {
         values[Parameter::FilterSustain as usize] = 0.0;
         values[Parameter::FilterRelease as usize] = 0.14;
         values[Parameter::FilterEnvelopeAmount as usize] = 0.62;
+        Self::normal(values)
+    }
+
+    fn envelope_phase_steps() -> Self {
+        let mut values = BASELINE_WARM;
+        values[Parameter::FilterCutoff as usize] = 0.34;
+        values[Parameter::FilterResonance as usize] = 0.24;
+        values[Parameter::FilterEnvelopeAmount as usize] = 0.72;
+        values[Parameter::FilterAttack as usize] = 0.0;
+        values[Parameter::FilterDecay as usize] = 0.20;
+        values[Parameter::FilterSustain as usize] = 0.38;
+        values[Parameter::FilterRelease as usize] = 0.10;
+        values[Parameter::AmpAttack as usize] = 0.0;
+        values[Parameter::AmpDecay as usize] = 0.18;
+        values[Parameter::AmpSustain as usize] = 0.48;
+        values[Parameter::AmpRelease as usize] = 0.10;
         Self::normal(values)
     }
 
@@ -349,7 +381,8 @@ impl Program {
     fn release_switch_off() -> Self {
         let mut values = BASELINE_PAD;
         // The long stored pots make the global override unmistakable: the
-        // V8.1 RELEASE bit forces both generators to their minimum time.
+        // V8.1 RELEASE off forces both generators to fixed code 0x64, exactly
+        // equivalent to physical Release-pot code 0x16 in the shared path.
         values[Parameter::AmpRelease as usize] = 1.0;
         values[Parameter::FilterRelease as usize] = 1.0;
         values[Parameter::ReleaseSwitch as usize] = 0.0;
@@ -467,6 +500,16 @@ impl Program {
         // A restrained temporary wheel depth keeps the fast-rate comparison
         // pitched and musical while still making both endpoints unmistakable.
         program.audition_mod_wheel = Some(0.28);
+        program
+    }
+
+    fn lfo_unipolar_waveform(square: bool) -> Self {
+        let mut program = Self::audition(BASELINE_LEAD, AuditionRoute::Vibrato);
+        program.values[Parameter::LfoFrequency as usize] = 0.34;
+        program.values[Parameter::LfoSaw as usize] = if square { 0.0 } else { 1.0 };
+        program.values[Parameter::LfoTriangle as usize] = 0.0;
+        program.values[Parameter::LfoSquare as usize] = if square { 1.0 } else { 0.0 };
+        program.audition_mod_wheel = Some(0.18);
         program
     }
 
@@ -596,7 +639,9 @@ pub(crate) fn find(id: &str) -> Option<Program> {
         "audition-wheel-filter" => Program::audition(BASELINE_WARM, AuditionRoute::Filter),
         "audition-filter-drive" => Program::filter_drive(),
         "audition-filter-resonance" => Program::filter_resonance(),
+        "audition-filter-slew-transient" => Program::filter_slew_transient(),
         "audition-envelope-punch" => Program::envelope_punch(),
+        "audition-envelope-phase-steps" => Program::envelope_phase_steps(),
         "audition-envelope-slow" => Program::envelope_slow(),
         "audition-release-switch-off" => Program::release_switch_off(),
         "audition-ca3280-drive" => Program::ca3280_drive(),
@@ -610,6 +655,8 @@ pub(crate) fn find(id: &str) -> Option<Program> {
         "audition-unison-glide" => Program::unison_glide(),
         "audition-lfo-slow" => Program::lfo_rate(0.10),
         "audition-lfo-fast" => Program::lfo_rate(0.82),
+        "audition-lfo-saw-unipolar" => Program::lfo_unipolar_waveform(false),
+        "audition-lfo-square-unipolar" => Program::lfo_unipolar_waveform(true),
         "audition-oscillator-b-fine-zero" => Program::oscillator_b_fine(0.0),
         "audition-oscillator-b-fine-semitone" => Program::oscillator_b_fine(1.0),
         "audition-pulse-width-minimum" => Program::oscillator_a_pulse_width(0.0),
@@ -636,7 +683,9 @@ mod tests {
             "audition-wheel-filter",
             "audition-filter-drive",
             "audition-filter-resonance",
+            "audition-filter-slew-transient",
             "audition-envelope-punch",
+            "audition-envelope-phase-steps",
             "audition-envelope-slow",
             "audition-release-switch-off",
             "audition-ca3280-drive",
@@ -650,6 +699,8 @@ mod tests {
             "audition-unison-glide",
             "audition-lfo-slow",
             "audition-lfo-fast",
+            "audition-lfo-saw-unipolar",
+            "audition-lfo-square-unipolar",
             "audition-oscillator-b-fine-zero",
             "audition-oscillator-b-fine-semitone",
             "audition-pulse-width-minimum",
@@ -661,6 +712,19 @@ mod tests {
             let mut settings = Settings::default();
             assert!(settings.apply_patch_array(program.values));
         }
+    }
+
+    #[test]
+    fn lfo_polarity_auditions_isolate_the_two_unipolar_sources() {
+        let saw = find("audition-lfo-saw-unipolar").unwrap();
+        assert_eq!(saw.values[Parameter::LfoSaw as usize], 1.0);
+        assert_eq!(saw.values[Parameter::LfoTriangle as usize], 0.0);
+        assert_eq!(saw.values[Parameter::LfoSquare as usize], 0.0);
+
+        let square = find("audition-lfo-square-unipolar").unwrap();
+        assert_eq!(square.values[Parameter::LfoSaw as usize], 0.0);
+        assert_eq!(square.values[Parameter::LfoTriangle as usize], 0.0);
+        assert_eq!(square.values[Parameter::LfoSquare as usize], 1.0);
     }
 
     #[test]

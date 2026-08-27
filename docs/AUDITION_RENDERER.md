@@ -2,7 +2,7 @@
 
 RF-5 can be evaluated without RackForge's graphical panel. The
 `rf-5-audition` executable drives the real DSP engine with sample-accurate MIDI
-events and writes twenty-nine unnormalized 48 kHz mono PCM WAV files:
+events and writes thirty-three unnormalized 48 kHz mono PCM WAV files:
 
 1. baseline polyphonic chords;
 2. strong dual-VCO filter drive;
@@ -26,8 +26,8 @@ events and writes twenty-nine unnormalized 48 kHz mono PCM WAV files:
 18. a fast point on the same exponential common-LFO law.
 19. medium Unison transitions through the populated Glide control network.
 20. a C-major progression using a V8.1-quantized just-intonation Scale program.
-21. maximum stored Release pots overridden by the programmable global RELEASE
-    switch.
+21. maximum stored Release pots overridden by global RELEASE's exact V8.1
+    `0x64` CV write, equivalent to physical pot code `0x16`.
 22. centred, sub-threshold and bipolar pitch-wheel moves through the SD334
     diode deadband.
 23. matched oscillator-A/B coarse pitch with OSC B FINE at physical zero;
@@ -38,6 +38,18 @@ events and writes twenty-nine unnormalized 48 kHz mono PCM WAV files:
 27. oscillator A pulse at the documented 99% panel endpoint.
 28. oscillator B triangle in isolation across five octaves.
 29. oscillator-B triangle driving oscillator-A PWM at audio rate.
+30. strong, fast filter-envelope transients through the stateful TL082 slew
+    boundary inside each resonance loop.
+31. repeated nonzero-sustain gates exposing the CEM3310 finite-buffer steps at
+    attack, decay and release boundaries.
+32. positive-going LFO saw through its switched 160 kohm Wheel Mod path.
+33. positive-going loaded LFO square through its switched 200 kohm Wheel Mod
+    path.
+
+Scenes 17 and 18 now traverse the absolute SD334/CEM3340 frequency law rather
+than a provisional 20 Hz anchor; their program positions remain suitable for
+direct slow/fast comparison after the corrected approximately 0.0908-55.8 Hz
+nominal endpoint reconstruction.
 
 Run:
 
@@ -51,7 +63,7 @@ renderer writes `manifest.json` with peak, RMS, DC and clipped-sample counts.
 It never peak-normalizes, applies loudness matching or post-processes the DSP
 output, because those operations would hide gain-staging changes.
 
-Short renders of all twenty-nine scenes are evaluated twice in the normal test
+Short renders of all thirty-three scenes are evaluated twice in the normal test
 suite and must be sample-identical, finite, audible and bounded. The full
 renderer additionally rejects silence, exhausted headroom, clipped samples or
 excessive DC before writing a successful manifest. Release validation renders

@@ -4,7 +4,8 @@ use rf_5_contract::{
     Parameter, Settings,
     hardware::{
         COMMON_AND_PATCH_SAMPLE_HOLD_COUNT, CONTROL_VOLTAGE_DESTINATION_COUNT,
-        ControlVoltageDestination, SAMPLE_HOLD_CAPACITANCE_FARADS, SAMPLE_HOLD_STROBE_T_STATES,
+        ControlVoltageDestination, RELEASE_DISABLED_EQUIVALENT_NORMALIZED,
+        SAMPLE_HOLD_CAPACITANCE_FARADS, SAMPLE_HOLD_STROBE_T_STATES,
         SAMPLE_HOLD_SWITCH_ON_RESISTANCE_UPPER_BOUND_OHMS, TUNE_CPU_CLOCK_HZ, VOICE_COUNT,
     },
 };
@@ -82,7 +83,17 @@ impl CvTargets {
             let destination = ControlVoltageDestination::try_from(index as u8)
                 .expect("valid common CV destination");
             if let Some(parameter) = common_parameter(destination) {
-                *value = settings.get(parameter) * common_cv_span_volts(destination);
+                let normalized = if matches!(
+                    destination,
+                    ControlVoltageDestination::FilterRelease
+                        | ControlVoltageDestination::AmplifierRelease
+                ) && !parameter_enabled(settings, Parameter::ReleaseSwitch)
+                {
+                    RELEASE_DISABLED_EQUIVALENT_NORMALIZED
+                } else {
+                    settings.get(parameter)
+                };
+                *value = normalized * common_cv_span_volts(destination);
             }
         }
 
@@ -339,6 +350,29 @@ mod tests {
         ] {
             assert!((applied.get(parameter) - settings.get(parameter)).abs() < 1.0e-6);
         }
+    }
+
+    #[test]
+    fn release_switch_off_targets_both_v81_fixed_voltage_cells() {
+        let mut settings = Settings::default();
+        assert!(settings.set(Parameter::FilterRelease as u32, 1.0));
+        assert!(settings.set(Parameter::AmpRelease as u32, 1.0));
+        assert!(settings.set(Parameter::ReleaseSwitch as u32, 0.0));
+        let targets = CvTargets::from_state(
+            settings,
+            [60; VOICE_COUNT],
+            AutoTune::calibrated(),
+            ScaleProgram::default(),
+        );
+        let expected = RELEASE_DISABLED_EQUIVALENT_NORMALIZED * DEFAULT_COMMON_CV_SPAN_VOLTS;
+        assert_eq!(
+            targets.get(ControlVoltageDestination::FilterRelease as usize),
+            expected
+        );
+        assert_eq!(
+            targets.get(ControlVoltageDestination::AmplifierRelease as usize),
+            expected
+        );
     }
 
     #[test]

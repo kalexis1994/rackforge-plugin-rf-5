@@ -24,9 +24,10 @@ audio-rate Poly Mod, a four-pole CEM3320-class filter,
 separate CEM3310-class RC envelopes, five-voice Unison, Glide and both
 performance wheels, including the pitch wheel's SD334 diode deadband. The
 direct R104 Master Tune path now reaches both VCO master summers continuously,
-outside the scanned and programmable control domain. The
-global programmable Release switch now drives both
-envelopes, and every original RF-5 patch is packed through the recovered V8.1
+outside the scanned and programmable control domain. The global programmable
+Release switch now sends V8.1's exact fixed `0x64` write—equivalent to physical
+pot code `0x16`—through both release sample/hold cells and envelopes, and every
+original RF-5 patch is packed through the recovered V8.1
 24-byte program format with 24 seven-bit pots and 22 mapped switches. Separate
 CA3280 mixer, final-voice and master-volume
 transfers now feed the documented five-input summer, C4189 coupling network and
@@ -52,7 +53,13 @@ Scale Mode adds twelve global, patch-independent chromatic offsets with exact
 V8.1 code steps. Their saw, triangle and pulse
 outputs also retain the published voltage/symmetry ranges, populated-board
 resistor weighting, 128-step 1-99% panel pulse-width law, modulation overtravel
-to stable 0/100% DC and distinct audio versus Poly Mod polarity. A unified 6/11
+to stable 0/100% DC and distinct audio versus Poly Mod polarity. The shared LFO
+now follows SD334's complete CEM3340 reference, multiplier,
+1-uF timing-capacitor and 0-10 V DAC network instead of a provisional 20 Hz
+anchor: its nominal 128-step range is approximately 0.0908-55.8 Hz, with the
+published finite timing-current ceiling rounding only the fastest codes. Its
+saw and loaded square retain their positive-going Wheel Mod displacement;
+U380 alone centres triangle around ground for symmetric vibrato. A unified 6/11
 ms CPU cycle drives 38 independent sample-and-hold cells through the exact
 five-bank V8.1 address order, including both physically unconnected timing
 slots, for common, oscillator and per-voice filter CVs. Scheduled visits use
@@ -64,12 +71,14 @@ Glide path rather than being mistaken for the digital switch state.
 The five filter ICs now
 form a serviced CEM3320 population with 440/880 Hz scale calibration, bounded
 warm-up motion,
-physical resonance gain, clipping span and second-harmonic character. Their
+physical resonance gain, clipping span, TL082 large-signal slew and
+second-harmonic character. Their
 nonlinear four-pole feedback loops are solved without inserting a digital
 sample of delay, so self-oscillation follows the calibrated cutoff consistently
 from 44.1 through 192 kHz. Its ten
 CEM3310 envelope generators also retain bounded device-specific peak,
-asymptote and RC timing curves. It remains a reverse-engineering candidate:
+asymptote and RC timing curves, including finite-buffer steps between physical
+phases without discontinuously moving the timing capacitor. It remains a reverse-engineering candidate:
 measured component populations, overload/output levels and original-instrument
 measurements still pass through the evidence gates in
 [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
@@ -82,7 +91,7 @@ same relative vertical drag on mouse and touch, while RackForge parameter
 attributes keep host-owned context menus and MIDI Link available.
 
 The `RF-5 Audition` factory bank provides
-twenty-five immediately playable listening programs for Wheel/Poly Mod, LFO range,
+twenty-nine immediately playable listening programs for Wheel/Poly Mod, LFO range and polarity,
 Sync, filter drive, resonance, fast/slow envelope behaviour, CA3280 drive and
 common noise, including explicit global-Release and oscillator-B FINE endpoint
 comparisons plus pulse-width endpoints. They require no UI; see
@@ -118,7 +127,7 @@ bash tools/build-package.sh
 
 The package is written to `artifacts/rf-5-0.1.0.rfplugin`. GitHub Actions tests
 x86-64 and ARM64 before publishing the portable package as a workflow artifact.
-The audition command writes twenty-nine unnormalized listening files and their metrics
+The audition command writes thirty-three unnormalized listening files and their metrics
 to `artifacts/auditions`; see
 [`docs/AUDITION_RENDERER.md`](docs/AUDITION_RENDERER.md).
 

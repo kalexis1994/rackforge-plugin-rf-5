@@ -57,8 +57,11 @@ procedure expects resonance to begin self-oscillating between panel positions
   effective audio load remains above 10 kohm, so five deterministic TL082
   swing limits stay between the published +/-12 V minimum and +/-13.5 V
   typical values. A 32nd-order late knee preserves the data sheet's less than
-  0.02% distortion condition at 20 Vpp, while its analytic slope remains part
-  of the instantaneous resonance solve.
+  0.02% distortion condition at 20 Vpp. Each profile also carries a stateful
+  8.4-12.9 V/us slew value inside the published 8 V/us minimum and 13 V/us
+  typical boundaries. The slew prediction and its zero slope while limited
+  participate in the instantaneous Newton solve; it is not a post-filter
+  effect added after the resonance loop.
 - Each physical voice card now owns one deterministic CEM3320 profile. Its
   pole-control sensitivity remains inside 57.5-62.5 mV/decade, resonance-cell
   transconductance inside 0.8-1.2 times nominal, Q-input impedance inside
@@ -92,8 +95,9 @@ five Gm/Q-input pairs are deterministic combinations inside published bounds
 that also satisfy the service oscillation window; they are not measurements of
 five selected chips. Filter input, cell state and output now use circuit volts
 directly. U474's voltage bounds and 10 V linearity are
-source-backed, while the differentiable transition between them is an explicit
-late-knee hypothesis rather than a measured overload trace.
+source-backed, while the differentiable transition between them and the five
+specific slew values are bounded population hypotheses rather than measured
+devices from one unit.
 Warm-up magnitude is source-bounded, while its
 210-390 second time constants, directions and correlation are explicit,
 replaceable hypotheses because no admitted source publishes those trajectories.
@@ -121,6 +125,9 @@ replaceable hypotheses because no admitted source publishes those trajectories.
   range under a reconstructed load above 10 kohm;
 - U474 remains below 0.02% third harmonic at the published 10 V peak condition
   and is bounded under extreme drive;
+- all five U474 profiles remain inside the published 8-13 V/us slew population,
+  never move farther than their allowed per-sample voltage, and give identical
+  predicted and committed steps throughout the 44.1/48/96/192 kHz matrix;
 - all five physical Gm/Q-input pairs cross four-pole loop unity between panel
   positions 6.5 and 9.5 without a normalized feedback constant;
 - the Gm fit hits the published 100 uA point and has decreasing incremental

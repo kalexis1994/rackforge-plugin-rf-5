@@ -12,6 +12,7 @@ const NOMINAL_PEAK_VOLTS: f32 = 5.0;
 const NOMINAL_ATTACK_ASYMPTOTE_VOLTS: f32 = 6.5;
 const TIMING_RESISTOR_OHMS: f32 = 24_300.0;
 const TIMING_CAPACITOR_FARADS: f32 = 0.039e-6;
+const NOMINAL_BUFFER_OUTPUT_RESISTANCE_OHMS: f32 = 200.0;
 const SERVICE_DIAL_SIX: f32 = 0.6;
 const SERVICE_ATTACK_SECONDS: f32 = 1.0;
 
@@ -23,6 +24,7 @@ struct EnvelopeProfile {
     component_rc_ratio: f32,
     attack_current_ratio: f32,
     discharge_current_ratio: f32,
+    buffer_output_resistance_ohms: f32,
     sustain_error_volts: f32,
 }
 
@@ -39,6 +41,7 @@ const ENVELOPE_PROFILES: [EnvelopeProfile; 10] = [
         component_rc_ratio: 0.90,
         attack_current_ratio: 0.92,
         discharge_current_ratio: 1.08,
+        buffer_output_resistance_ohms: 175.0,
         sustain_error_volts: -0.003,
     },
     EnvelopeProfile {
@@ -48,6 +51,7 @@ const ENVELOPE_PROFILES: [EnvelopeProfile; 10] = [
         component_rc_ratio: 1.10,
         attack_current_ratio: 1.08,
         discharge_current_ratio: 0.94,
+        buffer_output_resistance_ohms: 225.0,
         sustain_error_volts: 0.017,
     },
     EnvelopeProfile {
@@ -57,6 +61,7 @@ const ENVELOPE_PROFILES: [EnvelopeProfile; 10] = [
         component_rc_ratio: 0.96,
         attack_current_ratio: 0.97,
         discharge_current_ratio: 1.05,
+        buffer_output_resistance_ohms: 190.0,
         sustain_error_volts: 0.005,
     },
     EnvelopeProfile {
@@ -66,6 +71,7 @@ const ENVELOPE_PROFILES: [EnvelopeProfile; 10] = [
         component_rc_ratio: 1.06,
         attack_current_ratio: 1.04,
         discharge_current_ratio: 0.96,
+        buffer_output_resistance_ohms: 215.0,
         sustain_error_volts: 0.014,
     },
     EnvelopeProfile {
@@ -75,6 +81,7 @@ const ENVELOPE_PROFILES: [EnvelopeProfile; 10] = [
         component_rc_ratio: 1.00,
         attack_current_ratio: 1.00,
         discharge_current_ratio: 1.00,
+        buffer_output_resistance_ohms: NOMINAL_BUFFER_OUTPUT_RESISTANCE_OHMS,
         sustain_error_volts: 0.0,
     },
     EnvelopeProfile {
@@ -84,6 +91,7 @@ const ENVELOPE_PROFILES: [EnvelopeProfile; 10] = [
         component_rc_ratio: 0.87,
         attack_current_ratio: 0.88,
         discharge_current_ratio: 1.12,
+        buffer_output_resistance_ohms: 155.0,
         sustain_error_volts: -0.003,
     },
     EnvelopeProfile {
@@ -93,6 +101,7 @@ const ENVELOPE_PROFILES: [EnvelopeProfile; 10] = [
         component_rc_ratio: 1.13,
         attack_current_ratio: 1.14,
         discharge_current_ratio: 0.90,
+        buffer_output_resistance_ohms: 245.0,
         sustain_error_volts: 0.023,
     },
     EnvelopeProfile {
@@ -102,6 +111,7 @@ const ENVELOPE_PROFILES: [EnvelopeProfile; 10] = [
         component_rc_ratio: 0.93,
         attack_current_ratio: 0.95,
         discharge_current_ratio: 1.06,
+        buffer_output_resistance_ohms: 180.0,
         sustain_error_volts: 0.004,
     },
     EnvelopeProfile {
@@ -111,6 +121,7 @@ const ENVELOPE_PROFILES: [EnvelopeProfile; 10] = [
         component_rc_ratio: 1.08,
         attack_current_ratio: 1.10,
         discharge_current_ratio: 0.93,
+        buffer_output_resistance_ohms: 235.0,
         sustain_error_volts: 0.019,
     },
     EnvelopeProfile {
@@ -120,6 +131,7 @@ const ENVELOPE_PROFILES: [EnvelopeProfile; 10] = [
         component_rc_ratio: 1.02,
         attack_current_ratio: 0.99,
         discharge_current_ratio: 1.03,
+        buffer_output_resistance_ohms: 205.0,
         sustain_error_volts: 0.008,
     },
 ];
@@ -231,6 +243,15 @@ impl AdsrEnvelope {
             }
         }
         self.value
+            + buffer_drive_offset(
+                self.value,
+                self.stage,
+                attack,
+                decay,
+                sustain_target,
+                release,
+                profile,
+            ) / NOMINAL_PEAK_VOLTS
     }
 
     pub fn is_idle(self) -> bool {
@@ -240,6 +261,44 @@ impl AdsrEnvelope {
     pub fn value(self) -> f32 {
         self.value
     }
+}
+
+fn buffer_drive_offset(
+    capacitor_value: f32,
+    stage: Stage,
+    attack: f32,
+    decay: f32,
+    sustain_target: f32,
+    release: f32,
+    profile: EnvelopeProfile,
+) -> f32 {
+    // The CEM3310's internal buffer must source or sink the timing current
+    // through Rx. Its finite output resistance therefore moves ENV OUT away
+    // from the continuously stored capacitor voltage whenever a phase is
+    // active. Reversing current at a phase boundary creates the small steps
+    // shown in the original data-sheet waveforms; it does not reset Cx.
+    let (target, control, direction) = match stage {
+        Stage::Attack => (
+            profile.attack_asymptote_volts / NOMINAL_PEAK_VOLTS,
+            attack,
+            CurrentDirection::Charge,
+        ),
+        Stage::Decay => (sustain_target, decay, CurrentDirection::Discharge),
+        Stage::Release => (0.0, release, CurrentDirection::Discharge),
+        Stage::Idle | Stage::Sustain => return 0.0,
+    };
+    let current_ratio = match direction {
+        CurrentDirection::Charge => profile.attack_current_ratio,
+        CurrentDirection::Discharge => profile.discharge_current_ratio,
+    };
+    let resistance_multiplier = libm::powf(
+        10.0,
+        control.clamp(0.0, 1.0) * control_span_millivolts()
+            / profile.control_sensitivity_mv_per_decade,
+    ) / current_ratio;
+    let drive_current_amps = (target - capacitor_value) * NOMINAL_PEAK_VOLTS
+        / (TIMING_RESISTOR_OHMS * resistance_multiplier);
+    drive_current_amps * profile.buffer_output_resistance_ohms
 }
 
 fn approach(value: f32, target: f32, time_constant: f32, sample_rate: f32) -> f32 {
@@ -387,6 +446,7 @@ mod tests {
             assert!((0.85..=1.15).contains(&profile.component_rc_ratio));
             assert!((0.75..=1.30).contains(&profile.attack_current_ratio));
             assert!((0.83..=1.20).contains(&profile.discharge_current_ratio));
+            assert!((100.0..=350.0).contains(&profile.buffer_output_resistance_ohms));
             assert!((-0.003..=0.023).contains(&profile.sustain_error_volts));
             let ratio = profile.attack_asymptote_volts / profile.peak_volts;
             assert!((1.26..=1.34).contains(&ratio));
@@ -429,5 +489,41 @@ mod tests {
                 assert_ne!(attack, decay);
             }
         }
+    }
+
+    #[test]
+    fn nominal_buffer_produces_the_published_attack_step() {
+        let profile = ENVELOPE_PROFILES[4];
+        let offset = buffer_drive_offset(0.0, Stage::Attack, 0.0, 0.0, 0.0, 0.0, profile);
+        let expected = NOMINAL_BUFFER_OUTPUT_RESISTANCE_OHMS / TIMING_RESISTOR_OHMS
+            * NOMINAL_ATTACK_ASYMPTOTE_VOLTS;
+        assert!((offset - expected).abs() < 1.0e-6);
+        assert!((0.050..=0.055).contains(&offset));
+    }
+
+    #[test]
+    fn buffer_step_reverses_with_the_phase_current() {
+        let profile = ENVELOPE_PROFILES[4];
+        let attack = buffer_drive_offset(0.4, Stage::Attack, 0.0, 0.0, 0.2, 0.0, profile);
+        let decay = buffer_drive_offset(0.4, Stage::Decay, 0.0, 0.0, 0.2, 0.0, profile);
+        let release = buffer_drive_offset(0.4, Stage::Release, 0.0, 0.0, 0.2, 0.0, profile);
+        assert!(attack > 0.0);
+        assert!(decay < 0.0);
+        assert!(release < decay);
+    }
+
+    #[test]
+    fn phase_steps_do_not_discontinuously_move_the_timing_capacitor() {
+        let mut envelope = AdsrEnvelope {
+            value: 0.72,
+            stage: Stage::Decay,
+            ..AdsrEnvelope::default()
+        };
+        let capacitor_before = envelope.value();
+        envelope.release();
+        assert_eq!(envelope.value(), capacitor_before);
+        let output = envelope.next(48_000.0, 0.0, 0.0, 0.3, 0.0);
+        assert!(envelope.value() < capacitor_before);
+        assert!(output < envelope.value());
     }
 }
