@@ -23,11 +23,14 @@ than its instrument-specific layout:
 ## Panel map
 
 The source-backed front-panel inventory is grouped into five responsive
-sections:
+sections. The wide layout follows the Rev 3 control hierarchy rather than a
+generic parameter grid:
 
 1. Modulation: Poly Mod, common LFO and Wheel Mod;
 2. Oscillators: oscillator A, oscillator B and the three-input mixer;
-3. Filter + Envelopes: filter, filter envelope and amplifier envelope;
+3. Filter + Envelopes: cutoff, resonance, envelope amount, keyboard switching
+   and the filter ADSR share one outlined FILTER block; the amplifier ADSR
+   remains a second block;
 4. Voice: Glide, Unison, Release, master volume and the RF-5 voice-population
    control;
 5. Scale Mode: the twelve patch-independent V8.1 chromatic offsets.
@@ -41,6 +44,22 @@ Scale Mode and Voice Spread remain visibly separated from the normal synthesis
 path. Scale Mode is an original hidden operating mode that reuses panel pots,
 while Voice Spread is an RF-5 machine-character control rather than a claim
 about a dedicated historical knob.
+
+## Physical material system
+
+The panel is generated from reusable CSS geometry and does not use a scanned
+front-panel image. Its black painted-metal surface reuses the broad
+Gaussian-like anisotropic highlight profile proven by RF-106, with a fixed
+104-degree light direction and a very fine vertical grain. Control movement
+never rotates this lighting: only the white indicator rotates, so the
+highlight remains tied to the virtual light source.
+
+The standard potentiometer combines a fluted black skirt, a recessed top face,
+fixed anisotropic reflections, an SVG graduation ring and a high-contrast white
+indicator. Master Tune and Volume use the same component with a brushed
+aluminium top-face variant. Toggle controls combine a separate red LED, a dark
+switch well and a nearly flat rectangular cap. Wood rails and end cheeks are
+procedural gradients, not bundled textures.
 
 ## Responsive behavior
 
@@ -59,13 +78,10 @@ axis and initial-jump problems while retaining focus and arrow-key operation.
 
 ## Remaining physical controls
 
-The engine already receives pitch bend and modulation wheel through MIDI, and
-owns an explicit oscillator-tune operation. They are not yet public parameters
-or web-bridge commands. A complete front panel still needs an append-only,
-non-patch control boundary for:
-
-- the momentary automatic-tune trigger;
-- visible/on-screen pitch and modulation wheel positions.
+The engine receives pitch bend and modulation wheel through MIDI. Automatic
+tune is already an explicit momentary public operation on the Voice page.
+On-screen pitch and modulation wheel positions remain non-patch performance
+state rather than stored parameters.
 
 Those controls must not be disguised as stored patch parameters. The current
 surface can evolve independently because all existing synthesis controls bind

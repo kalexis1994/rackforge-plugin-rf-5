@@ -145,10 +145,63 @@ enum Stage {
     Release,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CurrentDirection {
     Charge,
     Discharge,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct EnvelopeCoefficientCache {
+    sample_rate: f32,
+    control: f32,
+    direction: CurrentDirection,
+    approach_coefficient: f32,
+    resistance_multiplier: f32,
+}
+
+impl Default for EnvelopeCoefficientCache {
+    fn default() -> Self {
+        Self {
+            sample_rate: 0.0,
+            control: 0.0,
+            direction: CurrentDirection::Charge,
+            approach_coefficient: 0.0,
+            resistance_multiplier: 0.0,
+        }
+    }
+}
+
+impl EnvelopeCoefficientCache {
+    fn coefficients(
+        &mut self,
+        sample_rate: f32,
+        control: f32,
+        profile: EnvelopeProfile,
+        direction: CurrentDirection,
+    ) -> (f32, f32) {
+        let sample_rate = sample_rate.max(1.0);
+        let control = control.clamp(0.0, 1.0);
+        if self.sample_rate.to_bits() != sample_rate.to_bits()
+            || self.control.to_bits() != control.to_bits()
+            || self.direction != direction
+        {
+            let time_constant = profiled_time_constant_seconds(control, profile, direction);
+            self.approach_coefficient = libm::expf(-1.0 / (time_constant * sample_rate));
+            let current_ratio = match direction {
+                CurrentDirection::Charge => profile.attack_current_ratio,
+                CurrentDirection::Discharge => profile.discharge_current_ratio,
+            };
+            self.resistance_multiplier = libm::powf(
+                10.0,
+                control * control_span_millivolts() / profile.control_sensitivity_mv_per_decade,
+            ) / current_ratio;
+            self.sample_rate = sample_rate;
+            self.control = control;
+            self.direction = direction;
+        }
+        (self.approach_coefficient, self.resistance_multiplier)
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -156,6 +209,7 @@ pub struct AdsrEnvelope {
     value: f32,
     stage: Stage,
     profile_index: usize,
+    coefficient_cache: EnvelopeCoefficientCache,
 }
 
 impl Default for AdsrEnvelope {
@@ -164,6 +218,7 @@ impl Default for AdsrEnvelope {
             value: 0.0,
             stage: Stage::Idle,
             profile_index: 4,
+            coefficient_cache: EnvelopeCoefficientCache::default(),
         }
     }
 }
@@ -205,11 +260,16 @@ impl AdsrEnvelope {
         match self.stage {
             Stage::Idle => {}
             Stage::Attack => {
-                self.value = approach(
+                let (coefficient, _) = self.coefficient_cache.coefficients(
+                    sample_rate,
+                    attack,
+                    profile,
+                    CurrentDirection::Charge,
+                );
+                self.value = approach_with_coefficient(
                     self.value,
                     profile.attack_asymptote_volts / NOMINAL_PEAK_VOLTS,
-                    profiled_time_constant_seconds(attack, profile, CurrentDirection::Charge),
-                    sample_rate,
+                    coefficient,
                 );
                 if self.value >= peak {
                     self.value = peak;
@@ -217,12 +277,13 @@ impl AdsrEnvelope {
                 }
             }
             Stage::Decay => {
-                self.value = approach(
-                    self.value,
-                    sustain_target,
-                    profiled_time_constant_seconds(decay, profile, CurrentDirection::Discharge),
+                let (coefficient, _) = self.coefficient_cache.coefficients(
                     sample_rate,
+                    decay,
+                    profile,
+                    CurrentDirection::Discharge,
                 );
+                self.value = approach_with_coefficient(self.value, sustain_target, coefficient);
                 if (self.value - sustain_target).abs() <= IDLE_THRESHOLD {
                     self.value = sustain_target;
                     self.stage = Stage::Sustain;
@@ -230,12 +291,13 @@ impl AdsrEnvelope {
             }
             Stage::Sustain => self.value = sustain_target,
             Stage::Release => {
-                self.value = approach(
-                    self.value,
-                    0.0,
-                    profiled_time_constant_seconds(release, profile, CurrentDirection::Discharge),
+                let (coefficient, _) = self.coefficient_cache.coefficients(
                     sample_rate,
+                    release,
+                    profile,
+                    CurrentDirection::Discharge,
                 );
+                self.value = approach_with_coefficient(self.value, 0.0, coefficient);
                 if self.value <= IDLE_THRESHOLD {
                     self.value = 0.0;
                     self.stage = Stage::Idle;
@@ -243,7 +305,9 @@ impl AdsrEnvelope {
             }
         }
         self.value
-            + buffer_drive_offset(
+            + buffer_drive_offset_cached(
+                &mut self.coefficient_cache,
+                sample_rate,
                 self.value,
                 self.stage,
                 attack,
@@ -263,7 +327,34 @@ impl AdsrEnvelope {
     }
 }
 
+#[cfg(test)]
 fn buffer_drive_offset(
+    capacitor_value: f32,
+    stage: Stage,
+    attack: f32,
+    decay: f32,
+    sustain_target: f32,
+    release: f32,
+    profile: EnvelopeProfile,
+) -> f32 {
+    let mut cache = EnvelopeCoefficientCache::default();
+    buffer_drive_offset_cached(
+        &mut cache,
+        1.0,
+        capacitor_value,
+        stage,
+        attack,
+        decay,
+        sustain_target,
+        release,
+        profile,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn buffer_drive_offset_cached(
+    coefficient_cache: &mut EnvelopeCoefficientCache,
+    sample_rate: f32,
     capacitor_value: f32,
     stage: Stage,
     attack: f32,
@@ -287,22 +378,14 @@ fn buffer_drive_offset(
         Stage::Release => (0.0, release, CurrentDirection::Discharge),
         Stage::Idle | Stage::Sustain => return 0.0,
     };
-    let current_ratio = match direction {
-        CurrentDirection::Charge => profile.attack_current_ratio,
-        CurrentDirection::Discharge => profile.discharge_current_ratio,
-    };
-    let resistance_multiplier = libm::powf(
-        10.0,
-        control.clamp(0.0, 1.0) * control_span_millivolts()
-            / profile.control_sensitivity_mv_per_decade,
-    ) / current_ratio;
+    let (_, resistance_multiplier) =
+        coefficient_cache.coefficients(sample_rate, control, profile, direction);
     let drive_current_amps = (target - capacitor_value) * NOMINAL_PEAK_VOLTS
         / (TIMING_RESISTOR_OHMS * resistance_multiplier);
     drive_current_amps * profile.buffer_output_resistance_ohms
 }
 
-fn approach(value: f32, target: f32, time_constant: f32, sample_rate: f32) -> f32 {
-    let coefficient = libm::expf(-1.0 / (time_constant * sample_rate.max(1.0)));
+fn approach_with_coefficient(value: f32, target: f32, coefficient: f32) -> f32 {
     target + (value - target) * coefficient
 }
 
@@ -349,6 +432,28 @@ fn control_span_millivolts() -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn coefficient_cache_is_sample_exact_across_stage_changes() {
+        let mut cached = AdsrEnvelope::with_profile(7);
+        cached.trigger();
+        for _ in 0..256 {
+            let _ = cached.next(48_000.0, 0.18, 0.31, 0.42, 0.27);
+        }
+        let mut rebuilt = cached;
+        for sample in 0..4_096 {
+            if sample == 2_048 {
+                cached.release();
+                rebuilt.release();
+            }
+            rebuilt.coefficient_cache = EnvelopeCoefficientCache::default();
+            let cached_output = cached.next(48_000.0, 0.18, 0.31, 0.42, 0.27);
+            let rebuilt_output = rebuilt.next(48_000.0, 0.18, 0.31, 0.42, 0.27);
+            assert_eq!(cached_output.to_bits(), rebuilt_output.to_bits());
+            assert_eq!(cached.value.to_bits(), rebuilt.value.to_bits());
+            assert_eq!(cached.stage, rebuilt.stage);
+        }
+    }
 
     #[test]
     fn trigger_attack_decay_sustain_and_release_are_complete() {

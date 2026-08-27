@@ -327,5 +327,19 @@
       "kind": { "type": "boolean", "default": false },
       "flags": { "automatable": false, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
     }
+  ],
+  "semantic_controls": [
+    { "role": "synth.oscillator.pulse_width", "parameter_index": 13 },
+    { "role": "synth.oscillator.noise.level", "parameter_index": 32 },
+    { "role": "synth.filter.cutoff", "parameter_index": 3 },
+    { "role": "synth.filter.resonance", "parameter_index": 4 },
+    { "role": "synth.filter.envelope.amount", "parameter_index": 38 },
+    { "role": "synth.filter.key_tracking", "parameter_index": 44 },
+    { "role": "synth.envelope.amp.attack", "parameter_index": 5 },
+    { "role": "synth.envelope.amp.decay", "parameter_index": 6 },
+    { "role": "synth.envelope.amp.sustain", "parameter_index": 7 },
+    { "role": "synth.envelope.amp.release", "parameter_index": 8 },
+    { "role": "synth.lfo.rate", "parameter_index": 23 },
+    { "role": "plugin.output.level", "parameter_index": 0 }
   ]
 }

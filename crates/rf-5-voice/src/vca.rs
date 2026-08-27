@@ -17,6 +17,7 @@
 const DATASHEET_LINEARIZED_INPUT_RESISTANCE_OHMS: f32 = 10_000.0;
 const FINAL_VCA_INPUT_RESISTANCE_OHMS: f32 = 20_000.0;
 const DATASHEET_LINEARIZED_LIMIT_VOLTS: f32 = 4.0;
+#[cfg(not(feature = "realtime-1x"))]
 const FINAL_VCA_SOFT_KNEE_ORDER: f32 = 6.0;
 const FINAL_VCA_NOMINAL_LIMIT_VOLTS: f32 = DATASHEET_LINEARIZED_LIMIT_VOLTS
     * (FINAL_VCA_INPUT_RESISTANCE_OHMS / DATASHEET_LINEARIZED_INPUT_RESISTANCE_OHMS);
@@ -324,11 +325,40 @@ pub fn oscillator_mixer_loaded(
     voice_index: usize,
     channel: MixerChannel,
 ) -> f32 {
+    oscillator_mixer_loaded_with_control_current(
+        positive_source_volts,
+        positive_source_conductance,
+        negative_source_volts,
+        negative_source_conductance,
+        oscillator_mixer_control_current_amps(control),
+        voice_index,
+        channel,
+    )
+}
+
+/// Convert one static oscillator-level CV into the CA3280 bias current that
+/// all four internal sub-samples share.
+pub fn oscillator_mixer_control_current_amps(control: f32) -> f32 {
+    ten_volt_control_current_amps(control, OSCILLATOR_MIX_CONTROL_RESISTANCE_OHMS)
+}
+
+/// Loaded oscillator mixer with an already reconstructed CA3280 bias current.
+pub fn oscillator_mixer_loaded_with_control_current(
+    positive_source_volts: f32,
+    positive_source_conductance: f32,
+    negative_source_volts: f32,
+    negative_source_conductance: f32,
+    control_current_amps: f32,
+    voice_index: usize,
+    channel: MixerChannel,
+) -> f32 {
     if !positive_source_volts.is_finite()
         || !positive_source_conductance.is_finite()
         || !negative_source_volts.is_finite()
         || !negative_source_conductance.is_finite()
         || (positive_source_conductance <= 0.0 && negative_source_conductance <= 0.0)
+        || !control_current_amps.is_finite()
+        || control_current_amps <= 0.0
     {
         return 0.0;
     }
@@ -337,19 +367,27 @@ pub fn oscillator_mixer_loaded(
         MixerChannel::OscillatorA => profile.oscillator_a,
         MixerChannel::OscillatorB => profile.oscillator_b,
     };
-    oscillator_mixer_to_filter_volts(
+    oscillator_mixer_to_filter_volts_with_control_current(
         positive_source_volts,
         positive_source_conductance,
         negative_source_volts,
         negative_source_conductance,
-        control,
+        control_current_amps,
         half,
     )
 }
 
 /// The single common noise-level OTA before noise reaches all five filters.
 pub fn common_noise(input: f32, control: f32) -> f32 {
-    if !input.is_finite() || !control.is_finite() || control <= 0.0 {
+    common_noise_with_control_current(input, common_noise_control_current_amps(control))
+}
+
+pub fn common_noise_control_current_amps(control: f32) -> f32 {
+    ten_volt_control_current_amps(control, NOISE_MIX_CONTROL_RESISTANCE_OHMS)
+}
+
+pub fn common_noise_with_control_current(input: f32, control_current_amps: f32) -> f32 {
+    if !input.is_finite() || !control_current_amps.is_finite() || control_current_amps <= 0.0 {
         return 0.0;
     }
     let source_current_amps =
@@ -359,9 +397,11 @@ pub fn common_noise(input: f32, control: f32) -> f32 {
         + 1.0 / UNLINEARIZED_INPUT_RESISTANCE_OHMS;
     let differential_input_volts =
         source_current_amps / input_conductance_siemens * COMMON_NOISE_PROFILE.input_drive_ratio;
-    let iabc_amps = ten_volt_control_current_amps(control, NOISE_MIX_CONTROL_RESISTANCE_OHMS);
-    let output_current_amps =
-        ota_output_current_amps(differential_input_volts, iabc_amps, COMMON_NOISE_PROFILE);
+    let output_current_amps = ota_output_current_amps(
+        differential_input_volts,
+        control_current_amps,
+        COMMON_NOISE_PROFILE,
+    );
     let buffered_noise_volts = output_current_amps * WHITE_NOISE_OUTPUT_LOAD_RESISTANCE_OHMS;
     buffered_noise_volts / FILTER_NOISE_INPUT_RESISTANCE_OHMS
         * FILTER_FIRST_CELL_TRANSIMPEDANCE_OHMS
@@ -373,28 +413,50 @@ pub fn common_noise(input: f32, control: f32) -> f32 {
 /// normalized host bus. Q307/Q309 create the complementary IABC currents and
 /// the two populated input dividers set each unlinearized CA3280 drive.
 pub fn wheel_mod_source(lfo: f32, noise: f32, source_mix: f32) -> f32 {
-    if !lfo.is_finite() || !noise.is_finite() || !source_mix.is_finite() {
-        return 0.0;
+    let [lfo_current_amps, noise_current_amps] = wheel_mod_control_currents_amps(source_mix);
+    wheel_mod_source_with_control_currents(lfo, noise, lfo_current_amps, noise_current_amps)
+}
+
+pub fn wheel_mod_control_currents_amps(source_mix: f32) -> [f32; 2] {
+    if !source_mix.is_finite() {
+        return [0.0; 2];
     }
     let source_mix_cv = source_mix.clamp(0.0, 1.0) * WHEEL_MOD_CONTROL_RANGE_VOLTS;
-    let lfo_iabc = grounded_base_2n4250_collector_current_amps(
-        WHEEL_MOD_CONTROL_RANGE_VOLTS - source_mix_cv,
-        WHEEL_MOD_LFO_CONTROL_RESISTANCE_OHMS,
-    );
-    let noise_iabc = grounded_base_2n4250_collector_current_amps(
-        source_mix_cv,
-        WHEEL_MOD_NOISE_CONTROL_RESISTANCE_OHMS,
-    );
+    [
+        grounded_base_2n4250_collector_current_amps(
+            WHEEL_MOD_CONTROL_RANGE_VOLTS - source_mix_cv,
+            WHEEL_MOD_LFO_CONTROL_RESISTANCE_OHMS,
+        ),
+        grounded_base_2n4250_collector_current_amps(
+            source_mix_cv,
+            WHEEL_MOD_NOISE_CONTROL_RESISTANCE_OHMS,
+        ),
+    ]
+}
+
+pub fn wheel_mod_source_with_control_currents(
+    lfo: f32,
+    noise: f32,
+    lfo_current_amps: f32,
+    noise_current_amps: f32,
+) -> f32 {
+    if !lfo.is_finite()
+        || !noise.is_finite()
+        || !lfo_current_amps.is_finite()
+        || !noise_current_amps.is_finite()
+    {
+        return 0.0;
+    }
 
     unlinearized_ota_loaded_voltage(
         lfo * WHEEL_MOD_LFO_SOURCE_VOLTS_PER_UNIT,
         WHEEL_MOD_LFO_INPUT_RESISTANCE_OHMS,
-        lfo_iabc,
+        lfo_current_amps,
         WHEEL_MOD_LFO_PROFILE,
     ) + unlinearized_ota_loaded_voltage(
         noise * WHEEL_MOD_NOISE_SOURCE_VOLTS_PER_UNIT,
         WHEEL_MOD_NOISE_INPUT_RESISTANCE_OHMS,
-        noise_iabc,
+        noise_current_amps,
         WHEEL_MOD_NOISE_PROFILE,
     )
 }
@@ -406,14 +468,32 @@ pub fn wheel_mod_source(lfo: f32, noise: f32, source_mix: f32) -> f32 {
 /// input. The amount current follows SD333 Q301 and its populated 5.1 kohm
 /// emitter resistor.
 pub fn filter_envelope_cutoff_octaves(envelope: f32, amount: f32, voice_index: usize) -> f32 {
-    if !envelope.is_finite() || envelope <= 0.0 || !amount.is_finite() || amount <= 0.0 {
+    filter_envelope_cutoff_octaves_with_control_current(
+        envelope,
+        filter_envelope_control_current_amps(amount),
+        voice_index,
+    )
+}
+
+pub fn filter_envelope_control_current_amps(amount: f32) -> f32 {
+    ten_volt_control_current_amps(amount, FILTER_ENVELOPE_AMOUNT_CONTROL_RESISTANCE_OHMS)
+}
+
+pub fn filter_envelope_cutoff_octaves_with_control_current(
+    envelope: f32,
+    control_current_amps: f32,
+    voice_index: usize,
+) -> f32 {
+    if !envelope.is_finite()
+        || envelope <= 0.0
+        || !control_current_amps.is_finite()
+        || control_current_amps <= 0.0
+    {
         return 0.0;
     }
 
     let profile =
         ENVELOPE_AMOUNT_PROFILES[voice_index % ENVELOPE_AMOUNT_PROFILES.len()].direct_filter;
-    let iabc_amps =
-        ten_volt_control_current_amps(amount, FILTER_ENVELOPE_AMOUNT_CONTROL_RESISTANCE_OHMS);
     let balance_return_resistance_ohms = 1.0
         / (1.0 / FILTER_ENVELOPE_INPUT_RETURN_RESISTANCE_OHMS
             + 1.0
@@ -426,7 +506,7 @@ pub fn filter_envelope_cutoff_octaves(envelope: f32, amount: f32, voice_index: u
         envelope_volts,
         input_loop_resistance_ohms,
         FILTER_ENVELOPE_DIODE_RESISTANCE_OHMS,
-        iabc_amps,
+        control_current_amps,
         profile,
     );
     output_current_amps * FILTER_SUM_COMMON_INPUT_RESISTANCE_OHMS
@@ -438,7 +518,23 @@ pub fn poly_mod_filter_envelope_current_amps(
     control: f32,
     voice_index: usize,
 ) -> f32 {
-    if !envelope.is_finite() || !control.is_finite() || control <= 0.0 {
+    poly_mod_filter_envelope_with_control_current_amps(
+        envelope,
+        poly_mod_filter_envelope_control_current_amps(control),
+        voice_index,
+    )
+}
+
+pub fn poly_mod_filter_envelope_control_current_amps(control: f32) -> f32 {
+    ten_volt_control_current_amps(control, POLY_MOD_FILTER_ENVELOPE_CONTROL_RESISTANCE_OHMS)
+}
+
+pub fn poly_mod_filter_envelope_with_control_current_amps(
+    envelope: f32,
+    control_current_amps: f32,
+    voice_index: usize,
+) -> f32 {
+    if !envelope.is_finite() || !control_current_amps.is_finite() || control_current_amps <= 0.0 {
         return 0.0;
     }
     let profile = ENVELOPE_AMOUNT_PROFILES[voice_index % ENVELOPE_AMOUNT_PROFILES.len()].poly_mod;
@@ -451,13 +547,11 @@ pub fn poly_mod_filter_envelope_current_amps(
         POLY_MOD_ENVELOPE_SOURCE_RESISTANCE_OHMS + balance_return_resistance_ohms;
     let envelope_volts = (envelope * ENVELOPE_NOMINAL_PEAK_VOLTS)
         .clamp(-ENVELOPE_MAXIMUM_PEAK_VOLTS, ENVELOPE_MAXIMUM_PEAK_VOLTS);
-    let iabc_amps =
-        ten_volt_control_current_amps(control, POLY_MOD_FILTER_ENVELOPE_CONTROL_RESISTANCE_OHMS);
     linearized_ota_output_current_amps(
         envelope_volts,
         input_loop_resistance_ohms,
         POLY_MOD_ENVELOPE_DIODE_RESISTANCE_OHMS,
-        iabc_amps,
+        control_current_amps,
         profile,
     )
 }
@@ -469,13 +563,30 @@ pub fn poly_mod_oscillator_b_current_amps(
     control: f32,
     voice_index: usize,
 ) -> f32 {
-    unlinearized_conductance_mixer_output_current_amps(
+    poly_mod_oscillator_b_with_control_current_amps(
+        input,
+        source_conductance,
+        poly_mod_oscillator_b_control_current_amps(control),
+        voice_index,
+    )
+}
+
+pub fn poly_mod_oscillator_b_control_current_amps(control: f32) -> f32 {
+    ten_volt_control_current_amps(control, POLY_MOD_OSCILLATOR_B_CONTROL_RESISTANCE_OHMS)
+}
+
+pub fn poly_mod_oscillator_b_with_control_current_amps(
+    input: f32,
+    source_conductance: f32,
+    control_current_amps: f32,
+    voice_index: usize,
+) -> f32 {
+    unlinearized_conductance_mixer_output_current_with_control_amps(
         input,
         source_conductance,
         0.0,
         0.0,
-        control,
-        POLY_MOD_OSCILLATOR_B_CONTROL_RESISTANCE_OHMS,
+        control_current_amps,
         POLY_MOD_OSCILLATOR_B_PROFILES[voice_index % POLY_MOD_OSCILLATOR_B_PROFILES.len()],
     )
 }
@@ -533,6 +644,9 @@ pub fn master_output(input: f32, control_current_ratio: f32) -> f32 {
     if control_current_ratio <= 0.0 || !control_current_ratio.is_finite() || !input.is_finite() {
         return 0.0;
     }
+    if input == 0.0 {
+        return input;
+    }
     let limit = MASTER_VCA_NOMINAL_LIMIT_VOLTS / MASTER_VCA_PROFILE.input_drive_ratio;
     sixth_order_limited(input, limit)
         * control_current_ratio.clamp(0.0, 1.0)
@@ -548,24 +662,40 @@ fn oscillator_mixer_to_filter_volts(
     control: f32,
     profile: OtaHalfProfile,
 ) -> f32 {
-    unlinearized_conductance_mixer_output_current_amps(
+    oscillator_mixer_to_filter_volts_with_control_current(
         positive_source_volts,
         positive_source_conductance,
         negative_source_volts,
         negative_source_conductance,
-        control,
-        OSCILLATOR_MIX_CONTROL_RESISTANCE_OHMS,
+        oscillator_mixer_control_current_amps(control),
         profile,
-    ) * FILTER_FIRST_CELL_TRANSIMPEDANCE_OHMS
+    )
 }
 
-fn unlinearized_conductance_mixer_output_current_amps(
+fn oscillator_mixer_to_filter_volts_with_control_current(
     positive_source_volts: f32,
     positive_source_conductance: f32,
     negative_source_volts: f32,
     negative_source_conductance: f32,
-    control: f32,
-    control_resistance_ohms: f32,
+    control_current_amps: f32,
+    profile: OtaHalfProfile,
+) -> f32 {
+    unlinearized_conductance_mixer_output_current_with_control_amps(
+        positive_source_volts,
+        positive_source_conductance,
+        negative_source_volts,
+        negative_source_conductance,
+        control_current_amps,
+        profile,
+    ) * FILTER_FIRST_CELL_TRANSIMPEDANCE_OHMS
+}
+
+fn unlinearized_conductance_mixer_output_current_with_control_amps(
+    positive_source_volts: f32,
+    positive_source_conductance: f32,
+    negative_source_volts: f32,
+    negative_source_conductance: f32,
+    control_current_amps: f32,
     profile: OtaHalfProfile,
 ) -> f32 {
     if !positive_source_volts.is_finite()
@@ -573,8 +703,8 @@ fn unlinearized_conductance_mixer_output_current_amps(
         || !negative_source_volts.is_finite()
         || !negative_source_conductance.is_finite()
         || (positive_source_conductance <= 0.0 && negative_source_conductance <= 0.0)
-        || !control.is_finite()
-        || control <= 0.0
+        || !control_current_amps.is_finite()
+        || control_current_amps <= 0.0
     {
         return 0.0;
     }
@@ -585,8 +715,7 @@ fn unlinearized_conductance_mixer_output_current_amps(
         unlinearized_input_voltage(negative_source_volts, negative_source_conductance);
     let differential_input_volts =
         (positive_input_volts - negative_input_volts) * profile.input_drive_ratio;
-    let iabc_amps = ten_volt_control_current_amps(control, control_resistance_ohms);
-    ota_output_current_amps(differential_input_volts, iabc_amps, profile)
+    ota_output_current_amps(differential_input_volts, control_current_amps, profile)
 }
 
 fn unlinearized_input_voltage(source_volts: f32, source_conductance: f32) -> f32 {
@@ -656,9 +785,12 @@ fn ota_output_current_amps(
     let peak_output_current_amps = iabc_amps * CA3280_PEAK_OUTPUT_CURRENT_RATIO;
     let small_signal_output_current_amps =
         iabc_amps * CA3280_TRANSCONDUCTANCE_SIEMENS_PER_AMP * differential_input_volts;
-    peak_output_current_amps
-        * libm::tanhf(small_signal_output_current_amps / peak_output_current_amps)
-        * profile.transconductance_ratio
+    let normalized = small_signal_output_current_amps / peak_output_current_amps;
+    #[cfg(feature = "realtime-1x")]
+    let shaped = crate::realtime_math::tanh(normalized);
+    #[cfg(not(feature = "realtime-1x"))]
+    let shaped = libm::tanhf(normalized);
+    peak_output_current_amps * shaped * profile.transconductance_ratio
 }
 
 fn final_voice_transfer(input: f32, control: f32, profile: OtaHalfProfile) -> f32 {
@@ -682,12 +814,32 @@ fn sixth_order_limited(input: f32, limit: f32) -> f32 {
     let limited_magnitude = if ratio <= 1.0 {
         let ratio_squared = ratio * ratio;
         let ratio_sixth = ratio_squared * ratio_squared * ratio_squared;
-        magnitude / libm::powf(1.0 + ratio_sixth, 1.0 / FINAL_VCA_SOFT_KNEE_ORDER)
+        let soft_base = 1.0 + ratio_sixth;
+        if soft_base == 1.0 {
+            magnitude
+        } else {
+            #[cfg(feature = "realtime-1x")]
+            {
+                magnitude / crate::realtime_math::sixth_root(soft_base)
+            }
+            #[cfg(not(feature = "realtime-1x"))]
+            {
+                magnitude / libm::powf(soft_base, 1.0 / FINAL_VCA_SOFT_KNEE_ORDER)
+            }
+        }
     } else {
         let inverse = 1.0 / ratio;
         let inverse_squared = inverse * inverse;
         let inverse_sixth = inverse_squared * inverse_squared * inverse_squared;
-        limit / libm::powf(1.0 + inverse_sixth, 1.0 / FINAL_VCA_SOFT_KNEE_ORDER)
+        let soft_base = 1.0 + inverse_sixth;
+        #[cfg(feature = "realtime-1x")]
+        {
+            limit / crate::realtime_math::sixth_root(soft_base)
+        }
+        #[cfg(not(feature = "realtime-1x"))]
+        {
+            limit / libm::powf(soft_base, 1.0 / FINAL_VCA_SOFT_KNEE_ORDER)
+        }
     };
     input.signum() * limited_magnitude
 }
@@ -707,17 +859,38 @@ fn grounded_base_2n4250_collector_current_amps(
     // I*R + nVt*ln(I/Is) = V. With x = I*R/nVt this becomes
     // x + ln(x) = V/nVt + ln(R*Is/nVt). Three Newton steps are sufficient
     // over the admitted 0-5.3 V CEM3310 range.
-    let z = drive_volts / Q410_THERMAL_VOLTAGE_VOLTS
-        + libm::logf(
-            series_resistance_ohms * Q410_SATURATION_CURRENT_AMPS / Q410_THERMAL_VOLTAGE_VOLTS,
-        );
+    let log_argument =
+        series_resistance_ohms * Q410_SATURATION_CURRENT_AMPS / Q410_THERMAL_VOLTAGE_VOLTS;
+    #[cfg(feature = "realtime-1x")]
+    let log_argument = crate::realtime_math::ln(log_argument);
+    #[cfg(not(feature = "realtime-1x"))]
+    let log_argument = libm::logf(log_argument);
+    let z = drive_volts / Q410_THERMAL_VOLTAGE_VOLTS + log_argument;
     let mut normalized_current = if z >= 1.0 {
-        (z - libm::logf(z)).max(f32::MIN_POSITIVE)
+        #[cfg(feature = "realtime-1x")]
+        {
+            (z - crate::realtime_math::ln(z)).max(f32::MIN_POSITIVE)
+        }
+        #[cfg(not(feature = "realtime-1x"))]
+        {
+            (z - libm::logf(z)).max(f32::MIN_POSITIVE)
+        }
     } else {
-        libm::expf(z).max(f32::MIN_POSITIVE)
+        #[cfg(feature = "realtime-1x")]
+        {
+            crate::realtime_math::exp(z).max(f32::MIN_POSITIVE)
+        }
+        #[cfg(not(feature = "realtime-1x"))]
+        {
+            libm::expf(z).max(f32::MIN_POSITIVE)
+        }
     };
     for _ in 0..3 {
-        let residual = normalized_current + libm::logf(normalized_current) - z;
+        #[cfg(feature = "realtime-1x")]
+        let logarithm = crate::realtime_math::ln(normalized_current);
+        #[cfg(not(feature = "realtime-1x"))]
+        let logarithm = libm::logf(normalized_current);
+        let residual = normalized_current + logarithm - z;
         let slope = 1.0 + 1.0 / normalized_current;
         normalized_current = (normalized_current - residual / slope).max(f32::MIN_POSITIVE);
     }

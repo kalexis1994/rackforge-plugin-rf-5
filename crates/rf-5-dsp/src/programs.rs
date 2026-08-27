@@ -113,6 +113,11 @@ const BASELINE_WARM: [f32; PATCH_PARAMETER_COUNT] = [
     1.0,
 ];
 
+// Keep the performance wheel useful across its complete travel. The original
+// hardware permits every destination at once, but combining dual PWM, filter
+// cutoff and pink noise makes this particular musical pad collapse into an
+// intentionally extreme effect. The baseline patch uses pure LFO dual PWM;
+// the diagnostic programs retain the unrestricted physical routings.
 const BASELINE_PAD: [f32; PATCH_PARAMETER_COUNT] = [
     0.68,
     0.62,
@@ -145,9 +150,9 @@ const BASELINE_PAD: [f32; PATCH_PARAMETER_COUNT] = [
     0.0,
     1.0,
     1.0,
-    1.0,
+    0.0,
     0.12,
-    0.15,
+    0.0,
     0.48,
     0.55,
     0.65,
@@ -804,6 +809,16 @@ mod tests {
             ),
             79
         );
+        assert_eq!(pad.values[Parameter::WheelModSourceMix as usize], 0.0);
+        assert_eq!(
+            pad.values[Parameter::WheelModOscillatorAPulseWidth as usize],
+            1.0
+        );
+        assert_eq!(
+            pad.values[Parameter::WheelModOscillatorBPulseWidth as usize],
+            1.0
+        );
+        assert_eq!(pad.values[Parameter::WheelModFilter as usize], 0.0);
     }
 
     #[test]

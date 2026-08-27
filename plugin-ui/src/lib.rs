@@ -56,6 +56,34 @@ fn relative_knob_value(
 }
 
 #[cfg(any(target_arch = "wasm32", test))]
+fn keyboard_knob_value(
+    current: f64,
+    key: &str,
+    minimum: f64,
+    maximum: f64,
+    step: f64,
+) -> Option<f64> {
+    if !current.is_finite() || !minimum.is_finite() || !maximum.is_finite() || maximum <= minimum {
+        return None;
+    }
+    let increment = if step.is_finite() && step > 0.0 {
+        step
+    } else {
+        (maximum - minimum) / 127.0
+    };
+    let value = match key {
+        "ArrowUp" | "ArrowRight" => current + increment,
+        "ArrowDown" | "ArrowLeft" => current - increment,
+        "PageUp" => current + increment * 10.0,
+        "PageDown" => current - increment * 10.0,
+        "Home" => minimum,
+        "End" => maximum,
+        _ => return None,
+    };
+    Some(value.clamp(minimum, maximum))
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(untagged)]
 enum ParameterDefault {
@@ -80,7 +108,9 @@ mod browser {
     use serde::{Deserialize, Serialize};
     use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
     use wasm_bindgen::{JsCast, JsValue, closure::Closure, prelude::wasm_bindgen};
-    use web_sys::{Document, Element, Event, MessageEvent, MouseEvent, PointerEvent, Window};
+    use web_sys::{
+        Document, Element, Event, KeyboardEvent, MessageEvent, MouseEvent, PointerEvent, Window,
+    };
 
     type AppHandle = Rc<RefCell<App>>;
     type ResponseHandler = Box<dyn FnOnce(&AppHandle, Result<JsValue, String>)>;
@@ -226,10 +256,13 @@ mod browser {
 
         fn render(&self) {
             let mut html = String::from("<div class=\"rf5-frame\">");
+            html.push_str("<div class=\"wood-rail wood-rail-top\" aria-hidden=\"true\"></div>");
             html.push_str(&self.render_header());
             html.push_str(&self.render_tabs());
             html.push_str(&self.render_panel());
+            html.push_str("<div class=\"wood-rail wood-rail-middle\" aria-hidden=\"true\"></div>");
             html.push_str(&self.render_programs());
+            html.push_str("<div class=\"wood-rail wood-rail-bottom\" aria-hidden=\"true\"></div>");
             html.push_str("</div>");
             self.root.set_inner_html(&html);
         }
@@ -240,7 +273,7 @@ mod browser {
                 .map(|sound| escape_html(&sound.name))
                 .unwrap_or_else(|| "Waiting for RackForge".to_owned());
             format!(
-                "<header class=\"instrument-header\"><div class=\"identity\"><strong>RF-5</strong><span>FIVE-VOICE PROGRAMMABLE POLYPHONIC SYNTHESIZER</span></div><div class=\"current-program\"><small>CURRENT PROGRAM</small><strong>{program}</strong></div></header>"
+                "<header class=\"instrument-header\"><div class=\"identity\"><strong>RF-5</strong><span>FIVE-VOICE PROGRAMMABLE POLYPHONIC SYNTHESIZER</span></div><div class=\"panel-badges\"><span>REV 3 VOICE ARCHITECTURE</span><span>ANALOG CONTROL SURFACE</span></div><div class=\"current-program\"><small>CURRENT PROGRAM</small><strong>{program}</strong></div></header>"
             )
         }
 
@@ -289,8 +322,8 @@ mod browser {
                     }
                 }
                 groups.push_str(&format!(
-                    "<section class=\"control-group group-{}\"><h2>{}</h2><div class=\"control-grid\">{controls}</div></section>",
-                    section.id,
+                    "<section class=\"control-group group-{}\"><h2><span>{}</span></h2><div class=\"control-grid\">{controls}</div></section>",
+                    group.id,
                     group.title
                 ));
             }
@@ -326,10 +359,16 @@ mod browser {
                 "toggle"
             };
             format!(
-                "<div class=\"parameter-control button-control\"><span class=\"control-label\">{}</span>{symbol}<span class=\"led{}\" aria-hidden=\"true\"></span><button type=\"button\" class=\"hardware-button{}\" data-action=\"{action}\" data-index=\"{}\" data-rackforge-parameter-index=\"{}\" aria-label=\"{}\" aria-pressed=\"{}\"></button><output data-output-index=\"{}\">{}</output></div>",
+                "<div class=\"parameter-control button-control parameter-{}\"><span class=\"control-label\">{}</span>{symbol}<span class=\"led{}\" aria-hidden=\"true\"><span></span></span><span class=\"button-well\"><button type=\"button\" class=\"hardware-button{}{}\" data-action=\"{action}\" data-index=\"{}\" data-rackforge-parameter-index=\"{}\" aria-label=\"{}\" aria-pressed=\"{}\"></button></span><output data-output-index=\"{}\">{}</output></div>",
+                parameter.id,
                 panel_label(&parameter.id, &parameter.name),
                 if active { " on" } else { "" },
                 if active { " active" } else { "" },
+                if parameter.id == "tune" {
+                    " tune-button"
+                } else {
+                    ""
+                },
                 parameter.index,
                 parameter.index,
                 escape_html(&parameter.name),
@@ -347,7 +386,8 @@ mod browser {
             let angle = -135.0 + normalized * 270.0;
             let ticks = knob_ticks();
             format!(
-                "<div class=\"parameter-control knob-control\"><span class=\"control-label\">{}</span><div class=\"knob-shell\" data-knob-index=\"{}\" data-rackforge-parameter-index=\"{}\" style=\"--knob-turn:{angle:.3}deg\"><svg class=\"knob-scale\" viewBox=\"0 0 100 100\" aria-hidden=\"true\">{ticks}</svg><span class=\"knob-cap\"><span class=\"knob-marker\"></span></span><input class=\"knob-input\" type=\"range\" data-action=\"parameter\" data-index=\"{}\" min=\"{minimum}\" max=\"{maximum}\" step=\"{step}\" value=\"{value}\" aria-label=\"{}\"></div><output data-output-index=\"{}\">{}</output></div>",
+                "<div class=\"parameter-control knob-control parameter-{}\"><span class=\"control-label\">{}</span><div class=\"knob-shell\" data-knob-index=\"{}\" data-rackforge-parameter-index=\"{}\" style=\"--knob-turn:{angle:.3}deg\"><svg class=\"knob-scale\" viewBox=\"0 0 100 100\" aria-hidden=\"true\">{ticks}<text class=\"knob-number knob-zero\" x=\"11\" y=\"87\">0</text><text class=\"knob-number knob-five\" x=\"50\" y=\"8\">5</text><text class=\"knob-number knob-ten\" x=\"89\" y=\"87\">10</text></svg><span class=\"knob-shadow\" aria-hidden=\"true\"></span><span class=\"knob-cap\" aria-hidden=\"true\"><span class=\"knob-top\"></span><span class=\"knob-marker\"></span></span><input class=\"knob-input\" type=\"range\" data-action=\"parameter\" data-index=\"{}\" min=\"{minimum}\" max=\"{maximum}\" step=\"{step}\" value=\"{value}\" aria-label=\"{}\"></div><output data-output-index=\"{}\">{}</output></div>",
+                parameter.id,
                 panel_label(&parameter.id, &parameter.name),
                 parameter.index,
                 parameter.index,
@@ -390,7 +430,10 @@ mod browser {
                 cards.push_str("</div>");
             }
             format!(
-                "<section class=\"program-library\"><header><div><small>PROGRAM MEMORY</small><h2>RF-5 Programs</h2></div><span>{} programs</span></header>{cards}</section>",
+                "<section class=\"program-library\"><header><div class=\"memory-identity\"><small>PROGRAM MEMORY</small><h2>RF-5 PROGRAM SELECT</h2></div><div class=\"memory-display\"><small>LOADED</small><strong>{}</strong></div><span class=\"program-count\">{} programs</span></header>{cards}</section>",
+                self.selected_sound()
+                    .map(|sound| escape_html(&sound.name))
+                    .unwrap_or_else(|| "--".to_owned()),
                 context.instance.sounds.len()
             )
         }
@@ -414,7 +457,7 @@ mod browser {
                 ""
             };
             ticks.push_str(&format!(
-                "<line class=\"knob-tick{class}\" x1=\"50\" y1=\"3\" x2=\"50\" y2=\"11\" transform=\"rotate({angle} 50 50)\"></line>"
+                "<line class=\"knob-tick{class}\" x1=\"50\" y1=\"3\" x2=\"50\" y2=\"12\" transform=\"rotate({angle} 50 50)\"></line>"
             ));
         }
         ticks
@@ -650,11 +693,7 @@ mod browser {
         {
             let active = value >= 0.5;
             let _ = button.set_attribute("aria-pressed", if active { "true" } else { "false" });
-            button.set_class_name(if active {
-                "hardware-button active"
-            } else {
-                "hardware-button"
-            });
+            let _ = button.class_list().toggle_with_force("active", active);
             if let Some(parent) = button.parent_element()
                 && let Ok(Some(led)) = parent.query_selector(".led")
             {
@@ -862,6 +901,54 @@ mod browser {
             .root
             .add_event_listener_with_callback("change", input.as_ref().unchecked_ref())?;
         input.forget();
+
+        let keyboard_app = app.clone();
+        let keyboard = Closure::<dyn FnMut(KeyboardEvent)>::new(move |event: KeyboardEvent| {
+            let Some(element) = element_from_event(&event) else {
+                return;
+            };
+            if element.get_attribute("data-action").as_deref() != Some("parameter") {
+                return;
+            }
+            let minimum = element
+                .get_attribute("min")
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(0.0);
+            let maximum = element
+                .get_attribute("max")
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(1.0);
+            let step = element
+                .get_attribute("step")
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(0.0);
+            let Some(value) = keyboard_knob_value(
+                numeric_value(&element).unwrap_or(minimum),
+                &event.key(),
+                minimum,
+                maximum,
+                step,
+            ) else {
+                return;
+            };
+            event.prevent_default();
+            let _ = Reflect::set(
+                element.as_ref(),
+                &JsValue::from_str("value"),
+                &JsValue::from_str(&value.to_string()),
+            );
+            if let Some(index) = element
+                .get_attribute("data-index")
+                .and_then(|value| value.parse().ok())
+            {
+                send_parameter(&keyboard_app, index, value);
+                update_parameter_dom(&keyboard_app, index);
+            }
+        });
+        app.borrow()
+            .root
+            .add_event_listener_with_callback("keydown", keyboard.as_ref().unchecked_ref())?;
+        keyboard.forget();
 
         let drag_state = Rc::new(RefCell::new(None::<(i32, Element, Element, f64, f64)>));
         for event_name in [
@@ -1137,6 +1224,22 @@ mod tests {
         );
         assert_eq!(relative_knob_value(0.5, 500.0, 0.0, 1.0, 1.0 / 127.0), 1.0);
         assert_eq!(relative_knob_value(0.5, -500.0, 0.0, 1.0, 1.0 / 127.0), 0.0);
+    }
+
+    #[test]
+    fn knob_keyboard_controls_are_explicit_and_bounded() {
+        let step = 1.0 / 127.0;
+        assert_eq!(
+            keyboard_knob_value(0.0, "ArrowRight", 0.0, 1.0, step),
+            Some(step)
+        );
+        assert_eq!(
+            keyboard_knob_value(1.0, "ArrowUp", 0.0, 1.0, step),
+            Some(1.0)
+        );
+        assert_eq!(keyboard_knob_value(0.5, "Home", 0.0, 1.0, step), Some(0.0));
+        assert_eq!(keyboard_knob_value(0.5, "End", 0.0, 1.0, step), Some(1.0));
+        assert_eq!(keyboard_knob_value(0.5, "Escape", 0.0, 1.0, step), None);
     }
 
     #[test]

@@ -40,9 +40,17 @@ impl SampleHoldCell {
         }
     }
 
+    #[cfg(test)]
     fn age(&mut self, sample_rate: f32) {
-        self.accumulated_leakage_volts +=
-            self.leakage_volts_per_second / f64::from(sample_rate.max(1.0));
+        self.age_by(self.leakage_per_sample(sample_rate));
+    }
+
+    fn leakage_per_sample(self, sample_rate: f32) -> f64 {
+        self.leakage_volts_per_second / f64::from(sample_rate.max(1.0))
+    }
+
+    fn age_by(&mut self, leakage_volts: f64) {
+        self.accumulated_leakage_volts += leakage_volts;
     }
 
     fn force(&mut self, volts: f32) {
@@ -74,92 +82,11 @@ impl CvTargets {
         autotune: AutoTune,
         scale: ScaleProgram,
     ) -> Self {
-        let mut volts = [0.0; CONTROL_VOLTAGE_DESTINATION_COUNT];
-        for (index, value) in volts
-            .iter_mut()
-            .enumerate()
-            .take(COMMON_AND_PATCH_SAMPLE_HOLD_COUNT)
-        {
-            let destination = ControlVoltageDestination::try_from(index as u8)
-                .expect("valid common CV destination");
-            if let Some(parameter) = common_parameter(destination) {
-                let normalized = if matches!(
-                    destination,
-                    ControlVoltageDestination::FilterRelease
-                        | ControlVoltageDestination::AmplifierRelease
-                ) && !parameter_enabled(settings, Parameter::ReleaseSwitch)
-                {
-                    RELEASE_DISABLED_EQUIVALENT_NORMALIZED
-                } else {
-                    settings.get(parameter)
-                };
-                *value = normalized * common_cv_span_volts(destination);
-            }
-        }
-
-        for (voice, note) in notes.into_iter().enumerate() {
-            let scale_offset = scale.offset_semitones(note);
-            let unison = parameter_enabled(settings, Parameter::Unison);
-            let keyboard_semitones = f32::from(note.saturating_sub(tuning::LOWEST_KEY_MIDI_NOTE));
-            let pitch_a =
-                tuning::oscillator_a_pitch(note, settings.get(Parameter::OscillatorAFrequency));
-            let oscillator_b_keyboard = parameter_enabled(settings, Parameter::OscillatorBKeyboard);
-            let pitch_b = tuning::oscillator_b_pitch(
-                note,
-                settings.get(Parameter::OscillatorBFrequency),
-                settings.get(Parameter::OscillatorBDetune),
-                oscillator_b_keyboard,
-                parameter_enabled(settings, Parameter::OscillatorBLowFrequency),
-            );
-            let oscillator_a = ControlVoltageDestination::oscillator(voice, false)
-                .expect("valid oscillator-A CV destination")
-                as usize;
-            let oscillator_b = ControlVoltageDestination::oscillator(voice, true)
-                .expect("valid oscillator-B CV destination")
-                as usize;
-            volts[oscillator_a] = (pitch_a.output_semitones()
-                + autotune.residual_semitones(
-                    voice,
-                    Oscillator::A,
-                    pitch_a.tune_dac_semitones(),
-                    pitch_a.tune_table_semitone(),
-                )
-                + scale_offset
-                - if unison { keyboard_semitones } else { 0.0 })
-                / SEMITONES_PER_CONTROL_VOLT;
-            volts[oscillator_b] = (pitch_b.output_semitones()
-                + autotune.residual_semitones(
-                    voice,
-                    Oscillator::B,
-                    pitch_b.tune_dac_semitones(),
-                    pitch_b.tune_table_semitone(),
-                )
-                + scale_offset
-                - if unison && oscillator_b_keyboard {
-                    keyboard_semitones
-                } else {
-                    0.0
-                })
-                / SEMITONES_PER_CONTROL_VOLT;
-
-            let filter = ControlVoltageDestination::filter(voice)
-                .expect("valid filter CV destination") as usize;
-            volts[filter] = if unison {
-                0.0
-            } else {
-                filter_keyboard_octaves(
-                    note,
-                    parameter_enabled(settings, Parameter::FilterKeyboard),
-                )
-            };
-        }
-        volts[ControlVoltageDestination::UnisonKeyboard as usize] =
-            if parameter_enabled(settings, Parameter::Unison) {
-                f32::from(notes[0].saturating_sub(tuning::LOWEST_KEY_MIDI_NOTE))
-                    / SEMITONES_PER_CONTROL_VOLT
-            } else {
-                0.0
-            };
+        let volts = core::array::from_fn(|index| {
+            let destination =
+                ControlVoltageDestination::try_from(index as u8).expect("valid CV destination");
+            destination_voltage(settings, notes, autotune, scale, destination)
+        });
         Self { volts }
     }
 
@@ -168,15 +95,107 @@ impl CvTargets {
     }
 }
 
+pub(crate) fn destination_voltage(
+    settings: Settings,
+    notes: [u8; VOICE_COUNT],
+    autotune: AutoTune,
+    scale: ScaleProgram,
+    destination: ControlVoltageDestination,
+) -> f32 {
+    let index = destination as usize;
+    if index < COMMON_AND_PATCH_SAMPLE_HOLD_COUNT {
+        if let Some(parameter) = common_parameter(destination) {
+            let normalized = if matches!(
+                destination,
+                ControlVoltageDestination::FilterRelease
+                    | ControlVoltageDestination::AmplifierRelease
+            ) && !parameter_enabled(settings, Parameter::ReleaseSwitch)
+            {
+                RELEASE_DISABLED_EQUIVALENT_NORMALIZED
+            } else {
+                settings.get(parameter)
+            };
+            return normalized * common_cv_span_volts(destination);
+        }
+        return if destination == ControlVoltageDestination::UnisonKeyboard
+            && parameter_enabled(settings, Parameter::Unison)
+        {
+            f32::from(notes[0].saturating_sub(tuning::LOWEST_KEY_MIDI_NOTE))
+                / SEMITONES_PER_CONTROL_VOLT
+        } else {
+            0.0
+        };
+    }
+
+    if index < ControlVoltageDestination::Filter1 as usize {
+        let oscillator_index = index - ControlVoltageDestination::Oscillator1A as usize;
+        let voice = oscillator_index / 2;
+        let oscillator_b = !oscillator_index.is_multiple_of(2);
+        let note = notes[voice];
+        let scale_offset = scale.offset_semitones(note);
+        let unison = parameter_enabled(settings, Parameter::Unison);
+        let keyboard_semitones = f32::from(note.saturating_sub(tuning::LOWEST_KEY_MIDI_NOTE));
+        if oscillator_b {
+            let keyboard_enabled = parameter_enabled(settings, Parameter::OscillatorBKeyboard);
+            let pitch = tuning::oscillator_b_pitch(
+                note,
+                settings.get(Parameter::OscillatorBFrequency),
+                settings.get(Parameter::OscillatorBDetune),
+                keyboard_enabled,
+                parameter_enabled(settings, Parameter::OscillatorBLowFrequency),
+            );
+            return (pitch.output_semitones()
+                + autotune.residual_semitones(
+                    voice,
+                    Oscillator::B,
+                    pitch.tune_dac_semitones(),
+                    pitch.tune_table_semitone(),
+                )
+                + scale_offset
+                - if unison && keyboard_enabled {
+                    keyboard_semitones
+                } else {
+                    0.0
+                })
+                / SEMITONES_PER_CONTROL_VOLT;
+        }
+        let pitch = tuning::oscillator_a_pitch(note, settings.get(Parameter::OscillatorAFrequency));
+        return (pitch.output_semitones()
+            + autotune.residual_semitones(
+                voice,
+                Oscillator::A,
+                pitch.tune_dac_semitones(),
+                pitch.tune_table_semitone(),
+            )
+            + scale_offset
+            - if unison { keyboard_semitones } else { 0.0 })
+            / SEMITONES_PER_CONTROL_VOLT;
+    }
+
+    let voice = index - ControlVoltageDestination::Filter1 as usize;
+    if parameter_enabled(settings, Parameter::Unison) {
+        0.0
+    } else {
+        filter_keyboard_octaves(
+            notes[voice],
+            parameter_enabled(settings, Parameter::FilterKeyboard),
+        )
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct CvDistributor {
     cells: [SampleHoldCell; CONTROL_VOLTAGE_DESTINATION_COUNT],
+    leakage_sample_rate: f32,
+    leakage_per_sample: [f64; CONTROL_VOLTAGE_DESTINATION_COUNT],
 }
 
 impl Default for CvDistributor {
     fn default() -> Self {
         Self {
             cells: core::array::from_fn(SampleHoldCell::new),
+            leakage_sample_rate: 0.0,
+            leakage_per_sample: [0.0; CONTROL_VOLTAGE_DESTINATION_COUNT],
         }
     }
 }
@@ -189,14 +208,26 @@ impl CvDistributor {
     }
 
     pub fn age(&mut self, sample_rate: f32) {
-        for cell in &mut self.cells {
-            cell.age(sample_rate);
+        let sample_rate = sample_rate.max(1.0);
+        if self.leakage_sample_rate.to_bits() != sample_rate.to_bits() {
+            for (increment, cell) in self.leakage_per_sample.iter_mut().zip(self.cells) {
+                *increment = cell.leakage_per_sample(sample_rate);
+            }
+            self.leakage_sample_rate = sample_rate;
+        }
+        for (cell, increment) in self.cells.iter_mut().zip(self.leakage_per_sample) {
+            cell.age_by(increment);
         }
     }
 
-    pub fn strobe(&mut self, destination: usize, targets: CvTargets) {
+    #[cfg(test)]
+    fn strobe(&mut self, destination: usize, targets: CvTargets) {
+        self.strobe_voltage(destination, targets.get(destination));
+    }
+
+    pub fn strobe_voltage(&mut self, destination: usize, target_volts: f32) {
         if let Some(cell) = self.cells.get_mut(destination) {
-            cell.acquire(targets.get(destination));
+            cell.acquire(target_volts);
         }
     }
 

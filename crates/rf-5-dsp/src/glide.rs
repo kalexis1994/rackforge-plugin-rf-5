@@ -16,7 +16,8 @@ const MATCHED_PAIR_THERMAL_VOLTS: f32 = 0.025_85;
 // measured serviced instrument can replace this single absolute anchor.
 const FULL_GLIDE_RATE_SEMITONES_PER_SECOND: f32 = 12.0;
 
-pub fn advance_note(current: f32, target: f32, amount: f32, sample_rate: f32) -> f32 {
+#[cfg(test)]
+fn advance_note(current: f32, target: f32, amount: f32, sample_rate: f32) -> f32 {
     if !current.is_finite() || !target.is_finite() {
         return if target.is_finite() { target } else { 0.0 };
     }
@@ -27,7 +28,7 @@ pub fn advance_note(current: f32, target: f32, amount: f32, sample_rate: f32) ->
     current + (target - current).clamp(-maximum_step, maximum_step)
 }
 
-fn rate_semitones_per_second(amount: f32) -> f32 {
+pub(crate) fn rate_semitones_per_second(amount: f32) -> f32 {
     let slowest_bias = matched_pair_bias_fraction(1.0);
     FULL_GLIDE_RATE_SEMITONES_PER_SECOND * matched_pair_bias_fraction(amount) / slowest_bias
 }

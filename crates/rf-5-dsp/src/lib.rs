@@ -39,6 +39,10 @@ const PRE_MASTER_TUNE_PARAMETER_COUNT: usize = 60;
 const PRE_MASTER_TUNE_STATE_BYTES: usize = PRE_MASTER_TUNE_PARAMETER_COUNT * 4;
 const PRE_MACHINE_OPERATIONS_PARAMETER_COUNT: usize = 61;
 const PRE_MACHINE_OPERATIONS_STATE_BYTES: usize = PRE_MACHINE_OPERATIONS_PARAMETER_COUNT * 4;
+// MIDI CC1 has only 128 positions, whereas the original wheel is a continuous
+// passive potentiometer. A short reconstruction filter removes controller
+// steps without adding perceptible lag to a physical wheel gesture.
+const MOD_WHEEL_DEZIPPER_TIME_SECONDS: f32 = 0.003;
 
 #[derive(Clone, Copy, Debug, Default)]
 struct HeldNote {
@@ -105,6 +109,38 @@ impl HeldNoteStack {
     }
 }
 
+#[derive(Default)]
+struct ControlCurrentCache {
+    control: Option<f32>,
+    current_amps: f32,
+}
+
+impl ControlCurrentCache {
+    fn get(&mut self, control: f32, prepare: fn(f32) -> f32) -> f32 {
+        if self.control.map(f32::to_bits) != Some(control.to_bits()) {
+            self.control = Some(control);
+            self.current_amps = prepare(control);
+        }
+        self.current_amps
+    }
+}
+
+#[derive(Default)]
+struct WheelControlCurrentCache {
+    source_mix: Option<f32>,
+    currents_amps: [f32; 2],
+}
+
+impl WheelControlCurrentCache {
+    fn get(&mut self, source_mix: f32) -> [f32; 2] {
+        if self.source_mix.map(f32::to_bits) != Some(source_mix.to_bits()) {
+            self.source_mix = Some(source_mix);
+            self.currents_amps = vca::wheel_mod_control_currents_amps(source_mix);
+        }
+        self.currents_amps
+    }
+}
+
 pub struct Engine {
     settings: Settings,
     voices: [Voice; VOICE_COUNT],
@@ -114,6 +150,8 @@ pub struct Engine {
     wheel_noise: PinkNoise,
     audio_noise: WhiteNoise,
     mod_wheel: f32,
+    smoothed_mod_wheel: f32,
+    mod_wheel_smoothing_coefficient: f32,
     audition_mod_wheel: Option<f32>,
     pitch_wheel: f32,
     sustain_pedal: bool,
@@ -130,6 +168,9 @@ pub struct Engine {
     reference_tone: a440::ReferenceTone,
     tune_cycle: tune_cycle::TuneCycle,
     output: output::OutputStage,
+    wheel_control_currents: WheelControlCurrentCache,
+    noise_control_current: ControlCurrentCache,
+    glide_rate: ControlCurrentCache,
 }
 
 impl Default for Engine {
@@ -152,6 +193,8 @@ impl Default for Engine {
             wheel_noise: PinkNoise::default(),
             audio_noise: WhiteNoise::default(),
             mod_wheel: 0.0,
+            smoothed_mod_wheel: 0.0,
+            mod_wheel_smoothing_coefficient: 1.0,
             audition_mod_wheel: None,
             pitch_wheel: 0.0,
             sustain_pedal: false,
@@ -168,6 +211,9 @@ impl Default for Engine {
             reference_tone: a440::ReferenceTone::default(),
             tune_cycle: tune_cycle::TuneCycle::default(),
             output: output::OutputStage::default(),
+            wheel_control_currents: WheelControlCurrentCache::default(),
+            noise_control_current: ControlCurrentCache::default(),
+            glide_rate: ControlCurrentCache::default(),
         }
     }
 }
@@ -192,6 +238,9 @@ impl Engine {
         self.tune_cycle = tune_cycle::TuneCycle::default();
         self.output.reset();
         self.mod_wheel = 0.0;
+        self.smoothed_mod_wheel = 0.0;
+        self.mod_wheel_smoothing_coefficient =
+            1.0 - libm::expf(-1.0 / (self.sample_rate * MOD_WHEEL_DEZIPPER_TIME_SECONDS));
         self.pitch_wheel = 0.0;
         self.sustain_pedal = false;
         self.held_notes.clear();
@@ -388,10 +437,22 @@ impl Engine {
         if control_tick.cycle_started {
             self.cv_notes = self.voice_notes();
         }
-        let targets = self.cv_targets(control_tick.settings);
         self.cv.age(self.sample_rate);
         if let Some(destination) = control_tick.cv_strobe {
-            self.cv.strobe(destination, targets);
+            // The original DAC only drives a destination while its mux slot is
+            // strobed. Building all 38 target voltages on intervening audio
+            // samples cannot affect the held cells and needlessly repeats the
+            // complete ten-VCO tuning calculation.
+            let destination_kind = ControlVoltageDestination::try_from(destination as u8)
+                .expect("valid scheduled CV destination");
+            let target_volts = cv::destination_voltage(
+                control_tick.settings,
+                self.cv_notes,
+                self.autotune,
+                scale_program(control_tick.settings),
+                destination_kind,
+            );
+            self.cv.strobe_voltage(destination, target_volts);
             if destination == ControlVoltageDestination::UnisonKeyboard as usize {
                 self.glide_waiting_for_unison_cv = false;
             }
@@ -422,10 +483,29 @@ impl Engine {
         );
         let wheel_noise_sample = self.wheel_noise.next(self.sample_rate);
         let audio_noise_sample = self.audio_noise.next(self.sample_rate);
-        let source_mix = quantize_analog_pot(applied_settings.get(Parameter::WheelModSourceMix));
-        let wheel_source = vca::wheel_mod_source(lfo_sample, wheel_noise_sample, source_mix);
-        let effective_mod_wheel = self.audition_mod_wheel.unwrap_or(self.mod_wheel);
-        let wheel_destinations = wheel_mod::destinations(wheel_source, effective_mod_wheel);
+        let effective_mod_wheel = if let Some(audition_amount) = self.audition_mod_wheel {
+            audition_amount
+        } else {
+            self.advance_mod_wheel()
+        };
+        // The LFO and noise source continue free-running with the wheel down,
+        // but the passive wheel grounds every destination. Avoid solving the
+        // inaudible dual-OTA source mixer until the wheel can pass a voltage.
+        let wheel_destinations = if effective_mod_wheel > 0.0 {
+            let source_mix =
+                quantize_analog_pot(applied_settings.get(Parameter::WheelModSourceMix));
+            let [wheel_lfo_current, wheel_noise_current] =
+                self.wheel_control_currents.get(source_mix);
+            let wheel_source = vca::wheel_mod_source_with_control_currents(
+                lfo_sample,
+                wheel_noise_sample,
+                wheel_lfo_current,
+                wheel_noise_current,
+            );
+            wheel_mod::destinations(wheel_source, effective_mod_wheel)
+        } else {
+            wheel_mod::WheelModDestinations::default()
+        };
         let modulation = VoiceModulation {
             oscillator_a_semitones: performance_pitch
                 + destination_value(
@@ -454,13 +534,19 @@ impl Engine {
                 Parameter::WheelModFilter,
                 wheel_destinations.filter_octaves,
             ),
-            noise: vca::common_noise(
-                audio_noise_sample,
-                quantize_analog_pot(applied_settings.get(Parameter::NoiseLevel)),
-            ),
+            noise: {
+                let noise_level = quantize_analog_pot(applied_settings.get(Parameter::NoiseLevel));
+                let noise_control_current = self
+                    .noise_control_current
+                    .get(noise_level, vca::common_noise_control_current_amps);
+                vca::common_noise_with_control_current(audio_noise_sample, noise_control_current)
+            },
         };
         let mut sample = 0.0;
         for (voice_index, voice) in self.voices.iter_mut().enumerate() {
+            if !voice.is_initialized() {
+                continue;
+            }
             let note = voice.note();
             let tuning_a = tuning::oscillator_a_tuning_semitones(
                 note,
@@ -509,6 +595,16 @@ impl Engine {
             self.tune_oscillators();
         }
         output
+    }
+
+    fn advance_mod_wheel(&mut self) -> f32 {
+        let difference = self.mod_wheel - self.smoothed_mod_wheel;
+        if difference.abs() <= 1.0e-6 {
+            self.smoothed_mod_wheel = self.mod_wheel;
+        } else {
+            self.smoothed_mod_wheel += difference * self.mod_wheel_smoothing_coefficient;
+        }
+        self.smoothed_mod_wheel
     }
 
     pub fn load_program(&mut self, id: &str) -> bool {
@@ -675,12 +771,12 @@ impl Engine {
         let amount = quantize_analog_pot(applied_settings.get(Parameter::Glide));
         let circuit_target =
             f32::from(tuning::LOWEST_KEY_MIDI_NOTE) + self.cv.unison_keyboard_semitones();
-        self.glide_current_note = glide::advance_note(
-            self.glide_current_note,
-            circuit_target,
-            amount,
-            self.sample_rate,
-        );
+        let rate = self
+            .glide_rate
+            .get(amount, glide::rate_semitones_per_second);
+        let maximum_step = rate / self.sample_rate.max(1.0);
+        self.glide_current_note +=
+            (circuit_target - self.glide_current_note).clamp(-maximum_step, maximum_step);
         self.glide_current_note - f32::from(tuning::LOWEST_KEY_MIDI_NOTE)
     }
 
@@ -1375,6 +1471,30 @@ mod tests {
         }
         assert_eq!(modulated.mod_wheel, 1.0);
         assert!(difference > 1.0);
+    }
+
+    #[test]
+    fn midi_mod_wheel_reconstructs_continuous_travel_without_controller_steps() {
+        for sample_rate in [44_100.0, 48_000.0, 96_000.0, 192_000.0] {
+            let mut engine = Engine::default();
+            assert!(engine.prepare(sample_rate));
+            engine.handle_midi([0xb0, 1, 127]);
+
+            let first = engine.advance_mod_wheel();
+            assert!(
+                first > 0.0 && first < 0.01,
+                "first={first} at {sample_rate}"
+            );
+            let samples = (sample_rate as f32 * MOD_WHEEL_DEZIPPER_TIME_SECONDS) as usize;
+            for _ in 1..samples {
+                let _ = engine.advance_mod_wheel();
+            }
+            assert!(
+                (engine.smoothed_mod_wheel - 0.632_120_55).abs() < 0.002,
+                "smoothed={} at {sample_rate}",
+                engine.smoothed_mod_wheel
+            );
+        }
     }
 
     #[test]

@@ -1,5 +1,6 @@
 #[derive(Clone, Copy, Debug)]
 pub struct ControlGroup {
+    pub id: &'static str,
     pub title: &'static str,
     pub parameter_ids: &'static [&'static str],
 }
@@ -13,6 +14,7 @@ pub struct PanelSection {
 }
 
 const POLY_MOD: ControlGroup = ControlGroup {
+    id: "poly-mod",
     title: "POLY-MOD",
     parameter_ids: &[
         "poly-mod-filter-envelope-amount",
@@ -23,10 +25,12 @@ const POLY_MOD: ControlGroup = ControlGroup {
     ],
 };
 const LFO: ControlGroup = ControlGroup {
+    id: "lfo",
     title: "LFO",
     parameter_ids: &["lfo-frequency", "lfo-saw", "lfo-triangle", "lfo-square"],
 };
 const WHEEL_MOD: ControlGroup = ControlGroup {
+    id: "wheel-mod",
     title: "WHEEL-MOD",
     parameter_ids: &[
         "wheel-mod-source-mix",
@@ -38,6 +42,7 @@ const WHEEL_MOD: ControlGroup = ControlGroup {
     ],
 };
 const OSCILLATOR_A: ControlGroup = ControlGroup {
+    id: "oscillator-a",
     title: "OSCILLATOR A",
     parameter_ids: &[
         "oscillator-a-frequency",
@@ -48,6 +53,7 @@ const OSCILLATOR_A: ControlGroup = ControlGroup {
     ],
 };
 const OSCILLATOR_B: ControlGroup = ControlGroup {
+    id: "oscillator-b",
     title: "OSCILLATOR B",
     parameter_ids: &[
         "oscillator-b-frequency",
@@ -61,21 +67,18 @@ const OSCILLATOR_B: ControlGroup = ControlGroup {
     ],
 };
 const MIXER: ControlGroup = ControlGroup {
+    id: "mixer",
     title: "MIXER",
     parameter_ids: &["oscillator-a-level", "oscillator-b-level", "noise-level"],
 };
 const FILTER: ControlGroup = ControlGroup {
+    id: "filter",
     title: "FILTER",
     parameter_ids: &[
         "filter-cutoff",
         "filter-resonance",
         "filter-envelope-amount",
         "filter-keyboard",
-    ],
-};
-const FILTER_ENVELOPE: ControlGroup = ControlGroup {
-    title: "FILTER ENVELOPE",
-    parameter_ids: &[
         "filter-attack",
         "filter-decay",
         "filter-sustain",
@@ -83,14 +86,17 @@ const FILTER_ENVELOPE: ControlGroup = ControlGroup {
     ],
 };
 const AMPLIFIER: ControlGroup = ControlGroup {
+    id: "amplifier",
     title: "AMPLIFIER",
     parameter_ids: &["amp-attack", "amp-decay", "amp-sustain", "amp-release"],
 };
 const PERFORMANCE: ControlGroup = ControlGroup {
+    id: "performance",
     title: "PERFORMANCE",
     parameter_ids: &["glide", "unison", "release-enable"],
 };
 const OUTPUT: ControlGroup = ControlGroup {
+    id: "output",
     title: "OUTPUT",
     parameter_ids: &[
         "master-tune",
@@ -101,6 +107,7 @@ const OUTPUT: ControlGroup = ControlGroup {
     ],
 };
 const SCALE: ControlGroup = ControlGroup {
+    id: "scale",
     title: "SCALE MODE",
     parameter_ids: &[
         "scale-c",
@@ -120,7 +127,7 @@ const SCALE: ControlGroup = ControlGroup {
 
 const MODULATION_GROUPS: &[ControlGroup] = &[POLY_MOD, LFO, WHEEL_MOD];
 const OSCILLATOR_GROUPS: &[ControlGroup] = &[OSCILLATOR_A, OSCILLATOR_B, MIXER];
-const FILTER_GROUPS: &[ControlGroup] = &[FILTER, FILTER_ENVELOPE, AMPLIFIER];
+const FILTER_GROUPS: &[ControlGroup] = &[FILTER, AMPLIFIER];
 const VOICE_GROUPS: &[ControlGroup] = &[PERFORMANCE, OUTPUT];
 const SCALE_GROUPS: &[ControlGroup] = &[SCALE];
 
@@ -195,6 +202,45 @@ mod tests {
     }
 
     #[test]
+    fn rackforge_semantic_controls_target_the_intended_public_parameters() {
+        let schema: serde_json::Value = serde_json::from_str(include_str!(
+            "../../plugin/package/metadata/parameters.json"
+        ))
+        .unwrap();
+        assert!(schema["schema_version"].as_u64().unwrap() >= 2);
+        let parameters = schema["parameters"].as_array().unwrap();
+        let semantic_controls = schema["semantic_controls"].as_array().unwrap();
+        let bindings = semantic_controls
+            .iter()
+            .map(|binding| {
+                let role = binding["role"].as_str().unwrap();
+                let index = binding["parameter_index"].as_u64().unwrap() as usize;
+                (role, parameters[index]["id"].as_str().unwrap())
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(bindings.len(), semantic_controls.len());
+        for expected in [
+            ("synth.oscillator.pulse_width", "oscillator-a-pulse-width"),
+            ("synth.oscillator.noise.level", "noise-level"),
+            ("synth.filter.cutoff", "filter-cutoff"),
+            ("synth.filter.resonance", "filter-resonance"),
+            ("synth.filter.envelope.amount", "filter-envelope-amount"),
+            ("synth.filter.key_tracking", "filter-keyboard"),
+            ("synth.envelope.amp.attack", "amp-attack"),
+            ("synth.envelope.amp.decay", "amp-decay"),
+            ("synth.envelope.amp.sustain", "amp-sustain"),
+            ("synth.envelope.amp.release", "amp-release"),
+            ("synth.lfo.rate", "lfo-frequency"),
+            ("plugin.output.level", "master-volume"),
+        ] {
+            assert!(
+                bindings.contains(&expected),
+                "missing semantic binding {expected:?}"
+            );
+        }
+    }
+
+    #[test]
     fn section_ids_are_stable_and_unique() {
         let ids = SECTIONS
             .iter()
@@ -204,7 +250,10 @@ mod tests {
         assert!(SECTIONS.iter().all(|section| {
             !section.label.is_empty()
                 && !section.caption.is_empty()
-                && section.groups.iter().all(|group| !group.title.is_empty())
+                && section
+                    .groups
+                    .iter()
+                    .all(|group| !group.id.is_empty() && !group.title.is_empty())
         }));
         assert_eq!(section("missing").id, "modulation");
     }

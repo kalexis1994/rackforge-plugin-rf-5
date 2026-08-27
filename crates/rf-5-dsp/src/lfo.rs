@@ -68,9 +68,23 @@ pub struct LfoWaveSelection {
     pub square: bool,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub struct Lfo {
     phase: f32,
+    sample_rate: f32,
+    frequency_control: f32,
+    phase_increment: f32,
+}
+
+impl Default for Lfo {
+    fn default() -> Self {
+        Self {
+            phase: 0.0,
+            sample_rate: 0.0,
+            frequency_control: 0.0,
+            phase_increment: 0.0,
+        }
+    }
 }
 
 impl Lfo {
@@ -108,8 +122,20 @@ impl Lfo {
             output += square;
         }
 
-        let increment = frequency_hz(frequency_control) / sample_rate.max(1.0);
-        let advanced = self.phase + increment;
+        let sample_rate = sample_rate.max(1.0);
+        // The held LFO CV is a seven-bit panel value. Leakage can perturb the
+        // floating representation between refreshes without changing that
+        // physical code, so key the expensive exponential transfer by the
+        // quantized voltage that the circuit actually receives.
+        let frequency_control = quantize_analog_pot(frequency_control);
+        if self.sample_rate.to_bits() != sample_rate.to_bits()
+            || self.frequency_control.to_bits() != frequency_control.to_bits()
+        {
+            self.phase_increment = frequency_hz(frequency_control) / sample_rate;
+            self.sample_rate = sample_rate;
+            self.frequency_control = frequency_control;
+        }
+        let advanced = self.phase + self.phase_increment;
         self.phase = advanced - libm::floorf(advanced);
         output
     }
@@ -160,6 +186,27 @@ fn bounded_exponential_generator_current_amps(control_volts: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frequency_cache_is_sample_exact_when_rebuilt() {
+        let waves = LfoWaveSelection {
+            saw: true,
+            triangle: true,
+            square: true,
+        };
+        let mut cached = Lfo::default();
+        for _ in 0..128 {
+            let _ = cached.next(48_000.0, 0.63, waves);
+        }
+        let mut rebuilt = cached;
+        for _ in 0..2_048 {
+            rebuilt.sample_rate = 0.0;
+            let cached_output = cached.next(48_000.0, 0.63, waves);
+            let rebuilt_output = rebuilt.next(48_000.0, 0.63, waves);
+            assert_eq!(cached_output.to_bits(), rebuilt_output.to_bits());
+            assert_eq!(cached.phase.to_bits(), rebuilt.phase.to_bits());
+        }
+    }
 
     #[test]
     fn circuit_frequency_mapping_is_monotonic_and_bounded() {

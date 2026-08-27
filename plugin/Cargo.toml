@@ -6,9 +6,15 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+realtime-1x = ["rf-5-dsp/realtime-1x"]
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 rackforge-plugin-sdk.workspace = true
 rf-5-dsp.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rackforge-plugin-api = { git = "https://github.com/kalexis1994/rackforge.git", rev = "37915a58529b5f57508207fb5f936c279afa0944" }

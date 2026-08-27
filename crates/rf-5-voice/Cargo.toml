@@ -6,6 +6,9 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+realtime-1x = []
+
 [dependencies]
 rf-5-contract.workspace = true
 libm = "0.2"

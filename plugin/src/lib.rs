@@ -1,6 +1,8 @@
 #![cfg_attr(target_arch = "wasm32", no_std)]
 
-use rackforge_plugin_sdk::{MidiEvent, ParameterEvent, Processor, export_processor};
+#[cfg(target_arch = "wasm32")]
+use rackforge_plugin_sdk::export_processor;
+use rackforge_plugin_sdk::{MidiEvent, ParameterEvent, Processor};
 use rf_5_dsp::Engine;
 
 const MAX_OUTPUT_CHANNELS: usize = 2;
@@ -86,6 +88,7 @@ impl Processor for Rf5Processor {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 export_processor!(
     Rf5Processor,
     max_frames = 4096,
@@ -95,6 +98,9 @@ export_processor!(
     max_parameter_events = 256,
     max_transfer_bytes = 4096
 );
+
+#[cfg(not(target_arch = "wasm32"))]
+mod native;
 
 #[cfg(all(target_arch = "wasm32", not(test)))]
 #[panic_handler]

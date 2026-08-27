@@ -49,7 +49,7 @@ const MASTER_VOLUME_POT_OHMS: f32 = 10_000.0;
 const MASTER_VOLUME_LOAD_OHMS: f32 = 100_000.0;
 const MASTER_VOLUME_CAPACITANCE_FARADS: f32 = 0.22e-6;
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub struct OutputStage {
     // Voltage stored across C4189. The 36.7 ms time constant needs more state
     // precision than the audio path to settle without a float-rounding
@@ -57,6 +57,34 @@ pub struct OutputStage {
     coupling_capacitor_voltage: f64,
     master_volume_cv_volts: f64,
     output_buffer_voltage: f64,
+    master_volume_panel: f32,
+    master_volume_sample_rate: f32,
+    master_volume_target: f32,
+    master_volume_coefficient: f64,
+    master_volume_snap: bool,
+    master_control_cv: f32,
+    master_control_ratio: f32,
+    coupling_sample_rate: f32,
+    coupling_retained: f64,
+}
+
+impl Default for OutputStage {
+    fn default() -> Self {
+        Self {
+            coupling_capacitor_voltage: 0.0,
+            master_volume_cv_volts: 0.0,
+            output_buffer_voltage: 0.0,
+            master_volume_panel: 0.0,
+            master_volume_sample_rate: 0.0,
+            master_volume_target: 0.0,
+            master_volume_coefficient: 0.0,
+            master_volume_snap: false,
+            master_control_cv: 0.0,
+            master_control_ratio: 0.0,
+            coupling_sample_rate: 0.0,
+            coupling_retained: 0.0,
+        }
+    }
 }
 
 impl OutputStage {
@@ -85,25 +113,46 @@ impl OutputStage {
     }
 
     fn master_volume_control(&mut self, panel: f32, sample_rate: f32) -> f32 {
-        let (target, resistance) = master_volume_wiper(panel);
-        if resistance <= f32::EPSILON {
-            self.master_volume_cv_volts = f64::from(target);
-        } else {
-            let time_constant = f64::from(resistance * MASTER_VOLUME_CAPACITANCE_FARADS);
-            let coefficient = 1.0 - libm::exp(-1.0 / (f64::from(sample_rate) * time_constant));
-            self.master_volume_cv_volts +=
-                (f64::from(target) - self.master_volume_cv_volts) * coefficient;
+        if self.master_volume_panel.to_bits() != panel.to_bits()
+            || self.master_volume_sample_rate.to_bits() != sample_rate.to_bits()
+        {
+            let (target, resistance) = master_volume_wiper(panel);
+            self.master_volume_target = target;
+            self.master_volume_snap = resistance <= f32::EPSILON;
+            self.master_volume_coefficient = if self.master_volume_snap {
+                0.0
+            } else {
+                let time_constant = f64::from(resistance * MASTER_VOLUME_CAPACITANCE_FARADS);
+                1.0 - libm::exp(-1.0 / (f64::from(sample_rate) * time_constant))
+            };
+            self.master_volume_panel = panel;
+            self.master_volume_sample_rate = sample_rate;
         }
-        vca::master_volume_control_from_cv(self.master_volume_cv_volts as f32)
+        if self.master_volume_snap {
+            self.master_volume_cv_volts = f64::from(self.master_volume_target);
+        } else {
+            self.master_volume_cv_volts += (f64::from(self.master_volume_target)
+                - self.master_volume_cv_volts)
+                * self.master_volume_coefficient;
+        }
+        let control_cv = self.master_volume_cv_volts as f32;
+        if self.master_control_cv.to_bits() != control_cv.to_bits() {
+            self.master_control_ratio = vca::master_volume_control_from_cv(control_cv);
+            self.master_control_cv = control_cv;
+        }
+        self.master_control_ratio
     }
 
     fn ac_couple(&mut self, input: f32, sample_rate: f32) -> f32 {
         let input = f64::from(input);
-        let time_constant = f64::from(coupling_load_ohms() * COUPLING_CAPACITANCE_FARADS);
-        let sample_period = 1.0 / f64::from(sample_rate);
-        let retained = libm::exp(-sample_period / time_constant);
+        if self.coupling_sample_rate.to_bits() != sample_rate.to_bits() {
+            let time_constant = f64::from(coupling_load_ohms() * COUPLING_CAPACITANCE_FARADS);
+            let sample_period = 1.0 / f64::from(sample_rate);
+            self.coupling_retained = libm::exp(-sample_period / time_constant);
+            self.coupling_sample_rate = sample_rate;
+        }
         self.coupling_capacitor_voltage =
-            input + (self.coupling_capacitor_voltage - input) * retained;
+            input + (self.coupling_capacitor_voltage - input) * self.coupling_retained;
         (input - self.coupling_capacitor_voltage) as f32
     }
 
@@ -162,6 +211,34 @@ mod tests {
     use core::f32::consts::PI;
 
     const SAMPLE_RATE: f32 = 48_000.0;
+
+    #[test]
+    fn rc_coefficient_caches_are_sample_exact_when_rebuilt() {
+        let mut cached = OutputStage::default();
+        for sample in 0..256 {
+            let input = libm::sinf(sample as f32 * 0.037) * 2.0;
+            let _ = cached.next(input, 0.64, SAMPLE_RATE);
+        }
+        let mut rebuilt = cached;
+        for sample in 0..2_048 {
+            rebuilt.master_volume_sample_rate = 0.0;
+            rebuilt.coupling_sample_rate = 0.0;
+            rebuilt.master_control_cv = 0.0;
+            let input = libm::sinf(sample as f32 * 0.053) * 3.0;
+            let volume = if sample < 1_024 { 0.64 } else { 0.37 };
+            let cached_output = cached.next(input, volume, SAMPLE_RATE);
+            let rebuilt_output = rebuilt.next(input, volume, SAMPLE_RATE);
+            assert_eq!(cached_output.to_bits(), rebuilt_output.to_bits());
+            assert_eq!(
+                cached.master_volume_cv_volts.to_bits(),
+                rebuilt.master_volume_cv_volts.to_bits()
+            );
+            assert_eq!(
+                cached.coupling_capacitor_voltage.to_bits(),
+                rebuilt.coupling_capacitor_voltage.to_bits()
+            );
+        }
+    }
 
     #[test]
     fn schematic_network_has_expected_corner() {

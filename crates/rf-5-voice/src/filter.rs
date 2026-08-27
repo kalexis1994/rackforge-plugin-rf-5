@@ -11,6 +11,7 @@ const MAXIMUM_NORMALIZED_CUTOFF: f32 = 0.45;
 const THERMAL_NOISE_LEVEL_VOLTS: f32 = 4.0e-7;
 const NOMINAL_POLE_SENSITIVITY_MV_PER_DECADE: f32 = 60.0;
 const SERVICE_FILTER_REFERENCE_HZ: f32 = 440.0;
+const SERVICE_FILTER_REFERENCE_LOG2_HZ: f32 = 8.781_36;
 const FILTER_WARMUP_UPDATE_RATE_HZ: f32 = 10.0;
 const TYPICAL_FILTER_WARMUP_DRIFT_RATIO: f32 = 0.005;
 const MAXIMUM_FILTER_WARMUP_DRIFT_RATIO: f32 = 0.015;
@@ -61,7 +62,7 @@ const OUTPUT_BUFFER_SWING_TYPICAL_VOLTS: f32 = 13.5;
 const OUTPUT_BUFFER_SLEW_MINIMUM_VOLTS_PER_SECOND: f32 = 8.0e6;
 #[cfg(test)]
 const OUTPUT_BUFFER_SLEW_TYPICAL_VOLTS_PER_SECOND: f32 = 13.0e6;
-const OUTPUT_BUFFER_SOFT_KNEE_ORDER: f32 = 32.0;
+const OUTPUT_BUFFER_SOFT_KNEE_ORDER: usize = 32;
 #[cfg(test)]
 const FINAL_VCA_INPUT_OHMS: f32 = 20_000.0;
 const RESONANCE_RETURN_OHMS: f32 = 51_000.0;
@@ -211,11 +212,22 @@ struct ResonanceReturn {
     input_shunt: TptMemory,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct ResonanceReturnCoefficients {
+    coupling: f32,
+    shunt: f32,
+}
+
 impl ResonanceReturn {
-    fn predict(self, output: f32, sample_rate: f32, profile: FilterProfile) -> (f32, f32) {
-        let coupling_coefficient = one_pole_coefficient(output_coupling_corner_hz(), sample_rate);
+    fn predict(
+        self,
+        output: f32,
+        sample_rate: f32,
+        profile: FilterProfile,
+        coefficients: ResonanceReturnCoefficients,
+    ) -> (f32, f32) {
         let (coupling_lowpass, coupling_lowpass_slope) =
-            self.output_coupling.predict(output, coupling_coefficient);
+            self.output_coupling.predict(output, coefficients.coupling);
         let buffer_drive = (output - coupling_lowpass) * output_buffer_gain();
         let buffer_drive_slope = (1.0 - coupling_lowpass_slope) * output_buffer_gain();
         let (buffer_output, buffer_shape_slope) =
@@ -223,9 +235,8 @@ impl ResonanceReturn {
                 .predict(buffer_drive, sample_rate, profile);
         let buffer_output_slope = buffer_drive_slope * buffer_shape_slope;
 
-        let shunt_coefficient = one_pole_coefficient(resonance_input_pole_hz(profile), sample_rate);
         let (shunt_lowpass, shunt_lowpass_slope) =
-            self.input_shunt.predict(buffer_output, shunt_coefficient);
+            self.input_shunt.predict(buffer_output, coefficients.shunt);
         let dc_gain = resonance_input_dc_gain(profile);
         let high_frequency_gain = resonance_input_high_frequency_gain(profile);
         let pin_voltage =
@@ -236,19 +247,172 @@ impl ResonanceReturn {
         (pin_voltage, pin_slope)
     }
 
-    fn next(&mut self, output: f32, sample_rate: f32, profile: FilterProfile) -> (f32, f32) {
-        let coupling_coefficient = one_pole_coefficient(output_coupling_corner_hz(), sample_rate);
-        let coupling_lowpass = self.output_coupling.next(output, coupling_coefficient);
+    fn next(
+        &mut self,
+        output: f32,
+        sample_rate: f32,
+        profile: FilterProfile,
+        coefficients: ResonanceReturnCoefficients,
+    ) -> (f32, f32) {
+        let coupling_lowpass = self.output_coupling.next(output, coefficients.coupling);
         let buffer_drive = (output - coupling_lowpass) * output_buffer_gain();
         let buffer_output = self.output_buffer.next(buffer_drive, sample_rate, profile);
 
-        let shunt_coefficient = one_pole_coefficient(resonance_input_pole_hz(profile), sample_rate);
-        let shunt_lowpass = self.input_shunt.next(buffer_output, shunt_coefficient);
+        let shunt_lowpass = self.input_shunt.next(buffer_output, coefficients.shunt);
         let dc_gain = resonance_input_dc_gain(profile);
         let high_frequency_gain = resonance_input_high_frequency_gain(profile);
         let pin_voltage =
             high_frequency_gain * buffer_output + (dc_gain - high_frequency_gain) * shunt_lowpass;
         (buffer_output, pin_voltage)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct FilterCoefficientCache {
+    cutoff_input_log2_hz: f32,
+    sample_rate: f32,
+    character: f32,
+    warmup_position: f32,
+    profile_index: usize,
+    stage_coefficient: f32,
+    resonance: f32,
+    resonance_drive: f32,
+    resonance_drive_profile_index: usize,
+    resonance_sample_rate: f32,
+    resonance_profile_index: usize,
+    coupling_coefficient: f32,
+    shunt_coefficient: f32,
+    service_profile_index: usize,
+    service_low_calibration_hz: f32,
+    service_exponent: f32,
+}
+
+impl Default for FilterCoefficientCache {
+    fn default() -> Self {
+        Self {
+            cutoff_input_log2_hz: 0.0,
+            sample_rate: 0.0,
+            character: 0.0,
+            warmup_position: 0.0,
+            profile_index: usize::MAX,
+            stage_coefficient: 0.0,
+            resonance: 0.0,
+            resonance_drive: 0.0,
+            resonance_drive_profile_index: usize::MAX,
+            resonance_sample_rate: 0.0,
+            resonance_profile_index: usize::MAX,
+            coupling_coefficient: 0.0,
+            shunt_coefficient: 0.0,
+            service_profile_index: usize::MAX,
+            service_low_calibration_hz: 0.0,
+            service_exponent: 0.0,
+        }
+    }
+}
+
+impl FilterCoefficientCache {
+    fn stage_coefficient(
+        &mut self,
+        cutoff_input_log2_hz: f32,
+        sample_rate: f32,
+        character: f32,
+        warmup_position: f32,
+        profile_index: usize,
+        profile: FilterProfile,
+    ) -> f32 {
+        if self.cutoff_input_log2_hz.to_bits() != cutoff_input_log2_hz.to_bits()
+            || self.sample_rate.to_bits() != sample_rate.to_bits()
+            || self.character.to_bits() != character.to_bits()
+            || self.warmup_position.to_bits() != warmup_position.to_bits()
+            || self.profile_index != profile_index
+        {
+            let warmup_limit = TYPICAL_FILTER_WARMUP_DRIFT_RATIO
+                + character.clamp(0.0, 1.0)
+                    * (MAXIMUM_FILTER_WARMUP_DRIFT_RATIO - TYPICAL_FILTER_WARMUP_DRIFT_RATIO);
+            let warmup_ratio = 1.0 + warmup_position * warmup_limit;
+            let cutoff_hz =
+                (self.service_trimmed_cutoff_hz(cutoff_input_log2_hz, profile_index, profile)
+                    * warmup_ratio)
+                    .clamp(1.0, sample_rate * MAXIMUM_NORMALIZED_CUTOFF);
+            #[cfg(feature = "realtime-1x")]
+            {
+                self.stage_coefficient =
+                    crate::realtime_math::tpt_coefficient(cutoff_hz / sample_rate);
+            }
+            #[cfg(not(feature = "realtime-1x"))]
+            {
+                let g = libm::tanf(core::f32::consts::PI * cutoff_hz / sample_rate);
+                self.stage_coefficient = g / (1.0 + g);
+            }
+            self.cutoff_input_log2_hz = cutoff_input_log2_hz;
+            self.sample_rate = sample_rate;
+            self.character = character;
+            self.warmup_position = warmup_position;
+            self.profile_index = profile_index;
+        }
+        self.stage_coefficient
+    }
+
+    fn service_trimmed_cutoff_hz(
+        &mut self,
+        cutoff_log2_hz: f32,
+        profile_index: usize,
+        profile: FilterProfile,
+    ) -> f32 {
+        if self.service_profile_index != profile_index {
+            let (low_calibration_hz, calibrated_exponent) = service_cutoff_calibration(profile);
+            self.service_low_calibration_hz = low_calibration_hz;
+            self.service_exponent = calibrated_exponent;
+            self.service_profile_index = profile_index;
+        }
+        let exponent =
+            (cutoff_log2_hz.max(0.0) - SERVICE_FILTER_REFERENCE_LOG2_HZ) * self.service_exponent;
+        #[cfg(feature = "realtime-1x")]
+        {
+            self.service_low_calibration_hz * crate::realtime_math::exp2(exponent)
+        }
+        #[cfg(not(feature = "realtime-1x"))]
+        {
+            self.service_low_calibration_hz * libm::exp2f(exponent)
+        }
+    }
+
+    fn resonance_drive(
+        &mut self,
+        resonance: f32,
+        profile_index: usize,
+        profile: FilterProfile,
+    ) -> f32 {
+        if self.resonance.to_bits() != resonance.to_bits()
+            || self.resonance_drive_profile_index != profile_index
+        {
+            self.resonance_drive = resonance_drive_gain(resonance, profile);
+            self.resonance = resonance;
+            self.resonance_drive_profile_index = profile_index;
+        }
+        self.resonance_drive
+    }
+
+    fn resonance_return(
+        &mut self,
+        sample_rate: f32,
+        profile_index: usize,
+        profile: FilterProfile,
+    ) -> ResonanceReturnCoefficients {
+        if self.resonance_sample_rate.to_bits() != sample_rate.to_bits()
+            || self.resonance_profile_index != profile_index
+        {
+            self.coupling_coefficient =
+                one_pole_coefficient(output_coupling_corner_hz(), sample_rate);
+            self.shunt_coefficient =
+                one_pole_coefficient(resonance_input_pole_hz(profile), sample_rate);
+            self.resonance_sample_rate = sample_rate;
+            self.resonance_profile_index = profile_index;
+        }
+        ResonanceReturnCoefficients {
+            coupling: self.coupling_coefficient,
+            shunt: self.shunt_coefficient,
+        }
     }
 }
 
@@ -261,6 +425,7 @@ pub struct Cem3320Filter {
     warmup_position: f32,
     warmup_sample_phase: f64,
     last_output: f32,
+    coefficient_cache: FilterCoefficientCache,
 }
 
 impl Default for Cem3320Filter {
@@ -273,6 +438,7 @@ impl Default for Cem3320Filter {
             warmup_position: 0.0,
             warmup_sample_phase: 0.0,
             last_output: 0.0,
+            coefficient_cache: FilterCoefficientCache::default(),
         }
     }
 }
@@ -298,28 +464,66 @@ impl Cem3320Filter {
         sample_rate: f32,
         character: f32,
     ) -> f32 {
+        self.next_with_character_log2(
+            input,
+            libm::log2f(cutoff_hz.max(1.0)),
+            resonance,
+            sample_rate,
+            character,
+        )
+    }
+
+    /// Process one sample when the cutoff is already expressed as log2(Hz).
+    ///
+    /// The panel, keyboard and modulation sources are octave-domain control
+    /// voltages. Keeping that representation through the service-scale trim
+    /// avoids an exp2/log2 round trip in the audio thread.
+    pub fn next_with_character_log2(
+        &mut self,
+        input: f32,
+        cutoff_log2_hz: f32,
+        resonance: f32,
+        sample_rate: f32,
+        character: f32,
+    ) -> f32 {
         let sample_rate = sample_rate.max(1.0);
         let profile = FILTER_PROFILES[self.profile_index];
         self.advance_warmup(sample_rate);
-        let cutoff_hz = (service_trimmed_cutoff_hz(cutoff_hz, profile)
-            * self.warmup_frequency_ratio(character))
-        .clamp(1.0, sample_rate * MAXIMUM_NORMALIZED_CUTOFF);
-        let g = libm::tanf(core::f32::consts::PI * cutoff_hz / sample_rate);
-        let coefficient = g / (1.0 + g);
-        let resonance_drive = resonance_drive_gain(resonance, profile);
-        let thermal_noise = self.next_thermal_noise();
-        let open_input = input + thermal_noise;
-        let feedback_output = self.solve_feedback(
-            open_input,
-            coefficient,
-            resonance_drive,
+        let coefficient = self.coefficient_cache.stage_coefficient(
+            cutoff_log2_hz,
             sample_rate,
+            character,
+            self.warmup_position,
+            self.profile_index,
             profile,
         );
-        let (resonance_voltage, _) =
-            self.resonance_return
-                .predict(feedback_output, sample_rate, profile);
-        let mut signal = open_input - resonance_voltage * resonance_drive;
+        let resonance_drive =
+            self.coefficient_cache
+                .resonance_drive(resonance, self.profile_index, profile);
+        let resonance_coefficients =
+            self.coefficient_cache
+                .resonance_return(sample_rate, self.profile_index, profile);
+        let thermal_noise = self.next_thermal_noise();
+        let open_input = input + thermal_noise;
+        let mut signal = if resonance_drive > 0.0 {
+            let feedback_output = self.solve_feedback(
+                open_input,
+                coefficient,
+                resonance_drive,
+                sample_rate,
+                profile,
+                resonance_coefficients,
+            );
+            let (resonance_voltage, _) = self.resonance_return.predict(
+                feedback_output,
+                sample_rate,
+                profile,
+                resonance_coefficients,
+            );
+            open_input - resonance_voltage * resonance_drive
+        } else {
+            open_input
+        };
         for (index, stage) in self.stages.iter_mut().enumerate() {
             if index > 0 {
                 signal *= interstage_passband_gain();
@@ -327,7 +531,9 @@ impl Cem3320Filter {
             signal = stage.next(signal, coefficient, profile);
         }
         if signal.is_finite() {
-            let (buffered_output, _) = self.resonance_return.next(signal, sample_rate, profile);
+            let (buffered_output, _) =
+                self.resonance_return
+                    .next(signal, sample_rate, profile, resonance_coefficients);
             self.last_output = signal;
             buffered_output
         } else {
@@ -345,16 +551,29 @@ impl Cem3320Filter {
         resonance_drive: f32,
         sample_rate: f32,
         profile: FilterProfile,
+        resonance_coefficients: ResonanceReturnCoefficients,
     ) -> f32 {
         if resonance_drive <= 0.0 {
             return self.predict_path(input, coefficient, profile).0;
         }
         let ceiling = output_ceiling(profile);
         let mut estimate = self.last_output.clamp(-ceiling, ceiling);
-        for _ in 0..FEEDBACK_SOLVER_ITERATIONS {
-            let (resonance_voltage, resonance_slope) =
-                self.resonance_return
-                    .predict(estimate, sample_rate, profile);
+        // Below the service-manual self-oscillation window the loop is
+        // contractive enough for one Newton correction. Preserve all three
+        // iterations where resonance can sustain or clip.
+        let iterations =
+            if resonance_drive < resonance_drive_gain(0.65, profile) && coefficient < 0.35 {
+                1
+            } else {
+                FEEDBACK_SOLVER_ITERATIONS
+            };
+        for _ in 0..iterations {
+            let (resonance_voltage, resonance_slope) = self.resonance_return.predict(
+                estimate,
+                sample_rate,
+                profile,
+                resonance_coefficients,
+            );
             let (predicted, path_slope) = self.predict_path(
                 input - resonance_voltage * resonance_drive,
                 coefficient,
@@ -398,6 +617,7 @@ impl Cem3320Filter {
         self.warmup_position = self.warmup_position.clamp(-1.0, 1.0);
     }
 
+    #[cfg(test)]
     fn warmup_frequency_ratio(&self, character: f32) -> f32 {
         let limit = TYPICAL_FILTER_WARMUP_DRIFT_RATIO
             + character.clamp(0.0, 1.0)
@@ -473,7 +693,8 @@ fn output_buffer_with_slope(value: f32, profile: FilterProfile) -> (f32, f32) {
     let sixteenth = eighth * eighth;
     let thirty_second = sixteenth * sixteenth;
     let soft_base = 1.0 + thirty_second;
-    let reciprocal_root = 1.0 / libm::powf(soft_base, 1.0 / OUTPUT_BUFFER_SOFT_KNEE_ORDER);
+    let reciprocal_root =
+        reciprocal_power_of_two_root(soft_base, OUTPUT_BUFFER_SOFT_KNEE_ORDER.ilog2() as usize);
     let curved = ceiling * normalized * reciprocal_root;
     let output = curved.clamp(-ceiling, ceiling);
     let slope = if unclamped == normalized && output == curved {
@@ -533,8 +754,14 @@ fn interstage_passband_gain() -> f32 {
     equivalent_feedback_ohms() / INTERSTAGE_COUPLING_OHMS
 }
 
+#[cfg(test)]
 fn service_trimmed_cutoff_hz(cutoff_hz: f32, profile: FilterProfile) -> f32 {
-    let target_hz = cutoff_hz.max(1.0);
+    let (low_calibration_hz, calibrated_exponent) = service_cutoff_calibration(profile);
+    let cutoff_ratio = cutoff_hz.max(1.0) / SERVICE_FILTER_REFERENCE_HZ;
+    low_calibration_hz * libm::exp2f(libm::log2f(cutoff_ratio) * calibrated_exponent)
+}
+
+fn service_cutoff_calibration(profile: FilterProfile) -> (f32, f32) {
     let low_calibration_hz = resonance_calibrated_pole_hz(SERVICE_FILTER_REFERENCE_HZ, profile);
     let high_calibration_hz =
         resonance_calibrated_pole_hz(SERVICE_FILTER_REFERENCE_HZ * 2.0, profile);
@@ -542,9 +769,11 @@ fn service_trimmed_cutoff_hz(cutoff_hz: f32, profile: FilterProfile) -> f32 {
         libm::logf(high_calibration_hz / low_calibration_hz) / core::f32::consts::LN_2;
     let untrimmed_exponent =
         NOMINAL_POLE_SENSITIVITY_MV_PER_DECADE / profile.pole_sensitivity_mv_per_decade;
-    let untrimmed_ratio = libm::powf(target_hz / SERVICE_FILTER_REFERENCE_HZ, untrimmed_exponent);
     let populated_scale_trim = calibrated_exponent / untrimmed_exponent;
-    low_calibration_hz * libm::powf(untrimmed_ratio, populated_scale_trim)
+    (
+        low_calibration_hz,
+        untrimmed_exponent * populated_scale_trim,
+    )
 }
 
 fn resonance_calibrated_pole_hz(target_hz: f32, profile: FilterProfile) -> f32 {
@@ -581,7 +810,7 @@ fn cell_output_with_slope(value: f32, profile: FilterProfile) -> (f32, f32) {
     let eighth = fourth * fourth;
     let sixteenth = eighth * eighth;
     let soft_base = 1.0 + sixteenth;
-    let reciprocal_root = 1.0 / libm::powf(soft_base, 1.0 / 16.0);
+    let reciprocal_root = reciprocal_power_of_two_root(soft_base, 4);
     let symmetric = ceiling * normalized * reciprocal_root;
     let symmetric_slope = if unclamped == normalized {
         reciprocal_root / soft_base
@@ -606,9 +835,59 @@ fn cell_output_with_slope(value: f32, profile: FilterProfile) -> (f32, f32) {
     (output, slope.max(0.0))
 }
 
+/// Evaluate the fixed 16th- and 32nd-order soft knees with native square-root
+/// operations. The generic `powf` route computes logarithms and exponentials,
+/// even though these two roots are exact powers of two.
+#[inline(always)]
+fn reciprocal_power_of_two_root(value: f32, square_roots: usize) -> f32 {
+    // In the passband, adding the high-order knee term commonly rounds to
+    // exactly one in f32. Returning that exact result avoids four or five
+    // square roots without changing a single output bit.
+    if value == 1.0 {
+        return 1.0;
+    }
+    let mut root = value;
+    for _ in 0..square_roots {
+        root = libm::sqrtf(root);
+    }
+    1.0 / root
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn power_of_two_roots_track_the_generic_reference() {
+        for square_roots in [4, 5] {
+            let exponent = 1.0 / (1_u32 << square_roots) as f32;
+            for value in [1.0, 1.000_1, 1.25, 2.0, 16.0, 65_537.0, 1.0e20] {
+                let specialized = reciprocal_power_of_two_root(value, square_roots);
+                let reference = 1.0 / libm::powf(value, exponent);
+                let relative_error = (specialized - reference).abs() / reference;
+                assert!(relative_error <= 3.0e-7, "{value} -> {relative_error}");
+            }
+        }
+    }
+
+    #[test]
+    fn coefficient_caches_are_sample_exact_when_rebuilt() {
+        let mut cached = Cem3320Filter::with_profile(3);
+        for sample in 0..256 {
+            let input = libm::sinf(sample as f32 * 0.047) * 3.0;
+            let _ = cached.next_with_character(input, 2_300.0, 0.74, 192_000.0, 0.4);
+        }
+        let mut rebuilt = cached;
+        for sample in 0..2_048 {
+            rebuilt.coefficient_cache = FilterCoefficientCache::default();
+            let input = libm::sinf(sample as f32 * 0.061) * 4.0;
+            let cutoff = if sample < 1_024 { 2_300.0 } else { 4_700.0 };
+            let cached_output = cached.next_with_character(input, cutoff, 0.74, 192_000.0, 0.4);
+            let rebuilt_output = rebuilt.next_with_character(input, cutoff, 0.74, 192_000.0, 0.4);
+            assert_eq!(cached_output.to_bits(), rebuilt_output.to_bits());
+            assert_eq!(cached.last_output.to_bits(), rebuilt.last_output.to_bits());
+        }
+    }
 
     #[test]
     fn four_pole_candidate_is_finite_across_supported_rates() {
@@ -802,11 +1081,15 @@ mod tests {
     fn resonance_return_blocks_dc_but_passes_audio() {
         let profile = FILTER_PROFILES[0];
         let mut return_path = ResonanceReturn::default();
-        let (initial_audio, initial_pin) = return_path.next(1.0, 48_000.0, profile);
+        let coefficients = ResonanceReturnCoefficients {
+            coupling: one_pole_coefficient(output_coupling_corner_hz(), 48_000.0),
+            shunt: one_pole_coefficient(resonance_input_pole_hz(profile), 48_000.0),
+        };
+        let (initial_audio, initial_pin) = return_path.next(1.0, 48_000.0, profile, coefficients);
         let mut settled_audio = initial_audio;
         let mut settled_pin = initial_pin;
         for _ in 0..240_000 {
-            (settled_audio, settled_pin) = return_path.next(1.0, 48_000.0, profile);
+            (settled_audio, settled_pin) = return_path.next(1.0, 48_000.0, profile, coefficients);
         }
         assert!((3.39..3.4).contains(&initial_audio));
         assert!(initial_pin > 0.09);
@@ -948,6 +1231,10 @@ mod tests {
             let _ = filter.next(input, 1_700.0, 0.92, 192_000.0);
         }
         let profile = FILTER_PROFILES[filter.profile_index];
+        let resonance_coefficients = ResonanceReturnCoefficients {
+            coupling: one_pole_coefficient(output_coupling_corner_hz(), 192_000.0),
+            shunt: one_pole_coefficient(resonance_input_pole_hz(profile), 192_000.0),
+        };
         for cutoff_hz in [50.0, 1_000.0, 12_000.0, 60_000.0] {
             let g = libm::tanf(core::f32::consts::PI * cutoff_hz / 192_000.0);
             let coefficient = g / (1.0 + g);
@@ -960,9 +1247,14 @@ mod tests {
                         resonance_drive,
                         192_000.0,
                         profile,
+                        resonance_coefficients,
                     );
-                    let (resonance_voltage, _) =
-                        filter.resonance_return.predict(solved, 192_000.0, profile);
+                    let (resonance_voltage, _) = filter.resonance_return.predict(
+                        solved,
+                        192_000.0,
+                        profile,
+                        resonance_coefficients,
+                    );
                     let (predicted, _) = filter.predict_path(
                         input - resonance_voltage * resonance_drive,
                         coefficient,

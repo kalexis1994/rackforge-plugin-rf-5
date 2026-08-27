@@ -50,6 +50,9 @@ pub struct VcoDriftBank {
     common_target_steps: u32,
     common_seed: u32,
     sample_phase: f64,
+    semitone_cache: [f32; VCO_COUNT],
+    semitone_cache_character_bits: u32,
+    semitone_cache_valid: bool,
 }
 
 impl Default for VcoDriftBank {
@@ -66,6 +69,9 @@ impl Default for VcoDriftBank {
             common_target_steps: 1_117,
             common_seed: 0x63d8_3595,
             sample_phase: 0.0,
+            semitone_cache: [0.0; VCO_COUNT],
+            semitone_cache_character_bits: 0,
+            semitone_cache_valid: false,
         }
     }
 }
@@ -87,6 +93,7 @@ impl VcoDriftBank {
     pub fn retune(&mut self) {
         self.reference = self.position;
         self.common_reference = self.common_position;
+        self.semitone_cache_valid = false;
     }
 
     /// Returns the post-tune error for one physical VCO in parts per million.
@@ -102,12 +109,26 @@ impl VcoDriftBank {
     }
 
     pub fn correction_semitones(
-        self,
+        &mut self,
         voice_index: usize,
         oscillator: Oscillator,
         character: f32,
     ) -> f32 {
-        ppm_to_semitones(self.correction_ppm(voice_index, oscillator, character))
+        if !self.semitone_cache_valid || self.semitone_cache_character_bits != character.to_bits() {
+            let snapshot = *self;
+            for channel in 0..VCO_COUNT {
+                let oscillator = if channel % 2 == 0 {
+                    Oscillator::A
+                } else {
+                    Oscillator::B
+                };
+                self.semitone_cache[channel] =
+                    ppm_to_semitones(snapshot.correction_ppm(channel / 2, oscillator, character));
+            }
+            self.semitone_cache_character_bits = character.to_bits();
+            self.semitone_cache_valid = true;
+        }
+        self.semitone_cache[channel_index(voice_index, oscillator)]
     }
 
     /// Largest current correction as a fraction of the selected data-sheet
@@ -131,6 +152,7 @@ impl VcoDriftBank {
     }
 
     fn step_control_rate(&mut self) {
+        self.semitone_cache_valid = false;
         if self.common_target_steps == 0 {
             self.common_target = signed_unit(&mut self.common_seed);
             self.common_target_steps = hold_steps(&mut self.common_seed, 45, 121);

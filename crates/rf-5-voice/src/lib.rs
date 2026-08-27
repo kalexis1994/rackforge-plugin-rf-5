@@ -12,6 +12,8 @@ pub mod envelope;
 pub mod filter;
 pub mod poly_mod;
 mod pulse_width;
+#[cfg(feature = "realtime-1x")]
+mod realtime_math;
 pub mod scale;
 #[cfg(test)]
 mod spectral_tests;
@@ -26,8 +28,11 @@ use vco::{Vco, WaveSelection};
 
 const INITIAL_PHASE_A: [f32; 5] = [0.07, 0.31, 0.58, 0.83, 0.19];
 const INITIAL_PHASE_B: [f32; 5] = [0.67, 0.11, 0.42, 0.74, 0.93];
-const OSCILLATOR_OVERSAMPLING: usize = 4;
-const FILTER_MINIMUM_HZ: f32 = 16.351_599;
+#[cfg(not(feature = "realtime-1x"))]
+const SIGNAL_OVERSAMPLING: usize = 4;
+#[cfg(feature = "realtime-1x")]
+const SIGNAL_OVERSAMPLING: usize = 1;
+const FILTER_MINIMUM_LOG2_HZ: f32 = 4.031_359_7;
 const FILTER_PANEL_OCTAVES: f32 = 10.0;
 const FILTER_KEYBOARD_BASE_NOTE: f32 = 36.0;
 #[cfg(test)]
@@ -48,6 +53,92 @@ pub struct VoiceModulation {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
+struct ControlCurrentCache {
+    control_bits: u32,
+    current_amps: f32,
+}
+
+impl ControlCurrentCache {
+    fn get(&mut self, control: f32, prepare: fn(f32) -> f32) -> f32 {
+        let control_bits = control.to_bits();
+        if self.control_bits != control_bits {
+            self.control_bits = control_bits;
+            self.current_amps = prepare(control);
+        }
+        self.current_amps
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct OscillatorFrequencyCache {
+    note: u8,
+    coarse_bits: u32,
+    fine_bits: u32,
+    mode: u8,
+    frequency_hz: f32,
+    valid: bool,
+}
+
+impl OscillatorFrequencyCache {
+    fn oscillator_a(&mut self, note: u8, coarse: f32) -> f32 {
+        let coarse = quantize_analog_pot(coarse);
+        if !self.valid || self.note != note || self.coarse_bits != coarse.to_bits() {
+            self.note = note;
+            self.coarse_bits = coarse.to_bits();
+            self.frequency_hz = tuning::oscillator_a_frequency(note, coarse);
+            self.valid = true;
+        }
+        self.frequency_hz
+    }
+
+    fn oscillator_b(
+        &mut self,
+        note: u8,
+        coarse: f32,
+        fine: f32,
+        keyboard_enabled: bool,
+        low_frequency: bool,
+    ) -> f32 {
+        let coarse = quantize_analog_pot(coarse);
+        let fine = quantize_analog_pot(fine);
+        let mode = u8::from(keyboard_enabled) | (u8::from(low_frequency) << 1);
+        if !self.valid
+            || self.note != note
+            || self.coarse_bits != coarse.to_bits()
+            || self.fine_bits != fine.to_bits()
+            || self.mode != mode
+        {
+            self.note = note;
+            self.coarse_bits = coarse.to_bits();
+            self.fine_bits = fine.to_bits();
+            self.mode = mode;
+            self.frequency_hz =
+                tuning::oscillator_b_frequency(note, coarse, fine, keyboard_enabled, low_frequency);
+            self.valid = true;
+        }
+        self.frequency_hz
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct SemitoneRatioCache {
+    semitone_bits: u32,
+    ratio: f32,
+    valid: bool,
+}
+
+impl SemitoneRatioCache {
+    fn get(&mut self, semitones: f32) -> f32 {
+        if !self.valid || self.semitone_bits != semitones.to_bits() {
+            self.semitone_bits = semitones.to_bits();
+            self.ratio = semitone_ratio(semitones);
+            self.valid = true;
+        }
+        self.ratio
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Voice {
     note: u8,
     channel: u8,
@@ -60,6 +151,15 @@ pub struct Voice {
     filter_envelope: AdsrEnvelope,
     filter: Cem3320Filter,
     decimator: decimator::Decimator4x,
+    oscillator_a_level_current: ControlCurrentCache,
+    oscillator_b_level_current: ControlCurrentCache,
+    poly_mod_filter_envelope_current: ControlCurrentCache,
+    poly_mod_oscillator_b_current: ControlCurrentCache,
+    filter_envelope_current: ControlCurrentCache,
+    oscillator_a_frequency: OscillatorFrequencyCache,
+    oscillator_b_frequency: OscillatorFrequencyCache,
+    oscillator_a_modulation_ratio: SemitoneRatioCache,
+    oscillator_b_modulation_ratio: SemitoneRatioCache,
 }
 
 impl Voice {
@@ -69,6 +169,10 @@ impl Voice {
 
     pub fn is_active(self) -> bool {
         self.active
+    }
+
+    pub fn is_initialized(self) -> bool {
+        self.oscillators_initialized
     }
 
     pub fn matches(self, channel: u8, note: u8) -> bool {
@@ -116,6 +220,14 @@ impl Voice {
         settings: Settings,
         modulation: VoiceModulation,
     ) -> f32 {
+        // A never-allocated voice has no hardware state to preserve yet. Its
+        // phase/profile seeds are installed by `start`, so running the full
+        // oversampled signal path here would only create state that `start`
+        // immediately discards.
+        if !self.oscillators_initialized {
+            return 0.0;
+        }
+
         let allocated = self.active;
         let filter_envelope = self.filter_envelope.next(
             sample_rate,
@@ -140,6 +252,7 @@ impl Voice {
             modulation,
             filter_envelope,
             amplifier_envelope,
+            allocated,
         );
         if allocated { voice_output } else { 0.0 }
     }
@@ -151,6 +264,7 @@ impl Voice {
         modulation: VoiceModulation,
         filter_envelope: f32,
         amplifier_envelope: f32,
+        render_audio: bool,
     ) -> f32 {
         let waves_a = WaveSelection {
             saw: parameter_enabled(settings, Parameter::OscillatorASaw),
@@ -172,55 +286,98 @@ impl Voice {
         );
         let level_a = quantize_analog_pot(settings.get(Parameter::OscillatorALevel));
         let level_b = quantize_analog_pot(settings.get(Parameter::OscillatorBLevel));
+        let level_a_control_current = self
+            .oscillator_a_level_current
+            .get(level_a, vca::oscillator_mixer_control_current_amps);
+        let level_b_control_current = self
+            .oscillator_b_level_current
+            .get(level_b, vca::oscillator_mixer_control_current_amps);
         let sync = parameter_enabled(settings, Parameter::OscillatorSync);
-        let frequency_a = tuning::oscillator_a_frequency(
-            self.note,
-            settings.get(Parameter::OscillatorAFrequency),
-        );
-        let frequency_b = tuning::oscillator_b_frequency(
+        let frequency_a = self
+            .oscillator_a_frequency
+            .oscillator_a(self.note, settings.get(Parameter::OscillatorAFrequency));
+        let frequency_b = self.oscillator_b_frequency.oscillator_b(
             self.note,
             settings.get(Parameter::OscillatorBFrequency),
             settings.get(Parameter::OscillatorBDetune),
             parameter_enabled(settings, Parameter::OscillatorBKeyboard),
             parameter_enabled(settings, Parameter::OscillatorBLowFrequency),
-        ) * semitone_ratio(modulation.oscillator_b_semitones);
-        let internal_rate = sample_rate.max(1.0) * OSCILLATOR_OVERSAMPLING as f32;
+        ) * self
+            .oscillator_b_modulation_ratio
+            .get(modulation.oscillator_b_semitones);
+        let internal_rate = sample_rate.max(1.0) * SIGNAL_OVERSAMPLING as f32;
         let mut output = None;
-        let poly_filter_envelope_current = -vca::poly_mod_filter_envelope_current_amps(
+        let poly_filter_envelope_amount =
+            quantize_analog_pot(settings.get(Parameter::PolyModFilterEnvelopeAmount));
+        let poly_filter_envelope_control_current = self.poly_mod_filter_envelope_current.get(
+            poly_filter_envelope_amount,
+            vca::poly_mod_filter_envelope_control_current_amps,
+        );
+        let poly_filter_envelope_current = -vca::poly_mod_filter_envelope_with_control_current_amps(
             filter_envelope,
-            quantize_analog_pot(settings.get(Parameter::PolyModFilterEnvelopeAmount)),
+            poly_filter_envelope_control_current,
             self.voice_index,
         );
         let poly_oscillator_b_amount =
             quantize_analog_pot(settings.get(Parameter::PolyModOscillatorBAmount));
+        let poly_oscillator_b_control_current = self.poly_mod_oscillator_b_current.get(
+            poly_oscillator_b_amount,
+            vca::poly_mod_oscillator_b_control_current_amps,
+        );
         let poly_frequency_a = parameter_enabled(settings, Parameter::PolyModOscillatorAFrequency);
         let poly_pulse_width_a =
             parameter_enabled(settings, Parameter::PolyModOscillatorAPulseWidth);
         let poly_filter = parameter_enabled(settings, Parameter::PolyModFilter);
+        let poly_mod_routed = poly_frequency_a || poly_pulse_width_a || poly_filter;
         let filter_resonance = quantize_analog_pot(settings.get(Parameter::FilterResonance));
-        let direct_filter_envelope = vca::filter_envelope_cutoff_octaves(
+        let filter_envelope_amount =
+            quantize_analog_pot(settings.get(Parameter::FilterEnvelopeAmount));
+        let filter_envelope_control_current = self.filter_envelope_current.get(
+            filter_envelope_amount,
+            vca::filter_envelope_control_current_amps,
+        );
+        let direct_filter_envelope = vca::filter_envelope_cutoff_octaves_with_control_current(
             filter_envelope,
-            quantize_analog_pot(settings.get(Parameter::FilterEnvelopeAmount)),
+            filter_envelope_control_current,
             self.voice_index,
         );
         let filter_cutoff = quantize_analog_pot(settings.get(Parameter::FilterCutoff));
         let filter_keyboard = parameter_enabled(settings, Parameter::FilterKeyboard);
         let common_filter_octaves = direct_filter_envelope + modulation.filter_octaves;
         let amplifier_vca_control = vca::amplifier_envelope_control(amplifier_envelope);
+        let common_frequency_a = frequency_a
+            * self
+                .oscillator_a_modulation_ratio
+                .get(modulation.oscillator_a_semitones);
+        let common_filter_cutoff_log2_hz = filter_cutoff_log2_hz(
+            filter_cutoff,
+            self.note,
+            filter_keyboard,
+            common_filter_octaves,
+        );
 
-        for _ in 0..OSCILLATOR_OVERSAMPLING {
+        for _ in 0..SIGNAL_OVERSAMPLING {
             let sample_b =
                 self.oscillator_b
                     .next(frequency_b, internal_rate, pulse_width_b, waves_b);
-            let poly_oscillator_b_current = vca::poly_mod_oscillator_b_current_amps(
-                sample_b.poly_mod_source_volts,
-                sample_b.poly_mod_source_conductance,
-                poly_oscillator_b_amount,
-                self.voice_index,
-            );
-            let poly_bus_volts =
-                vca::poly_mod_bus_voltage(poly_filter_envelope_current, poly_oscillator_b_current);
-            let poly_destinations = poly_mod::destinations(poly_bus_volts);
+            let poly_destinations = if poly_mod_routed
+                && (poly_filter_envelope_current != 0.0 || poly_oscillator_b_control_current > 0.0)
+            {
+                let poly_oscillator_b_current =
+                    vca::poly_mod_oscillator_b_with_control_current_amps(
+                        sample_b.poly_mod_source_volts,
+                        sample_b.poly_mod_source_conductance,
+                        poly_oscillator_b_control_current,
+                        self.voice_index,
+                    );
+                let poly_bus_volts = vca::poly_mod_bus_voltage(
+                    poly_filter_envelope_current,
+                    poly_oscillator_b_current,
+                );
+                poly_mod::destinations(poly_bus_volts)
+            } else {
+                poly_mod::PolyModDestinations::default()
+            };
             let poly_pitch = if poly_frequency_a {
                 poly_destinations.oscillator_a_semitones
             } else {
@@ -232,53 +389,70 @@ impl Voice {
                 0.0
             };
             let sync_event = sync.then_some(sample_b.hard_sync_event).flatten();
+            let oscillator_a_frequency = if poly_frequency_a {
+                frequency_a * semitone_ratio(modulation.oscillator_a_semitones + poly_pitch)
+            } else {
+                common_frequency_a
+            };
             let sample_a = self.oscillator_a.next_with_sync(
-                frequency_a * semitone_ratio(modulation.oscillator_a_semitones + poly_pitch),
+                oscillator_a_frequency,
                 internal_rate,
                 pulse_width::add_modulation(pulse_width_a, poly_pulse_width),
                 waves_a,
                 sync_event,
             );
+            // With the amplifier envelope at rest, the original voice still
+            // has free-running VCOs. Preserve those phases, PWM history,
+            // hard-sync events and Poly-Mod feedback exactly, but do not run
+            // the inaudible mixer, filter solver, decimator and final VCA.
+            if !render_audio {
+                continue;
+            }
             let poly_filter_octaves = if poly_filter {
                 poly_destinations.filter_octaves
             } else {
                 0.0
             };
-            let cutoff_hz = filter_cutoff_hz(
-                filter_cutoff,
-                self.note,
-                filter_keyboard,
-                common_filter_octaves + poly_filter_octaves,
-            );
-            let mixer = vca::oscillator_mixer_loaded(
+            let cutoff_log2_hz = if poly_filter {
+                filter_cutoff_log2_hz(
+                    filter_cutoff,
+                    self.note,
+                    filter_keyboard,
+                    common_filter_octaves + poly_filter_octaves,
+                )
+            } else {
+                common_filter_cutoff_log2_hz
+            };
+            let mixer = vca::oscillator_mixer_loaded_with_control_current(
                 sample_a.mixer_positive_source_volts,
                 sample_a.mixer_positive_source_conductance,
                 sample_a.mixer_negative_source_volts,
                 sample_a.mixer_negative_source_conductance,
-                level_a,
+                level_a_control_current,
                 self.voice_index,
                 vca::MixerChannel::OscillatorA,
-            ) + vca::oscillator_mixer_loaded(
+            ) + vca::oscillator_mixer_loaded_with_control_current(
                 sample_b.mixer_positive_source_volts,
                 sample_b.mixer_positive_source_conductance,
                 sample_b.mixer_negative_source_volts,
                 sample_b.mixer_negative_source_conductance,
-                level_b,
+                level_b_control_current,
                 self.voice_index,
                 vca::MixerChannel::OscillatorB,
             ) + modulation.noise;
-            let filtered = self.filter.next_with_character(
+            let filtered = self.filter.next_with_character_log2(
                 mixer,
-                cutoff_hz,
+                cutoff_log2_hz,
                 filter_resonance,
                 internal_rate,
                 settings.get(Parameter::VintageSpread),
             );
-            output = self.decimator.push(vca::final_voice(
-                filtered,
-                amplifier_vca_control,
-                self.voice_index,
-            ));
+            let voice_sample = vca::final_voice(filtered, amplifier_vca_control, self.voice_index);
+            output = if SIGNAL_OVERSAMPLING == 1 {
+                Some(voice_sample)
+            } else {
+                self.decimator.push(voice_sample)
+            };
         }
 
         output.unwrap_or(0.0)
@@ -290,20 +464,48 @@ fn parameter_enabled(settings: Settings, parameter: Parameter) -> bool {
 }
 
 fn semitone_ratio(semitones: f32) -> f32 {
-    libm::powf(2.0, semitones / 12.0)
+    // Most voices spend most samples without wheel, LFO or Poly-Mod pitch.
+    // Preserve the exact mathematical identity and avoid entering libm twice
+    // per voice/sample for the overwhelmingly common zero-CV path.
+    if semitones == 0.0 {
+        1.0
+    } else {
+        #[cfg(feature = "realtime-1x")]
+        {
+            realtime_math::exp2(semitones / 12.0)
+        }
+        #[cfg(not(feature = "realtime-1x"))]
+        {
+            libm::exp2f(semitones / 12.0)
+        }
+    }
 }
 
+#[cfg(test)]
 fn filter_cutoff_hz(panel: f32, note: u8, keyboard_tracking: bool, modulation_octaves: f32) -> f32 {
+    libm::exp2f(filter_cutoff_log2_hz(
+        panel,
+        note,
+        keyboard_tracking,
+        modulation_octaves,
+    ))
+}
+
+fn filter_cutoff_log2_hz(
+    panel: f32,
+    note: u8,
+    keyboard_tracking: bool,
+    modulation_octaves: f32,
+) -> f32 {
     let keyboard_octaves = if keyboard_tracking {
         (f32::from(note) - FILTER_KEYBOARD_BASE_NOTE) / 12.0
     } else {
         0.0
     };
-    FILTER_MINIMUM_HZ
-        * libm::powf(
-            2.0,
-            panel.clamp(0.0, 1.0) * FILTER_PANEL_OCTAVES + keyboard_octaves + modulation_octaves,
-        )
+    FILTER_MINIMUM_LOG2_HZ
+        + panel.clamp(0.0, 1.0) * FILTER_PANEL_OCTAVES
+        + keyboard_octaves
+        + modulation_octaves
 }
 
 #[cfg(test)]
@@ -460,6 +662,23 @@ mod tests {
     }
 
     #[test]
+    fn never_allocated_voice_stays_dormant_until_start() {
+        let settings = Settings::default();
+        let mut dormant = Voice::default();
+        for _ in 0..64 {
+            assert_eq!(
+                dormant.next(48_000.0, settings, VoiceModulation::default()),
+                0.0
+            );
+        }
+        assert!(!dormant.oscillators_initialized);
+
+        dormant.start(0, 60, 100, 1);
+        assert_eq!(dormant.oscillator_a.phase(), INITIAL_PHASE_A[1]);
+        assert_eq!(dormant.oscillator_b.phase(), INITIAL_PHASE_B[1]);
+    }
+
+    #[test]
     fn hard_sync_changes_the_render_when_b_is_detuned() {
         let mut free_settings = Settings::default();
         assert!(free_settings.set(Parameter::OscillatorBDetune as u32, 0.9));
@@ -488,13 +707,21 @@ mod tests {
         let mut modulated = Voice::default();
         dry.start(0, 36, 127, 0);
         modulated.start(0, 36, 127, 0);
-        let _ = dry.next_signal_path(48_000.0, dry_settings, VoiceModulation::default(), 1.0, 1.0);
+        let _ = dry.next_signal_path(
+            48_000.0,
+            dry_settings,
+            VoiceModulation::default(),
+            1.0,
+            1.0,
+            true,
+        );
         let _ = modulated.next_signal_path(
             48_000.0,
             modulated_settings,
             VoiceModulation::default(),
             1.0,
             1.0,
+            true,
         );
         assert!(modulated.oscillator_a.phase() < dry.oscillator_a.phase());
     }

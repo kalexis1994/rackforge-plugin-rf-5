@@ -66,6 +66,10 @@ wheel in RF-5.
   modeled 100k/47k low-pass gain.
 - Wheel Mod amount is the passive/live performance level after that dual-OTA
   source and is not stored in a program.
+- MIDI CC1's 128 positions are reconstructed as a continuous wheel trajectory
+  with a three-millisecond, sample-rate-invariant dezipper. This transport
+  filter removes digital controller steps only; zero, full travel and every
+  downstream circuit-derived modulation ratio remain unchanged.
 - The five destination switches no longer multiply three unrelated depth
   guesses or require a normalized-bus voltage anchor. They consume U378's
   reconstructed voltage and follow the populated SD334 networks: 182 kohm/100 kohm for
@@ -129,6 +133,8 @@ and spectral assumptions are documented separately in
   resistor ratios while consuming the reconstructed W-MOD voltage directly;
 - silence and note events do not stop or retrigger the LFO;
 - CC1 changes the render when a documented destination is enabled;
+- CC1 steps converge continuously with the same three-millisecond time
+  constant at every supported sample rate;
 - audition wheel state is cleared by CC1, normal program loads and state loads;
 - all supported sample rates remain finite and bounded.
 
