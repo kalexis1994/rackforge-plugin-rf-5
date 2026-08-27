@@ -1,8 +1,6 @@
 {
   "banks": [
-    { "id": "factory.rf5.original", "name": "RF-5 Original 40", "order": 0 },
-    { "id": "factory.rf5.baseline", "name": "RF-5 Baseline", "order": 1 },
-    { "id": "factory.rf5.audition", "name": "RF-5 Audition", "order": 2 }
+    { "id": "factory.rf5.original", "name": "RF-5 Original 40", "order": 0 }
   ],
   "presets": [
     { "bank": "factory.rf5.original", "editable": false, "id": "original-11-brass", "name": "1-1 Brass", "order": 0, "tags": ["rf5", "original-40", "rev3"] },
@@ -44,40 +42,7 @@
     { "bank": "factory.rf5.original", "editable": false, "id": "original-55-helicopter", "name": "5-5 Helicopter", "order": 36, "tags": ["rf5", "original-40", "rev3"] },
     { "bank": "factory.rf5.original", "editable": false, "id": "original-56-resonance-bells", "name": "5-6 Resonance Bells", "order": 37, "tags": ["rf5", "original-40", "rev3"] },
     { "bank": "factory.rf5.original", "editable": false, "id": "original-57-hollow-sound", "name": "5-7 Hollow Sound", "order": 38, "tags": ["rf5", "original-40", "rev3"] },
-    { "bank": "factory.rf5.original", "editable": false, "id": "original-58-cat", "name": "5-8 Cat", "order": 39, "tags": ["rf5", "original-40", "rev3"] },
-    { "bank": "factory.rf5.baseline", "editable": false, "id": "baseline-init", "name": "Baseline Init", "order": 0, "tags": ["rf5", "baseline"] },
-    { "bank": "factory.rf5.baseline", "editable": false, "id": "baseline-warm", "name": "Baseline Warm", "order": 1, "tags": ["rf5", "baseline"] },
-    { "bank": "factory.rf5.baseline", "editable": false, "id": "baseline-pad", "name": "Baseline Pad", "order": 2, "tags": ["rf5", "baseline"] },
-    { "bank": "factory.rf5.baseline", "editable": false, "id": "baseline-lead", "name": "Baseline Lead", "order": 3, "tags": ["rf5", "baseline"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-wheel-vibrato", "name": "Audition - Wheel Vibrato", "order": 0, "tags": ["rf5", "audition", "lfo", "wheel-mod"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-wheel-pwm", "name": "Audition - Wheel PWM", "order": 1, "tags": ["rf5", "audition", "lfo", "wheel-mod"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-wheel-filter", "name": "Audition - Wheel Filter", "order": 2, "tags": ["rf5", "audition", "lfo", "wheel-mod"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-filter-drive", "name": "Audition - Filter Drive", "order": 3, "tags": ["rf5", "audition", "filter", "drive"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-filter-resonance", "name": "Audition - Filter Resonance", "order": 4, "tags": ["rf5", "audition", "filter", "resonance"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-envelope-punch", "name": "Audition - Envelope Punch", "order": 5, "tags": ["rf5", "audition", "envelope", "percussive"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-envelope-slow", "name": "Audition - Envelope Slow", "order": 6, "tags": ["rf5", "audition", "envelope", "pad"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-ca3280-drive", "name": "Audition - CA3280 Drive", "order": 7, "tags": ["rf5", "audition", "vca", "ca3280", "drive"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-common-noise-vca", "name": "Audition - Common Noise VCA", "order": 8, "tags": ["rf5", "audition", "noise", "vca", "ca3280"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-poly-mod-oscillator-b", "name": "Audition - Poly Mod Oscillator B", "order": 9, "tags": ["rf5", "audition", "poly-mod", "oscillator-b", "fm"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-poly-mod-filter-envelope", "name": "Audition - Poly Mod Filter Envelope", "order": 10, "tags": ["rf5", "audition", "poly-mod", "filter", "envelope"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-wheel-noise-filter", "name": "Audition - Wheel Noise Filter", "order": 11, "tags": ["rf5", "audition", "wheel-mod", "noise", "filter"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-hard-sync", "name": "Audition - CEM3340 Hard Sync", "order": 12, "tags": ["rf5", "audition", "oscillator", "hard-sync", "cem3340"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-unison-priority", "name": "Audition - Unison Low Note", "order": 13, "tags": ["rf5", "audition", "unison", "low-note-priority", "legato"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-lfo-slow", "name": "Audition - LFO Slow Range", "order": 14, "tags": ["rf5", "audition", "lfo", "slow"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-lfo-fast", "name": "Audition - LFO Fast Range", "order": 15, "tags": ["rf5", "audition", "lfo", "fast"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-unison-glide", "name": "Audition - Unison Glide Circuit", "order": 16, "tags": ["rf5", "audition", "unison", "glide", "ca3280"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-release-switch-off", "name": "Audition - Release Switch Off", "order": 17, "tags": ["rf5", "audition", "envelope", "release", "program-memory"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-oscillator-b-fine-zero", "name": "Audition - Oscillator B Fine Zero", "order": 18, "tags": ["rf5", "audition", "oscillator-b", "fine", "unison"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-oscillator-b-fine-semitone", "name": "Audition - Oscillator B Fine Semitone", "order": 19, "tags": ["rf5", "audition", "oscillator-b", "fine", "semitone"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-pulse-width-minimum", "name": "Audition - Pulse Width 1%", "order": 20, "tags": ["rf5", "audition", "oscillator-a", "pulse-width", "minimum"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-pulse-width-square", "name": "Audition - Pulse Width 50%", "order": 21, "tags": ["rf5", "audition", "oscillator-a", "pulse-width", "square"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-pulse-width-maximum", "name": "Audition - Pulse Width 99%", "order": 22, "tags": ["rf5", "audition", "oscillator-a", "pulse-width", "maximum"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-oscillator-b-triangle", "name": "Audition - CEM3340 Triangle", "order": 23, "tags": ["rf5", "audition", "oscillator-b", "triangle", "cem3340"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-poly-mod-pulse-width", "name": "Audition - Audio-rate PWM", "order": 24, "tags": ["rf5", "audition", "oscillator-a", "pulse-width", "poly-mod", "pwm"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-filter-slew-transient", "name": "Audition - Filter Slew Transient", "order": 25, "tags": ["rf5", "audition", "filter", "resonance", "tl082", "slew"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-envelope-phase-steps", "name": "Audition - Envelope Phase Steps", "order": 26, "tags": ["rf5", "audition", "envelope", "cem3310", "transient"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-lfo-saw-unipolar", "name": "Audition - LFO Saw Unipolar", "order": 27, "tags": ["rf5", "audition", "lfo", "saw", "wheel-mod", "unipolar"] },
-    { "bank": "factory.rf5.audition", "editable": false, "id": "audition-lfo-square-unipolar", "name": "Audition - LFO Square Unipolar", "order": 28, "tags": ["rf5", "audition", "lfo", "square", "wheel-mod", "unipolar"] }
+    { "bank": "factory.rf5.original", "editable": false, "id": "original-58-cat", "name": "5-8 Cat", "order": 39, "tags": ["rf5", "original-40", "rev3"] }
   ],
   "schema_version": 1
 }

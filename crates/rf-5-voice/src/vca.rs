@@ -243,7 +243,7 @@ const FINAL_VCA_PROFILES: [OtaHalfProfile; 5] = [
 ];
 
 // Both halves of U422 on each voice card: direct filter-envelope amount and
-// the inverted filter-envelope contribution to Poly Mod. The service trims
+// the positive filter-envelope contribution to Poly Mod. The service trims
 // cancel offsets, not the small remaining transconductance spread.
 const ENVELOPE_AMOUNT_PROFILES: [EnvelopeAmountProfile; 5] = [
     EnvelopeAmountProfile {

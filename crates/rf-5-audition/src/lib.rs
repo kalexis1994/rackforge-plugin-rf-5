@@ -79,7 +79,7 @@ fn validate_metrics(metrics: &RenderMetrics) -> io::Result<()> {
 
 fn render_scene(output_directory: &Path, scene: &Scene) -> io::Result<RenderMetrics> {
     let mut engine = Engine::default();
-    if !engine.prepare(f64::from(SAMPLE_RATE)) || !engine.load_program(scene.program) {
+    if !engine.prepare(f64::from(SAMPLE_RATE)) || !engine.load_diagnostic_program(scene.program) {
         return Err(io::Error::other(format!(
             "could not prepare scene {} with program {}",
             scene.id, scene.program
@@ -725,7 +725,7 @@ mod tests {
         fn probe(program: &str) -> Vec<f32> {
             let mut engine = Engine::default();
             assert!(engine.prepare(f64::from(SAMPLE_RATE)));
-            assert!(engine.load_program(program));
+            assert!(engine.load_diagnostic_program(program));
             engine.handle_midi([0x90, 48, 112]);
             let mut samples = Vec::with_capacity(16_384);
             for frame in 0..16_384 {

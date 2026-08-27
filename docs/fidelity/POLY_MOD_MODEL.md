@@ -7,11 +7,14 @@ RCA/CA3280 amount VCAs add that voice's filter-envelope control voltage and
 oscillator-B waveform bus. The resulting bus can reach oscillator-A frequency,
 oscillator-A pulse width and filter cutoff through three independent switches.
 
-The filter-envelope input has negative polarity in this path. The service test
-therefore expects increasing FILTER ENV Poly Mod to make oscillator A descend
-in frequency and to sweep a resonating filter downward. Oscillator B remains a
-Poly Mod source even when its audio mixer level is zero, and any enabled B
-waveforms contribute to the source bus. Oscillator hard sync is a separate route.
+The filter envelope enters U422 pin 16, the positive input, and pin 13 sources
+its output into the shared R4108 load. A positive envelope therefore raises
+oscillator-A frequency and filter cutoff. Service test 4-8's "DESCENDING FREQ"
+and "DESCENDING RES FILT SWEEP" indications describe the audible trajectory as
+that positive voltage decays, not an inverted source polarity. Oscillator B
+remains a Poly Mod source even when its audio mixer level is zero, and any
+enabled B waveforms contribute to the source bus. Oscillator hard sync is a
+separate route.
 
 ## Active candidate
 
@@ -22,8 +25,8 @@ waveforms contribute to the source bus. Oscillator hard sync is a separate route
   controls direct filter-envelope amount and the other controls the Poly Mod
   envelope source. The direct half now produces U433 summing current from the
   populated Q301/5.1k IABC, 121k diode-bias, 475k/47.5k input and 100k
-  common-CV reference networks. The latter is explicitly inverted at the
-  summing node.
+  common-CV reference networks. The Poly Mod half retains the positive polarity
+  established by U422 pins 16 and 13 at the summing node.
 - SD333 Q304 turns the Poly Mod envelope amount's 0-10 V S/H output into its
   physical IABC curve through 3 kohm. Q303 independently applies 5.6 kohm to
   oscillator B. Both normalized source endpoints are therefore reached only
@@ -86,7 +89,8 @@ unmeasured.
 
 ## Acceptance tests
 
-- full filter-envelope Poly Mod makes oscillator A descend rather than ascend;
+- full filter-envelope Poly Mod raises oscillator A at attack and then descends
+  as the envelope decays, matching service test 4-8;
 - oscillator-B Poly Mod remains audible with oscillator-B mixer level at zero;
 - paired direct/Poly Mod envelope halves remain close but non-identical;
 - direct envelope depth follows U422/U433 current and resistor ratios rather

@@ -509,8 +509,6 @@ mod browser {
     fn bank_label(bank: &str) -> String {
         match bank {
             "factory.rf5.original" => "ORIGINAL 40 PROGRAMS".to_owned(),
-            "factory.rf5.baseline" => "BASELINE PROGRAMS".to_owned(),
-            "factory.rf5.audition" => "AUDITION PROGRAMS".to_owned(),
             _ => escape_html(bank),
         }
     }
@@ -1254,13 +1252,13 @@ mod tests {
     #[test]
     fn protocol_and_catalog_identity_are_stable() {
         let sound = Sound {
-            id: "baseline-init".to_owned(),
-            name: "RF-5 Init".to_owned(),
-            bank: "factory.rf5.baseline".to_owned(),
+            id: "original-11-brass".to_owned(),
+            name: "1-1 Brass".to_owned(),
+            bank: "factory.rf5.original".to_owned(),
         };
         assert_eq!(PROTOCOL, "rackforge.plugin.web@1");
-        assert_eq!(sound.bank, "factory.rf5.baseline");
-        assert_eq!(sound.id, "baseline-init");
-        assert_eq!(sound.name, "RF-5 Init");
+        assert_eq!(sound.bank, "factory.rf5.original");
+        assert_eq!(sound.id, "original-11-brass");
+        assert_eq!(sound.name, "1-1 Brass");
     }
 }

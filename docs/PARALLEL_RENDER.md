@@ -29,11 +29,13 @@ end_block (coordinator, serial)
 - A bounded command journal carries reset, start, retune and release operations
   to the corresponding physical unit at the exact frame where the coordinator
   observed them.
-- A monotonically increasing voice epoch invalidates worker state after a
-  reset, program operation or topology rebuild without relying on shared Rust
-  memory between WebAssembly instances.
-- Free-running oscillators remain active after their envelope becomes idle.
-  Once a physical card has been initialized, it continues to be scheduled.
+- A monotonically increasing voice epoch invalidates worker state after an
+  explicit reset or Poly/Unison topology rebuild without relying on shared
+  Rust memory between WebAssembly instances. Ordinary program recall preserves
+  the analog card state, as on the hardware.
+- All five physical cards are powered and scheduled from `prepare`, before any
+  key assignment. Their free-running oscillators, oscillator mixers and filter
+  capacitor memories continue advancing after the final VCA becomes idle.
 
 The shared payload contains only the compact settings and modulation values
 required by all voices. The per-unit payload contains calibration data and the

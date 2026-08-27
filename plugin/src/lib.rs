@@ -325,7 +325,7 @@ impl ParallelProcessor for Rf5Processor {
         if !sample_rate.is_finite() || sample_rate <= 0.0 {
             return;
         }
-        unit.synchronize_epoch(dispatch_header.initial_epoch);
+        unit.synchronize_epoch(dispatch_header.initial_epoch, unit_index as usize);
 
         let command_offset = calibration_offset
             .checked_add(frames * mem::size_of::<VoiceCalibration>())
@@ -454,8 +454,16 @@ fn panic(_info: &core::panic::PanicInfo<'_>) -> ! {
 mod tests {
     use super::*;
     use rackforge_plugin_sdk::{MidiEvent, ParameterEvent, Processor};
+    use std::sync::{Mutex, MutexGuard};
 
     const TEST_FRAMES: u32 = 256;
+    static PARALLEL_EXPORT_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn parallel_export_test_guard() -> MutexGuard<'static, ()> {
+        PARALLEL_EXPORT_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 
     fn render_reference(
         engine: &mut Engine,
@@ -497,6 +505,7 @@ mod tests {
 
     #[test]
     fn adapter_renders_midi_and_sample_accurate_automation() {
+        let _guard = parallel_export_test_guard();
         let mut processor = RackForgeParallelExport::default();
         assert!(processor.prepare(48_000.0, 256, 0, 2));
         let mut output = [0.0_f32; 512];
@@ -523,6 +532,7 @@ mod tests {
 
     #[test]
     fn adapter_rejects_audio_inputs_and_excess_outputs() {
+        let _guard = parallel_export_test_guard();
         let mut processor = RackForgeParallelExport::default();
         assert!(!processor.prepare(48_000.0, 256, 1, 2));
         assert!(!processor.prepare(48_000.0, 256, 0, 3));
@@ -530,12 +540,13 @@ mod tests {
 
     #[test]
     fn composed_parallel_contract_is_bit_exact_with_the_sequential_engine() {
+        let _guard = parallel_export_test_guard();
         let mut reference = Engine::default();
         let mut parallel = RackForgeParallelExport::default();
         assert!(reference.prepare(48_000.0));
         assert!(parallel.prepare(48_000.0, TEST_FRAMES, 0, 2));
-        assert!(reference.load_program("baseline-pad"));
-        assert!(parallel.load_preset("baseline-pad"));
+        assert!(reference.load_program("original-34-high-strings"));
+        assert!(parallel.load_preset("original-34-high-strings"));
 
         let scripts: [(&[MidiEvent], &[ParameterEvent]); 10] = [
             (
@@ -626,7 +637,7 @@ mod tests {
         parallel.process(&[], &mut actual, &program_note, &[], TEST_FRAMES, 0, 2);
         assert_eq!(
             actual, expected,
-            "program load did not reset every unit exactly"
+            "program load did not reach every unit exactly"
         );
 
         reference.reset_voices();
@@ -637,16 +648,139 @@ mod tests {
     }
 
     #[test]
+    fn percussive_originals_retrigger_every_voice_through_the_parallel_contract() {
+        let _guard = parallel_export_test_guard();
+        for program in ["original-14-percussive-e-piano", "original-16-harpsichord"] {
+            let mut reference = Engine::default();
+            let mut parallel = RackForgeParallelExport::default();
+            assert!(reference.prepare(48_000.0));
+            assert!(parallel.prepare(48_000.0, TEST_FRAMES, 0, 2));
+            assert!(reference.load_program(program));
+            assert!(parallel.load_preset(program));
+
+            // Let the physical CPU/CV scan and sample-hold network settle the
+            // recalled patch before the first key, as a player naturally can.
+            for block in 0..375 {
+                let expected = render_reference(&mut reference, &[], &[]);
+                let mut actual = [0.0; TEST_FRAMES as usize * 2];
+                parallel.process(&[], &mut actual, &[], &[], TEST_FRAMES, 0, 2);
+                assert_eq!(
+                    actual, expected,
+                    "{program} diverged during recall block {block}"
+                );
+            }
+
+            let mut strike_peaks = [0.0_f32; 30];
+            for strike in 0..30_u8 {
+                let note = 60;
+                let channel = strike % VOICE_COUNT as u8;
+                let mut strike_peak = 0.0_f32;
+                for block in 0..12 {
+                    let note_on = [midi(7, [0x90 | channel, note, 112])];
+                    let note_off = [midi(193, [0x80 | channel, note, 0])];
+                    let events: &[MidiEvent] = match block {
+                        0 => &note_on,
+                        7 => &note_off,
+                        _ => &[],
+                    };
+                    let expected = render_reference(&mut reference, events, &[]);
+                    let mut actual = [0.0; TEST_FRAMES as usize * 2];
+                    parallel.process(&[], &mut actual, events, &[], TEST_FRAMES, 0, 2);
+                    assert_eq!(
+                        actual, expected,
+                        "{program} diverged on strike {strike}, block {block}"
+                    );
+                    if block < 7 {
+                        strike_peak = strike_peak.max(
+                            actual
+                                .chunks_exact(2)
+                                .map(|frame| frame[0].abs())
+                                .fold(0.0_f32, f32::max),
+                        );
+                    }
+                }
+                assert!(
+                    strike_peak > 1.0e-4,
+                    "{program} lost strike {strike} on physical voice {}",
+                    strike as usize % VOICE_COUNT
+                );
+                strike_peaks[strike as usize] = strike_peak;
+            }
+            for strike in 10..strike_peaks.len() {
+                let settled_reference = strike_peaks[5 + strike % VOICE_COUNT];
+                assert!(
+                    strike_peaks[strike] >= settled_reference * 0.45,
+                    "{program} decayed on physical voice {}: strike {} was {} after {}",
+                    strike % VOICE_COUNT,
+                    strike,
+                    strike_peaks[strike],
+                    settled_reference,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn harpsichord_physical_voice_operating_points_remain_settled() {
+        let mut engine = Engine::default();
+        assert!(engine.prepare(48_000.0));
+        assert!(engine.load_program("original-16-harpsichord"));
+        for _ in 0..375 * TEST_FRAMES {
+            let prepared = engine.prepare_next_sample();
+            for unit in 0..VOICE_COUNT {
+                let _ = engine.render_prepared_voice(unit, prepared);
+            }
+        }
+
+        let mut peaks = [0.0_f32; 30];
+        for strike in 0..30_u8 {
+            let channel = strike % VOICE_COUNT as u8;
+            let target = strike as usize % VOICE_COUNT;
+            for block in 0..12 {
+                for frame in 0..TEST_FRAMES as usize {
+                    if block == 0 && frame == 7 {
+                        engine.handle_midi([0x90 | channel, 60, 112]);
+                    }
+                    if block == 7 && frame == 193 {
+                        engine.handle_midi([0x80 | channel, 60, 0]);
+                    }
+                    let prepared = engine.prepare_next_sample();
+                    for unit in 0..VOICE_COUNT {
+                        let sample = engine.render_prepared_voice(unit, prepared);
+                        if unit == target && block < 7 {
+                            peaks[strike as usize] = peaks[strike as usize].max(sample.abs());
+                        }
+                    }
+                }
+            }
+        }
+        for strike in 10..peaks.len() {
+            let settled_reference = peaks[5 + strike % VOICE_COUNT];
+            assert!(
+                peaks[strike] >= settled_reference * 0.75,
+                "harpsichord voice {} lost its settled operating point: strike {} was {} after {}",
+                strike % VOICE_COUNT,
+                strike,
+                peaks[strike],
+                settled_reference,
+            );
+        }
+    }
+
+    #[test]
     fn every_packaged_preset_is_loadable_by_the_engine() {
         let catalog: serde_json::Value =
             serde_json::from_str(include_str!("../package/metadata/presets.json")).unwrap();
         let presets = catalog["presets"].as_array().unwrap();
-        assert_eq!(presets.len(), 73);
+        assert_eq!(presets.len(), 40);
 
         let mut processor = RackForgeParallelExport::default();
         for preset in presets {
             let id = preset["id"].as_str().unwrap();
             assert!(processor.load_preset(id), "engine rejected preset {id}");
         }
+
+        assert!(!processor.load_preset("baseline-pad"));
+        assert!(!processor.load_preset("audition-filter-resonance"));
     }
 }

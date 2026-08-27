@@ -32,7 +32,7 @@ VCO B ----/                    four-pole VCF -> final VCA -> voice output
 common noise OTA ------------/       ^               ^
   |                                  |               |
   +-- sync / Poly Mod ---------------+       amplifier envelope
-filter envelope ---------------------+---> Poly Mod bus (inverted)
+filter envelope ---------------------+---> Poly Mod bus (positive; decay sweeps down)
 ```
 
 The first audible implementation is deliberately named a baseline. Individual

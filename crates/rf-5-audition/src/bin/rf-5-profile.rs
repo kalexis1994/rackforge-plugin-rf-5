@@ -43,7 +43,7 @@ fn main() {
 
     for wheel in [0_u8, 32, 64, 96, 127] {
         let mut engine = configure(|engine| {
-            assert!(engine.load_program("baseline-pad"));
+            assert!(engine.load_diagnostic_program("baseline-pad"));
             engine.handle_midi([0xb0, 1, wheel]);
         });
         for note in [48, 55, 60, 64, 67] {
@@ -57,7 +57,7 @@ fn main() {
 }
 
 fn measure_baseline_pad_wheel_ramp(frames_per_step: usize) {
-    let mut engine = configure(|engine| assert!(engine.load_program("baseline-pad")));
+    let mut engine = configure(|engine| assert!(engine.load_diagnostic_program("baseline-pad")));
     for note in [48, 55, 60, 64, 67] {
         engine.note_on(0, note, 100);
     }

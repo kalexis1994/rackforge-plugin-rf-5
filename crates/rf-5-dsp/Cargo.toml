@@ -15,6 +15,7 @@ hybrid-four-two = ["rf-5-voice/hybrid-four-two"]
 held-filter-two-times = ["rf-5-voice/held-filter-two-times"]
 delayed-low-resonance = ["rf-5-voice/delayed-low-resonance"]
 fast-math = ["rf-5-voice/fast-math"]
+diagnostic-programs = []
 
 [dependencies]
 rf-5-contract.workspace = true

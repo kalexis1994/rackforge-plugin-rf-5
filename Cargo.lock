@@ -141,7 +141,7 @@ dependencies = [
 
 [[package]]
 name = "rackforge-plugin-sdk"
-version = "0.1.2"
+version = "0.1.7"
 source = "git+https://github.com/kalexis1994/rackforge.git?rev=03fdb0ea75850405cf57683ae957eec109e85daa#03fdb0ea75850405cf57683ae957eec109e85daa"
 
 [[package]]

@@ -18,7 +18,7 @@ fast-math = ["rf-5-dsp/fast-math"]
 
 [dependencies]
 rf-5-contract.workspace = true
-rf-5-dsp.workspace = true
+rf-5-dsp = { workspace = true, features = ["diagnostic-programs"] }
 rustfft = "6.4"
 serde.workspace = true
 serde_json.workspace = true

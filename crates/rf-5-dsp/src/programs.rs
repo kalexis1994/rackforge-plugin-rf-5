@@ -1,19 +1,20 @@
-//! Factory programs owned by the DSP engine.
+//! Original factory programs and internal diagnostic fixtures.
 //!
-//! The audition programs deliberately set a temporary performance-wheel
-//! position. This lets a listener verify Wheel Mod without a front panel or a
-//! physical modulation wheel. The override is machine state, never patch
-//! state, and the first incoming CC1 immediately replaces it.
+//! Production builds expose only the forty original programs. The optional
+//! `diagnostic-programs` feature keeps focused laboratory conditions available
+//! to the offline renderer without publishing them in the plugin catalog.
 
 use rf_5_contract::{
-    PATCH_PARAMETER_COUNT, Parameter, Settings,
-    hardware::{
-        OSCILLATOR_FREQUENCY_CONCERT_NORMALIZED, PROGRAM_BYTES, ProgramByte, decode_program,
-    },
+    PATCH_PARAMETER_COUNT, Settings,
+    hardware::{PROGRAM_BYTES, ProgramByte, decode_program},
 };
+
+#[cfg(any(test, feature = "diagnostic-programs"))]
+use rf_5_contract::{Parameter, hardware::OSCILLATOR_FREQUENCY_CONCERT_NORMALIZED};
 
 use crate::original_programs_data::ORIGINAL_PROGRAMS;
 
+#[cfg(any(test, feature = "diagnostic-programs"))]
 const BASELINE_INIT: [f32; PATCH_PARAMETER_COUNT] = [
     0.72,
     0.72,
@@ -65,6 +66,7 @@ const BASELINE_INIT: [f32; PATCH_PARAMETER_COUNT] = [
     1.0,
 ];
 
+#[cfg(any(test, feature = "diagnostic-programs"))]
 const BASELINE_WARM: [f32; PATCH_PARAMETER_COUNT] = [
     0.76,
     0.76,
@@ -121,6 +123,7 @@ const BASELINE_WARM: [f32; PATCH_PARAMETER_COUNT] = [
 // cutoff and pink noise makes this particular musical pad collapse into an
 // intentionally extreme effect. The baseline patch uses pure LFO dual PWM;
 // the diagnostic programs retain the unrestricted physical routings.
+#[cfg(any(test, feature = "diagnostic-programs"))]
 const BASELINE_PAD: [f32; PATCH_PARAMETER_COUNT] = [
     0.68,
     0.62,
@@ -172,6 +175,7 @@ const BASELINE_PAD: [f32; PATCH_PARAMETER_COUNT] = [
     1.0,
 ];
 
+#[cfg(any(test, feature = "diagnostic-programs"))]
 const BASELINE_LEAD: [f32; PATCH_PARAMETER_COUNT] = [
     0.64,
     0.72,
@@ -231,6 +235,7 @@ pub(crate) struct Program {
 }
 
 impl Program {
+    #[cfg(any(test, feature = "diagnostic-programs"))]
     const fn normal(values: [f32; PATCH_PARAMETER_COUNT]) -> Self {
         Self {
             values,
@@ -250,6 +255,7 @@ impl Program {
         }
     }
 
+    #[cfg(any(test, feature = "diagnostic-programs"))]
     fn audition(mut values: [f32; PATCH_PARAMETER_COUNT], route: AuditionRoute) -> Self {
         // Common LFO audition setup: triangle only, no noise in the Wheel Mod
         // source crossfade. Destination switches are set below per route.
@@ -307,6 +313,7 @@ impl Program {
         }
     }
 
+    #[cfg(any(test, feature = "diagnostic-programs"))]
     fn filter_drive() -> Self {
         let mut values = BASELINE_WARM;
         values[Parameter::OscillatorALevel as usize] = 1.0;
@@ -322,6 +329,7 @@ impl Program {
         Self::normal(values)
     }
 
+    #[cfg(any(test, feature = "diagnostic-programs"))]
     fn filter_resonance() -> Self {
         let mut values = BASELINE_INIT;
         values[Parameter::OscillatorALevel as usize] = 0.42;
@@ -338,6 +346,7 @@ impl Program {
         Self::normal(values)
     }
 
+    #[cfg(any(test, feature = "diagnostic-programs"))]
     fn filter_slew_transient() -> Self {
         let mut program = Self::filter_drive();
         program.values[Parameter::FilterCutoff as usize] = 0.30;
@@ -354,6 +363,7 @@ impl Program {
         program
     }
 
+    #[cfg(any(test, feature = "diagnostic-programs"))]
     fn envelope_punch() -> Self {
         let mut values = BASELINE_WARM;
         values[Parameter::FilterCutoff as usize] = 0.30;
@@ -370,6 +380,7 @@ impl Program {
         Self::normal(values)
     }
 
+    #[cfg(any(test, feature = "diagnostic-programs"))]
     fn envelope_phase_steps() -> Self {
         let mut values = BASELINE_WARM;
         values[Parameter::FilterCutoff as usize] = 0.34;
@@ -386,6 +397,7 @@ impl Program {
         Self::normal(values)
     }
 
+    #[cfg(any(test, feature = "diagnostic-programs"))]
     fn envelope_slow() -> Self {
         let mut values = BASELINE_PAD;
         values[Parameter::AmpAttack as usize] = 0.62;
@@ -400,6 +412,7 @@ impl Program {
         Self::normal(values)
     }
 
+    #[cfg(any(test, feature = "diagnostic-programs"))]
     fn release_switch_off() -> Self {
         let mut values = BASELINE_PAD;
         // The long stored pots make the global override unmistakable: the
@@ -411,6 +424,7 @@ impl Program {
         Self::normal(values)
     }
 
+    #[cfg(any(test, feature = "diagnostic-programs"))]
     fn ca3280_drive() -> Self {
         let mut values = BASELINE_WARM;
         values[Parameter::OscillatorALevel as usize] = 1.0;
@@ -431,6 +445,7 @@ impl Program {
         Self::normal(values)
     }
 
+    #[cfg(any(test, feature = "diagnostic-programs"))]
     fn common_noise_vca() -> Self {
         let mut values = BASELINE_INIT;
         values[Parameter::OscillatorALevel as usize] = 0.0;
@@ -446,6 +461,7 @@ impl Program {
         Self::normal(values)
     }
 
+    #[cfg(any(test, feature = "diagnostic-programs"))]
     fn poly_mod_oscillator_b() -> Self {
         let mut values = BASELINE_LEAD;
         values[Parameter::OscillatorBLevel as usize] = 0.0;
@@ -462,6 +478,7 @@ impl Program {
         Self::normal(values)
     }
 
+    #[cfg(any(test, feature = "diagnostic-programs"))]
     fn poly_mod_pulse_width() -> Self {
         let mut values = BASELINE_INIT;
         values[Parameter::OscillatorALevel as usize] = 0.72;
@@ -487,6 +504,7 @@ impl Program {
         Self::normal(values)
     }
 
+    #[cfg(any(test, feature = "diagnostic-programs"))]
     fn poly_mod_filter_envelope() -> Self {
         let mut values = BASELINE_INIT;
         values[Parameter::OscillatorALevel as usize] = 0.54;
@@ -506,6 +524,7 @@ impl Program {
         Self::normal(values)
     }
 
+    #[cfg(any(test, feature = "diagnostic-programs"))]
     fn wheel_noise_filter() -> Self {
         let mut program = Self::audition(BASELINE_WARM, AuditionRoute::Filter);
         program.values[Parameter::WheelModSourceMix as usize] = 1.0;
@@ -516,6 +535,7 @@ impl Program {
         program
     }
 
+    #[cfg(any(test, feature = "diagnostic-programs"))]
     fn lfo_rate(control: f32) -> Self {
         let mut program = Self::audition(BASELINE_LEAD, AuditionRoute::Vibrato);
         program.values[Parameter::LfoFrequency as usize] = control;
@@ -525,6 +545,7 @@ impl Program {
         program
     }
 
+    #[cfg(any(test, feature = "diagnostic-programs"))]
     fn lfo_unipolar_waveform(square: bool) -> Self {
         let mut program = Self::audition(BASELINE_LEAD, AuditionRoute::Vibrato);
         program.values[Parameter::LfoFrequency as usize] = 0.34;
@@ -535,6 +556,7 @@ impl Program {
         program
     }
 
+    #[cfg(any(test, feature = "diagnostic-programs"))]
     fn oscillator_b_fine(fine: f32) -> Self {
         let mut values = BASELINE_INIT;
         values[Parameter::OscillatorALevel as usize] = 0.62;
@@ -555,6 +577,7 @@ impl Program {
         Self::normal(values)
     }
 
+    #[cfg(any(test, feature = "diagnostic-programs"))]
     fn oscillator_a_pulse_width(pulse_width: f32) -> Self {
         let mut values = BASELINE_INIT;
         values[Parameter::OscillatorALevel as usize] = 0.78;
@@ -572,6 +595,7 @@ impl Program {
         Self::normal(values)
     }
 
+    #[cfg(any(test, feature = "diagnostic-programs"))]
     fn oscillator_b_triangle() -> Self {
         let mut values = BASELINE_INIT;
         values[Parameter::OscillatorALevel as usize] = 0.0;
@@ -593,6 +617,7 @@ impl Program {
         Self::normal(values)
     }
 
+    #[cfg(any(test, feature = "diagnostic-programs"))]
     fn hard_sync() -> Self {
         let mut values = BASELINE_LEAD;
         values[Parameter::OscillatorAFrequency as usize] = OSCILLATOR_FREQUENCY_CONCERT_NORMALIZED;
@@ -620,6 +645,7 @@ impl Program {
         Self::normal(values)
     }
 
+    #[cfg(any(test, feature = "diagnostic-programs"))]
     fn unison_priority() -> Self {
         let mut values = BASELINE_LEAD;
         values[Parameter::Unison as usize] = 1.0;
@@ -635,6 +661,7 @@ impl Program {
         Self::normal(values)
     }
 
+    #[cfg(any(test, feature = "diagnostic-programs"))]
     fn unison_glide() -> Self {
         let mut program = Self::unison_priority();
         // Service test 4-4 calls panel position 6 a medium glide.
@@ -643,6 +670,7 @@ impl Program {
     }
 }
 
+#[cfg(any(test, feature = "diagnostic-programs"))]
 #[derive(Clone, Copy, Debug)]
 enum AuditionRoute {
     Vibrato,
@@ -651,9 +679,14 @@ enum AuditionRoute {
 }
 
 pub(crate) fn find(id: &str) -> Option<Program> {
-    if let Some(original) = ORIGINAL_PROGRAMS.iter().find(|program| program.id == id) {
-        return Some(Program::original(original.raw));
-    }
+    ORIGINAL_PROGRAMS
+        .iter()
+        .find(|program| program.id == id)
+        .map(|original| Program::original(original.raw))
+}
+
+#[cfg(any(test, feature = "diagnostic-programs"))]
+pub(crate) fn find_diagnostic(id: &str) -> Option<Program> {
     Some(match id {
         "baseline-init" => Program::normal(BASELINE_INIT),
         "baseline-warm" => Program::normal(BASELINE_WARM),
@@ -698,6 +731,15 @@ mod tests {
 
     #[test]
     fn every_public_program_is_valid_contract_state() {
+        for original in ORIGINAL_PROGRAMS {
+            let program = find(original.id).expect("original program exists");
+            let mut settings = Settings::default();
+            assert!(settings.apply_patch_array(program.values));
+        }
+    }
+
+    #[test]
+    fn every_diagnostic_fixture_is_valid_contract_state() {
         for id in [
             "baseline-init",
             "baseline-warm",
@@ -733,12 +775,7 @@ mod tests {
             "audition-pulse-width-maximum",
             "audition-oscillator-b-triangle",
         ] {
-            let program = find(id).expect("catalog program exists");
-            let mut settings = Settings::default();
-            assert!(settings.apply_patch_array(program.values));
-        }
-        for original in ORIGINAL_PROGRAMS {
-            let program = find(original.id).expect("original program exists");
+            let program = find_diagnostic(id).expect("diagnostic fixture exists");
             let mut settings = Settings::default();
             assert!(settings.apply_patch_array(program.values));
         }
@@ -761,12 +798,12 @@ mod tests {
 
     #[test]
     fn lfo_polarity_auditions_isolate_the_two_unipolar_sources() {
-        let saw = find("audition-lfo-saw-unipolar").unwrap();
+        let saw = find_diagnostic("audition-lfo-saw-unipolar").unwrap();
         assert_eq!(saw.values[Parameter::LfoSaw as usize], 1.0);
         assert_eq!(saw.values[Parameter::LfoTriangle as usize], 0.0);
         assert_eq!(saw.values[Parameter::LfoSquare as usize], 0.0);
 
-        let square = find("audition-lfo-square-unipolar").unwrap();
+        let square = find_diagnostic("audition-lfo-square-unipolar").unwrap();
         assert_eq!(square.values[Parameter::LfoSaw as usize], 0.0);
         assert_eq!(square.values[Parameter::LfoTriangle as usize], 0.0);
         assert_eq!(square.values[Parameter::LfoSquare as usize], 1.0);
@@ -774,7 +811,7 @@ mod tests {
 
     #[test]
     fn oscillator_b_triangle_audition_is_electrically_isolated() {
-        let program = find("audition-oscillator-b-triangle").unwrap();
+        let program = find_diagnostic("audition-oscillator-b-triangle").unwrap();
         assert_eq!(program.values[Parameter::OscillatorALevel as usize], 0.0);
         assert!(program.values[Parameter::OscillatorBLevel as usize] > 0.0);
         assert_eq!(program.values[Parameter::OscillatorBSaw as usize], 0.0);
@@ -788,7 +825,7 @@ mod tests {
 
     #[test]
     fn audio_rate_pwm_audition_routes_only_the_poly_mod_width_destination() {
-        let program = find("audition-poly-mod-pulse-width").unwrap();
+        let program = find_diagnostic("audition-poly-mod-pulse-width").unwrap();
         assert_eq!(program.values[Parameter::OscillatorBLevel as usize], 0.0);
         assert_eq!(program.values[Parameter::OscillatorBTriangle as usize], 1.0);
         assert!(program.values[Parameter::PolyModOscillatorBAmount as usize] > 0.0);
@@ -805,17 +842,17 @@ mod tests {
 
     #[test]
     fn oscillator_b_fine_auditions_reach_both_physical_endpoints() {
-        let flat = find("audition-oscillator-b-fine-zero").unwrap();
-        let sharp = find("audition-oscillator-b-fine-semitone").unwrap();
+        let flat = find_diagnostic("audition-oscillator-b-fine-zero").unwrap();
+        let sharp = find_diagnostic("audition-oscillator-b-fine-semitone").unwrap();
         assert_eq!(flat.values[Parameter::OscillatorBDetune as usize], 0.0);
         assert_eq!(sharp.values[Parameter::OscillatorBDetune as usize], 1.0);
     }
 
     #[test]
     fn pulse_width_auditions_reach_both_panel_limits_and_nearest_square_code() {
-        let minimum = find("audition-pulse-width-minimum").unwrap();
-        let square = find("audition-pulse-width-square").unwrap();
-        let maximum = find("audition-pulse-width-maximum").unwrap();
+        let minimum = find_diagnostic("audition-pulse-width-minimum").unwrap();
+        let square = find_diagnostic("audition-pulse-width-square").unwrap();
+        let maximum = find_diagnostic("audition-pulse-width-maximum").unwrap();
         let index = Parameter::OscillatorAPulseWidth as usize;
         assert_eq!(minimum.values[index], 0.0);
         assert_eq!(
@@ -833,7 +870,7 @@ mod tests {
             ("baseline-pad", 15),
             ("baseline-lead", 21),
         ] {
-            let program = find(id).unwrap();
+            let program = find_diagnostic(id).unwrap();
             assert_eq!(
                 rf_5_contract::hardware::analog_pot_code(
                     program.values[Parameter::OscillatorBDetune as usize]
@@ -842,7 +879,7 @@ mod tests {
             );
         }
 
-        let pad = find("baseline-pad").unwrap();
+        let pad = find_diagnostic("baseline-pad").unwrap();
         assert_eq!(
             rf_5_contract::hardware::analog_pot_code(
                 pad.values[Parameter::OscillatorALevel as usize]

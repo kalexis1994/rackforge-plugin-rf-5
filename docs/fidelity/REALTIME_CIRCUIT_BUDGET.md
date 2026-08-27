@@ -31,6 +31,9 @@ After the passive five-input sum, the common master CA3280, output coupling
 capacitor, loaded NE5534 follower and jack isolation are also retained. Control
 scanning, sample-and-hold state, drift, automatic tune, LFO/noise sources and
 performance modulation remain independent physical or firmware-derived state.
+The five oscillator-mixer/filter paths continue evolving while their final
+VCAs are closed; this preserves pulse-wave DC operating points and prevents a
+stale nonlinear filter state from appearing at the next key-down.
 
 ## Bounded numerical transformations
 

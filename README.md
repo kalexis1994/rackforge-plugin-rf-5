@@ -8,8 +8,9 @@ The target architecture combines two voltage-controlled oscillators per voice,
 the original one-edge CEM3340 hard-sync path, audio-rate polyphonic modulation,
 a four-pole resonant low-pass filter, separate filter and amplifier envelopes,
 unison and performance controls. All factory programs and interface assets
-needed at runtime are embedded in the plugin. The catalog combines RF-5-authored
-content with a bit-exact V8.1 projection of the original forty-program set.
+needed at runtime are embedded in the plugin. The public catalog is the
+bit-exact V8.1 projection of the original forty-program set; development-only
+diagnostic fixtures are not packaged as user presets.
 
 ## Current status
 
@@ -38,7 +39,7 @@ direct R104 Master Tune path now reaches both VCO master summers continuously,
 outside the scanned and programmable control domain. The global programmable
 Release switch now sends V8.1's exact fixed `0x64` write—equivalent to physical
 pot code `0x16`—through both release sample/hold cells and envelopes, and every
-RF-5-authored patch is packed through the recovered V8.1
+program is packed through the recovered V8.1
 24-byte program format with 24 seven-bit pots and 22 mapped switches. Separate
 CA3280 mixer, final-voice and master-volume
 transfers now feed the documented five-input summer, C4189 coupling network and
@@ -97,7 +98,7 @@ measurements still pass through the evidence gates in
 
 The integrated RF-5 control surface is now active. It is rendered by a Rust
 WebAssembly module, binds every one of the sixty-three public controls exactly once,
-keeps all three program banks below the hardware panel and reorganizes its five
+keeps the original forty-program bank below the hardware panel and reorganizes its five
 sections at phone, tablet and desktop widths. Pointer capture gives knobs the
 same relative vertical drag on mouse and touch, while RackForge parameter
 attributes keep host-owned context menus and MIDI Link available.
@@ -111,11 +112,9 @@ including their 22 stored switch bits, without reading knob positions from patch
 images. Provenance, conversion rules and reproducibility hashes are documented
 in [`docs/fidelity/ORIGINAL_FACTORY_PROGRAMS.md`](docs/fidelity/ORIGINAL_FACTORY_PROGRAMS.md).
 
-The `RF-5 Audition` factory bank provides
-twenty-nine immediately playable listening programs for Wheel/Poly Mod, LFO range and polarity,
-Sync, filter drive, resonance, fast/slow envelope behaviour, CA3280 drive and
-common noise, including explicit global-Release and oscillator-B FINE endpoint
-comparisons plus pulse-width endpoints. They require no UI; see
+Focused DSP conditions for Wheel/Poly Mod, Sync, resonance, envelopes and
+component limits remain available only to the development audition renderer;
+they are neither listed nor loadable by the production plugin. See
 [`docs/AUDITION_PROGRAMS.md`](docs/AUDITION_PROGRAMS.md).
 
 ## Repository layout

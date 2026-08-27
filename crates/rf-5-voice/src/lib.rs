@@ -315,6 +315,26 @@ pub struct Voice {
 }
 
 impl Voice {
+    /// Construct one powered voice card before any key has been assigned.
+    ///
+    /// The Prophet's VCOs, oscillator mixers and filter never stop when its
+    /// final VCA is closed. Giving every card its physical component profile
+    /// at power-up lets those hidden signal paths reach their real operating
+    /// point before the first note instead of starting from zero on key-down.
+    pub fn initialized(voice_index: usize) -> Self {
+        let index = voice_index % INITIAL_PHASE_A.len();
+        Self {
+            oscillator_a: Vco::with_phase_and_profile(INITIAL_PHASE_A[index], index * 2),
+            oscillator_b: Vco::with_phase_and_profile(INITIAL_PHASE_B[index], index * 2 + 1),
+            oscillators_initialized: true,
+            voice_index: index,
+            amplifier_envelope: AdsrEnvelope::with_profile(index * 2),
+            filter_envelope: AdsrEnvelope::with_profile(index * 2 + 1),
+            filter: Cem3320Filter::with_profile(index),
+            ..Self::default()
+        }
+    }
+
     pub fn note(self) -> u8 {
         self.note
     }
@@ -341,13 +361,12 @@ impl Voice {
         self.voice_index = voice_index % INITIAL_PHASE_A.len();
         self.active = true;
         if !self.oscillators_initialized {
-            let index = self.voice_index;
-            self.oscillator_a = Vco::with_phase_and_profile(INITIAL_PHASE_A[index], index * 2);
-            self.oscillator_b = Vco::with_phase_and_profile(INITIAL_PHASE_B[index], index * 2 + 1);
-            self.filter = Cem3320Filter::with_profile(index);
-            self.amplifier_envelope = AdsrEnvelope::with_profile(index * 2);
-            self.filter_envelope = AdsrEnvelope::with_profile(index * 2 + 1);
-            self.oscillators_initialized = true;
+            let active_note = self.note;
+            let active_channel = self.channel;
+            *self = Self::initialized(self.voice_index);
+            self.note = active_note;
+            self.channel = active_channel;
+            self.active = true;
         }
         self.amplifier_envelope.trigger();
         self.filter_envelope.trigger();
@@ -417,7 +436,6 @@ impl Voice {
             modulation,
             filter_envelope,
             amplifier_envelope,
-            allocated,
         );
         if allocated { voice_output } else { 0.0 }
     }
@@ -429,7 +447,6 @@ impl Voice {
         modulation: VoiceModulation,
         filter_envelope: f32,
         amplifier_envelope: f32,
-        render_audio: bool,
     ) -> f32 {
         let waves_a = WaveSelection {
             saw: enabled(settings.oscillator_a_saw),
@@ -479,7 +496,11 @@ impl Voice {
             poly_filter_envelope_amount,
             vca::poly_mod_filter_envelope_control_current_amps,
         );
-        let poly_filter_envelope_current = -vca::poly_mod_filter_envelope_with_control_current_amps(
+        // SD431 feeds the CEM3310 filter-envelope output through R445 into
+        // U422 pin 16 (+IN). Pin 13 then sources that current directly into
+        // the shared R4108 PMOD load, so a positive envelope must raise the
+        // PMOD bus rather than invert it here.
+        let poly_filter_envelope_current = vca::poly_mod_filter_envelope_with_control_current_amps(
             filter_envelope,
             poly_filter_envelope_control_current,
             self.voice_index,
@@ -568,13 +589,6 @@ impl Voice {
                 waves_a,
                 sync_event,
             );
-            // With the amplifier envelope at rest, the original voice still
-            // has free-running VCOs. Preserve those phases, PWM history,
-            // hard-sync events and Poly-Mod feedback exactly, but do not run
-            // the inaudible mixer, filter solver, decimator and final VCA.
-            if !render_audio {
-                continue;
-            }
             let poly_filter_octaves = if poly_filter {
                 poly_destinations.filter_octaves
             } else {
@@ -936,7 +950,7 @@ mod tests {
     }
 
     #[test]
-    fn filter_envelope_poly_mod_descends_oscillator_a_frequency() {
+    fn filter_envelope_poly_mod_raises_oscillator_a_frequency() {
         let dry_settings = Settings::default();
         let mut modulated_settings = dry_settings;
         assert!(modulated_settings.set(Parameter::PolyModFilterEnvelopeAmount as u32, 1.0));
@@ -951,7 +965,6 @@ mod tests {
             VoiceModulation::default(),
             1.0,
             1.0,
-            true,
         );
         let _ = modulated.next_signal_path(
             48_000.0,
@@ -959,9 +972,8 @@ mod tests {
             VoiceModulation::default(),
             1.0,
             1.0,
-            true,
         );
-        assert!(modulated.oscillator_a.phase() < dry.oscillator_a.phase());
+        assert!(modulated.oscillator_a.phase() > dry.oscillator_a.phase());
     }
 
     #[test]

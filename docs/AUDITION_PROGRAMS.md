@@ -1,8 +1,15 @@
-# Audition programs without a front panel
+# Internal audition fixtures
 
-RF-5 includes a separate `RF-5 Audition` factory bank so the reconstructed
-performance paths can be heard before a graphical interface exists. Select a
-program in RackForge's program browser and play normally:
+RF-5's offline audition renderer includes development-only fixtures for the
+reconstructed performance paths. They are intentionally absent from the
+production plugin catalog and cannot be selected in RackForge. Run the
+audition tool to render them:
+
+```bash
+cargo run --release -p rf-5-audition --bin rf-5-audition
+```
+
+The fixture set includes:
 
 - `Audition - Wheel Vibrato` routes the common triangle LFO to both VCO
   frequency summing nodes;
@@ -36,7 +43,8 @@ program in RackForge's program browser and play normally:
 - `Audition - Audio-rate PWM` keeps oscillator B out of the audio mixer while
   its triangle moves oscillator A's pulse comparator through the physical Poly
   Mod amount and destination networks;
-- `Audition - Poly Mod Filter Envelope` produces descending resonant sweeps
+- `Audition - Poly Mod Filter Envelope` produces descending resonant sweeps as
+  its positive-going envelope contribution decays
   through the five linearized envelope amount paths;
 - `Audition - Wheel Noise Filter` selects the noise endpoint of common U378
   and routes the physical wheel output to filter cutoff.
@@ -76,7 +84,7 @@ or alter the serialized patch format, is cleared by loading a normal program
 or state, survives audio-device preparation order, and is replaced by the
 first physical MIDI CC1 message.
 
-All twenty-nine audition programs are covered by deterministic render probes for
+All twenty-nine audition fixtures are covered by deterministic render probes for
 finite output, usable level and bounded headroom. All catalog programs are
 also contract-validated, and the filter population is swept at every supported
 sample rate.
