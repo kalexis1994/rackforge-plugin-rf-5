@@ -6,6 +6,19 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+default = ["portable-realtime"]
+portable-realtime = ["rf-5-dsp/portable-realtime"]
+host-rate = ["rf-5-dsp/host-rate"]
+two-times = ["rf-5-dsp/two-times"]
+hybrid-four-two = ["rf-5-dsp/hybrid-four-two"]
+held-filter-two-times = ["rf-5-dsp/held-filter-two-times"]
+delayed-low-resonance = ["rf-5-dsp/delayed-low-resonance"]
+fast-math = ["rf-5-dsp/fast-math"]
+
 [dependencies]
 rf-5-contract.workspace = true
 rf-5-dsp.workspace = true
+rustfft = "6.4"
+serde.workspace = true
+serde_json.workspace = true

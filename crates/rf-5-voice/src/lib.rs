@@ -3,6 +3,21 @@
 //! Per-voice synthesis path with dual CEM3340-class VCO candidates, two
 //! CEM3310 true-RC envelopes and an oversampled four-pole CEM3320 candidate.
 
+#[cfg(any(
+    all(feature = "host-rate", feature = "two-times"),
+    all(feature = "host-rate", feature = "hybrid-four-two"),
+    all(feature = "two-times", feature = "hybrid-four-two"),
+    all(
+        feature = "held-filter-two-times",
+        any(
+            feature = "host-rate",
+            feature = "two-times",
+            feature = "hybrid-four-two"
+        )
+    )
+))]
+compile_error!("host-rate, two-times and hybrid-four-two are mutually exclusive profiles");
+
 use rf_5_contract::{Parameter, Settings, hardware::quantize_analog_pot};
 
 pub mod autotune;
@@ -12,7 +27,7 @@ pub mod envelope;
 pub mod filter;
 pub mod poly_mod;
 mod pulse_width;
-#[cfg(feature = "realtime-1x")]
+#[cfg(feature = "fast-math")]
 mod realtime_math;
 pub mod scale;
 #[cfg(test)]
@@ -28,10 +43,37 @@ use vco::{Vco, WaveSelection};
 
 const INITIAL_PHASE_A: [f32; 5] = [0.07, 0.31, 0.58, 0.83, 0.19];
 const INITIAL_PHASE_B: [f32; 5] = [0.67, 0.11, 0.42, 0.74, 0.93];
-#[cfg(not(feature = "realtime-1x"))]
-const SIGNAL_OVERSAMPLING: usize = 4;
-#[cfg(feature = "realtime-1x")]
-const SIGNAL_OVERSAMPLING: usize = 1;
+#[cfg(not(any(
+    feature = "host-rate",
+    feature = "two-times",
+    feature = "hybrid-four-two",
+    feature = "held-filter-two-times"
+)))]
+const OSCILLATOR_OVERSAMPLING: usize = 4;
+#[cfg(feature = "host-rate")]
+const OSCILLATOR_OVERSAMPLING: usize = 1;
+#[cfg(all(not(feature = "host-rate"), feature = "two-times"))]
+const OSCILLATOR_OVERSAMPLING: usize = 2;
+#[cfg(feature = "hybrid-four-two")]
+const OSCILLATOR_OVERSAMPLING: usize = 4;
+#[cfg(feature = "held-filter-two-times")]
+const OSCILLATOR_OVERSAMPLING: usize = 4;
+
+#[cfg(any(
+    feature = "two-times",
+    feature = "hybrid-four-two",
+    feature = "held-filter-two-times"
+))]
+const FILTER_OVERSAMPLING: usize = 2;
+#[cfg(feature = "host-rate")]
+const FILTER_OVERSAMPLING: usize = 1;
+#[cfg(not(any(
+    feature = "host-rate",
+    feature = "two-times",
+    feature = "hybrid-four-two",
+    feature = "held-filter-two-times"
+)))]
+const FILTER_OVERSAMPLING: usize = 4;
 const FILTER_MINIMUM_LOG2_HZ: f32 = 4.031_359_7;
 const FILTER_PANEL_OCTAVES: f32 = 10.0;
 const FILTER_KEYBOARD_BASE_NOTE: f32 = 36.0;
@@ -150,7 +192,27 @@ pub struct Voice {
     amplifier_envelope: AdsrEnvelope,
     filter_envelope: AdsrEnvelope,
     filter: Cem3320Filter,
+    #[cfg(any(feature = "two-times", feature = "hybrid-four-two"))]
+    decimator: decimator::Decimator2x,
+    #[cfg(not(any(
+        feature = "host-rate",
+        feature = "two-times",
+        feature = "hybrid-four-two",
+        feature = "held-filter-two-times"
+    )))]
     decimator: decimator::Decimator4x,
+    #[cfg(feature = "held-filter-two-times")]
+    decimator: decimator::Decimator4x,
+    #[cfg(feature = "hybrid-four-two")]
+    mixer_decimator: decimator::WideTransitionDecimator2x,
+    #[cfg(feature = "held-filter-two-times")]
+    filter_phase: u8,
+    #[cfg(feature = "held-filter-two-times")]
+    filter_mixer_accumulator: f32,
+    #[cfg(feature = "held-filter-two-times")]
+    filter_cutoff_accumulator: f32,
+    #[cfg(feature = "held-filter-two-times")]
+    held_voice_sample: f32,
     oscillator_a_level_current: ControlCurrentCache,
     oscillator_b_level_current: ControlCurrentCache,
     poly_mod_filter_envelope_current: ControlCurrentCache,
@@ -217,7 +279,7 @@ impl Voice {
     pub fn next(
         &mut self,
         sample_rate: f32,
-        settings: Settings,
+        settings: &Settings,
         modulation: VoiceModulation,
     ) -> f32 {
         // A never-allocated voice has no hardware state to preserve yet. Its
@@ -260,7 +322,7 @@ impl Voice {
     fn next_signal_path(
         &mut self,
         sample_rate: f32,
-        settings: Settings,
+        settings: &Settings,
         modulation: VoiceModulation,
         filter_envelope: f32,
         amplifier_envelope: f32,
@@ -305,7 +367,8 @@ impl Voice {
         ) * self
             .oscillator_b_modulation_ratio
             .get(modulation.oscillator_b_semitones);
-        let internal_rate = sample_rate.max(1.0) * SIGNAL_OVERSAMPLING as f32;
+        let oscillator_rate = sample_rate.max(1.0) * OSCILLATOR_OVERSAMPLING as f32;
+        let filter_rate = sample_rate.max(1.0) * FILTER_OVERSAMPLING as f32;
         let mut output = None;
         let poly_filter_envelope_amount =
             quantize_analog_pot(settings.get(Parameter::PolyModFilterEnvelopeAmount));
@@ -355,11 +418,15 @@ impl Voice {
             filter_keyboard,
             common_filter_octaves,
         );
+        #[cfg(feature = "held-filter-two-times")]
+        let noise_rate_filter_modulation = parameter_enabled(settings, Parameter::WheelModFilter)
+            && settings.get(Parameter::WheelModSourceMix) > 0.5
+            && modulation.filter_octaves != 0.0;
 
-        for _ in 0..SIGNAL_OVERSAMPLING {
+        for _ in 0..OSCILLATOR_OVERSAMPLING {
             let sample_b =
                 self.oscillator_b
-                    .next(frequency_b, internal_rate, pulse_width_b, waves_b);
+                    .next(frequency_b, oscillator_rate, pulse_width_b, waves_b);
             let poly_destinations = if poly_mod_routed
                 && (poly_filter_envelope_current != 0.0 || poly_oscillator_b_control_current > 0.0)
             {
@@ -396,7 +463,7 @@ impl Voice {
             };
             let sample_a = self.oscillator_a.next_with_sync(
                 oscillator_a_frequency,
-                internal_rate,
+                oscillator_rate,
                 pulse_width::add_modulation(pulse_width_a, poly_pulse_width),
                 waves_a,
                 sync_event,
@@ -440,26 +507,97 @@ impl Voice {
                 self.voice_index,
                 vca::MixerChannel::OscillatorB,
             ) + modulation.noise;
-            let filtered = self.filter.next_with_character_log2(
+            #[cfg(feature = "hybrid-four-two")]
+            let Some(mixer) = self.mixer_decimator.push(mixer) else {
+                continue;
+            };
+            #[cfg(feature = "held-filter-two-times")]
+            {
+                if noise_rate_filter_modulation {
+                    self.filter_phase = 0;
+                    self.filter_mixer_accumulator = 0.0;
+                    self.filter_cutoff_accumulator = 0.0;
+                    let voice_sample = self.process_filter_sample(
+                        mixer,
+                        cutoff_log2_hz,
+                        filter_resonance,
+                        oscillator_rate,
+                        settings.get(Parameter::VintageSpread),
+                        amplifier_vca_control,
+                    );
+                    self.held_voice_sample = voice_sample;
+                    output = self.decimator.push(voice_sample);
+                    continue;
+                }
+                self.filter_mixer_accumulator += mixer;
+                self.filter_cutoff_accumulator += cutoff_log2_hz;
+                self.filter_phase += 1;
+                if self.filter_phase != 2 {
+                    continue;
+                }
+                let averaged_mixer = self.filter_mixer_accumulator * 0.5;
+                let averaged_cutoff = self.filter_cutoff_accumulator * 0.5;
+                self.filter_phase = 0;
+                self.filter_mixer_accumulator = 0.0;
+                self.filter_cutoff_accumulator = 0.0;
+                let next_voice_sample = self.process_filter_sample(
+                    averaged_mixer,
+                    averaged_cutoff,
+                    filter_resonance,
+                    filter_rate,
+                    settings.get(Parameter::VintageSpread),
+                    amplifier_vca_control,
+                );
+                let interpolated = (self.held_voice_sample + next_voice_sample) * 0.5;
+                let _ = self.decimator.push(interpolated);
+                output = self.decimator.push(next_voice_sample);
+                self.held_voice_sample = next_voice_sample;
+                continue;
+            }
+            #[cfg(not(feature = "held-filter-two-times"))]
+            let voice_sample = self.process_filter_sample(
                 mixer,
                 cutoff_log2_hz,
                 filter_resonance,
-                internal_rate,
+                filter_rate,
                 settings.get(Parameter::VintageSpread),
+                amplifier_vca_control,
             );
-            let voice_sample = vca::final_voice(filtered, amplifier_vca_control, self.voice_index);
-            output = if SIGNAL_OVERSAMPLING == 1 {
-                Some(voice_sample)
-            } else {
-                self.decimator.push(voice_sample)
-            };
+            #[cfg(feature = "host-rate")]
+            {
+                output = Some(voice_sample);
+            }
+            #[cfg(all(not(feature = "host-rate"), not(feature = "held-filter-two-times")))]
+            {
+                output = self.decimator.push(voice_sample);
+            }
         }
 
         output.unwrap_or(0.0)
     }
+
+    #[inline(always)]
+    fn process_filter_sample(
+        &mut self,
+        mixer: f32,
+        cutoff_log2_hz: f32,
+        resonance: f32,
+        sample_rate: f32,
+        character: f32,
+        amplifier_control: f32,
+    ) -> f32 {
+        let filtered = self.filter.next_with_character_log2(
+            mixer,
+            cutoff_log2_hz,
+            resonance,
+            sample_rate,
+            character,
+        );
+        vca::final_voice(filtered, amplifier_control, self.voice_index)
+    }
 }
 
-fn parameter_enabled(settings: Settings, parameter: Parameter) -> bool {
+fn parameter_enabled(settings: &Settings, parameter: Parameter) -> bool {
     settings.get(parameter) >= 0.5
 }
 
@@ -470,11 +608,11 @@ fn semitone_ratio(semitones: f32) -> f32 {
     if semitones == 0.0 {
         1.0
     } else {
-        #[cfg(feature = "realtime-1x")]
+        #[cfg(feature = "fast-math")]
         {
             realtime_math::exp2(semitones / 12.0)
         }
-        #[cfg(not(feature = "realtime-1x"))]
+        #[cfg(not(feature = "fast-math"))]
         {
             libm::exp2f(semitones / 12.0)
         }
@@ -562,13 +700,13 @@ mod tests {
         voice.start(0, 69, 127, 0);
         assert!((0..4096).any(|_| {
             voice
-                .next(48_000.0, settings, VoiceModulation::default())
+                .next(48_000.0, &settings, VoiceModulation::default())
                 .abs()
                 > 0.001
         }));
         voice.release();
         for _ in 0..500_000 {
-            let _ = voice.next(48_000.0, settings, VoiceModulation::default());
+            let _ = voice.next(48_000.0, &settings, VoiceModulation::default());
             if !voice.is_active() {
                 break;
             }
@@ -597,18 +735,18 @@ mod tests {
         long.start(0, 60, 100, 0);
         short.start(0, 60, 100, 0);
         for _ in 0..4_096 {
-            let _ = long.next(48_000.0, enabled, VoiceModulation::default());
-            let _ = short.next(48_000.0, disabled, VoiceModulation::default());
+            let _ = long.next(48_000.0, &enabled, VoiceModulation::default());
+            let _ = short.next(48_000.0, &disabled, VoiceModulation::default());
         }
         long.release();
         short.release();
         let mut disabled_release_frames = 0;
         while short.is_active() && disabled_release_frames < 48_000 {
-            let _ = short.next(48_000.0, disabled, VoiceModulation::default());
+            let _ = short.next(48_000.0, &disabled, VoiceModulation::default());
             disabled_release_frames += 1;
         }
         for _ in 0..48_000 {
-            let _ = long.next(48_000.0, enabled, VoiceModulation::default());
+            let _ = long.next(48_000.0, &enabled, VoiceModulation::default());
         }
         assert!(long.is_active());
         assert!(!short.is_active());
@@ -621,7 +759,7 @@ mod tests {
         let mut voice = Voice::default();
         voice.start(0, 60, 100, 2);
         for _ in 0..137 {
-            let _ = voice.next(48_000.0, settings, VoiceModulation::default());
+            let _ = voice.next(48_000.0, &settings, VoiceModulation::default());
         }
         let phase_a = voice.oscillator_a.phase();
         let phase_b = voice.oscillator_b.phase();
@@ -639,8 +777,8 @@ mod tests {
         full_velocity.start(0, 60, 127, 0);
         for _ in 0..4_096 {
             assert_eq!(
-                quiet_velocity.next(48_000.0, settings, VoiceModulation::default()),
-                full_velocity.next(48_000.0, settings, VoiceModulation::default())
+                quiet_velocity.next(48_000.0, &settings, VoiceModulation::default()),
+                full_velocity.next(48_000.0, &settings, VoiceModulation::default())
             );
         }
     }
@@ -654,7 +792,7 @@ mod tests {
         let phase_before = voice.oscillator_a.phase();
         for _ in 0..64 {
             assert_eq!(
-                voice.next(48_000.0, settings, VoiceModulation::default()),
+                voice.next(48_000.0, &settings, VoiceModulation::default()),
                 0.0
             );
         }
@@ -667,7 +805,7 @@ mod tests {
         let mut dormant = Voice::default();
         for _ in 0..64 {
             assert_eq!(
-                dormant.next(48_000.0, settings, VoiceModulation::default()),
+                dormant.next(48_000.0, &settings, VoiceModulation::default()),
                 0.0
             );
         }
@@ -690,8 +828,8 @@ mod tests {
         sync_voice.start(0, 57, 127, 0);
         let mut difference = 0.0;
         for _ in 0..8_192 {
-            difference += (free_voice.next(48_000.0, free_settings, VoiceModulation::default())
-                - sync_voice.next(48_000.0, sync_settings, VoiceModulation::default()))
+            difference += (free_voice.next(48_000.0, &free_settings, VoiceModulation::default())
+                - sync_voice.next(48_000.0, &sync_settings, VoiceModulation::default()))
             .abs();
         }
         assert!(difference > 1.0);
@@ -709,7 +847,7 @@ mod tests {
         modulated.start(0, 36, 127, 0);
         let _ = dry.next_signal_path(
             48_000.0,
-            dry_settings,
+            &dry_settings,
             VoiceModulation::default(),
             1.0,
             1.0,
@@ -717,7 +855,7 @@ mod tests {
         );
         let _ = modulated.next_signal_path(
             48_000.0,
-            modulated_settings,
+            &modulated_settings,
             VoiceModulation::default(),
             1.0,
             1.0,
@@ -741,8 +879,8 @@ mod tests {
         modulated.start(0, 57, 127, 0);
         let mut difference = 0.0;
         for _ in 0..8_192 {
-            difference += (dry.next(48_000.0, dry_settings, VoiceModulation::default())
-                - modulated.next(48_000.0, modulated_settings, VoiceModulation::default()))
+            difference += (dry.next(48_000.0, &dry_settings, VoiceModulation::default())
+                - modulated.next(48_000.0, &modulated_settings, VoiceModulation::default()))
             .abs();
         }
         assert!(difference > 1.0);
@@ -763,8 +901,8 @@ mod tests {
         let mut difference = 0.0;
         for _ in 0..8_192 {
             difference +=
-                (frequency_voice.next(48_000.0, frequency_settings, VoiceModulation::default())
-                    - filter_voice.next(48_000.0, filter_settings, VoiceModulation::default()))
+                (frequency_voice.next(48_000.0, &frequency_settings, VoiceModulation::default())
+                    - filter_voice.next(48_000.0, &filter_settings, VoiceModulation::default()))
                 .abs();
         }
         assert!(difference > 1.0);

@@ -17,7 +17,7 @@
 const DATASHEET_LINEARIZED_INPUT_RESISTANCE_OHMS: f32 = 10_000.0;
 const FINAL_VCA_INPUT_RESISTANCE_OHMS: f32 = 20_000.0;
 const DATASHEET_LINEARIZED_LIMIT_VOLTS: f32 = 4.0;
-#[cfg(not(feature = "realtime-1x"))]
+#[cfg(not(feature = "fast-math"))]
 const FINAL_VCA_SOFT_KNEE_ORDER: f32 = 6.0;
 const FINAL_VCA_NOMINAL_LIMIT_VOLTS: f32 = DATASHEET_LINEARIZED_LIMIT_VOLTS
     * (FINAL_VCA_INPUT_RESISTANCE_OHMS / DATASHEET_LINEARIZED_INPUT_RESISTANCE_OHMS);
@@ -786,9 +786,9 @@ fn ota_output_current_amps(
     let small_signal_output_current_amps =
         iabc_amps * CA3280_TRANSCONDUCTANCE_SIEMENS_PER_AMP * differential_input_volts;
     let normalized = small_signal_output_current_amps / peak_output_current_amps;
-    #[cfg(feature = "realtime-1x")]
+    #[cfg(feature = "fast-math")]
     let shaped = crate::realtime_math::tanh(normalized);
-    #[cfg(not(feature = "realtime-1x"))]
+    #[cfg(not(feature = "fast-math"))]
     let shaped = libm::tanhf(normalized);
     peak_output_current_amps * shaped * profile.transconductance_ratio
 }
@@ -818,11 +818,11 @@ fn sixth_order_limited(input: f32, limit: f32) -> f32 {
         if soft_base == 1.0 {
             magnitude
         } else {
-            #[cfg(feature = "realtime-1x")]
+            #[cfg(feature = "fast-math")]
             {
-                magnitude / crate::realtime_math::sixth_root(soft_base)
+                magnitude * crate::realtime_math::inverse_sixth_root_one_plus(ratio_sixth)
             }
-            #[cfg(not(feature = "realtime-1x"))]
+            #[cfg(not(feature = "fast-math"))]
             {
                 magnitude / libm::powf(soft_base, 1.0 / FINAL_VCA_SOFT_KNEE_ORDER)
             }
@@ -831,12 +831,13 @@ fn sixth_order_limited(input: f32, limit: f32) -> f32 {
         let inverse = 1.0 / ratio;
         let inverse_squared = inverse * inverse;
         let inverse_sixth = inverse_squared * inverse_squared * inverse_squared;
+        #[cfg(not(feature = "fast-math"))]
         let soft_base = 1.0 + inverse_sixth;
-        #[cfg(feature = "realtime-1x")]
+        #[cfg(feature = "fast-math")]
         {
-            limit / crate::realtime_math::sixth_root(soft_base)
+            limit * crate::realtime_math::inverse_sixth_root_one_plus(inverse_sixth)
         }
-        #[cfg(not(feature = "realtime-1x"))]
+        #[cfg(not(feature = "fast-math"))]
         {
             limit / libm::powf(soft_base, 1.0 / FINAL_VCA_SOFT_KNEE_ORDER)
         }
@@ -861,34 +862,34 @@ fn grounded_base_2n4250_collector_current_amps(
     // over the admitted 0-5.3 V CEM3310 range.
     let log_argument =
         series_resistance_ohms * Q410_SATURATION_CURRENT_AMPS / Q410_THERMAL_VOLTAGE_VOLTS;
-    #[cfg(feature = "realtime-1x")]
+    #[cfg(feature = "fast-math")]
     let log_argument = crate::realtime_math::ln(log_argument);
-    #[cfg(not(feature = "realtime-1x"))]
+    #[cfg(not(feature = "fast-math"))]
     let log_argument = libm::logf(log_argument);
     let z = drive_volts / Q410_THERMAL_VOLTAGE_VOLTS + log_argument;
     let mut normalized_current = if z >= 1.0 {
-        #[cfg(feature = "realtime-1x")]
+        #[cfg(feature = "fast-math")]
         {
             (z - crate::realtime_math::ln(z)).max(f32::MIN_POSITIVE)
         }
-        #[cfg(not(feature = "realtime-1x"))]
+        #[cfg(not(feature = "fast-math"))]
         {
             (z - libm::logf(z)).max(f32::MIN_POSITIVE)
         }
     } else {
-        #[cfg(feature = "realtime-1x")]
+        #[cfg(feature = "fast-math")]
         {
             crate::realtime_math::exp(z).max(f32::MIN_POSITIVE)
         }
-        #[cfg(not(feature = "realtime-1x"))]
+        #[cfg(not(feature = "fast-math"))]
         {
             libm::expf(z).max(f32::MIN_POSITIVE)
         }
     };
     for _ in 0..3 {
-        #[cfg(feature = "realtime-1x")]
+        #[cfg(feature = "fast-math")]
         let logarithm = crate::realtime_math::ln(normalized_current);
-        #[cfg(not(feature = "realtime-1x"))]
+        #[cfg(not(feature = "fast-math"))]
         let logarithm = libm::logf(normalized_current);
         let residual = normalized_current + logarithm - z;
         let slope = 1.0 + 1.0 / normalized_current;

@@ -2,7 +2,7 @@
 
 RF-5 can be evaluated without RackForge's graphical panel. The
 `rf-5-audition` executable drives the real DSP engine with sample-accurate MIDI
-events and writes thirty-three unnormalized 48 kHz mono PCM WAV files:
+events and writes thirty-four unnormalized 48 kHz mono PCM WAV files:
 
 1. baseline polyphonic chords;
 2. strong dual-VCO filter drive;
@@ -45,6 +45,8 @@ events and writes thirty-three unnormalized 48 kHz mono PCM WAV files:
 32. positive-going LFO saw through its switched 160 kohm Wheel Mod path.
 33. positive-going loaded LFO square through its switched 200 kohm Wheel Mod
     path.
+34. a five-voice Baseline Pad chord while MIDI CC1 travels through its complete
+    ascending and descending range.
 
 Scenes 17 and 18 now traverse the absolute SD334/CEM3340 frequency law rather
 than a provisional 20 Hz anchor; their program positions remain suitable for
@@ -54,7 +56,7 @@ nominal endpoint reconstruction.
 Run:
 
 ```bash
-cargo run --release -p rf-5-audition
+cargo run --release -p rf-5-audition --bin rf-5-audition
 ```
 
 The default destination is `artifacts/auditions`. An alternative output
@@ -63,9 +65,12 @@ renderer writes `manifest.json` with peak, RMS, DC and clipped-sample counts.
 It never peak-normalizes, applies loudness matching or post-processes the DSP
 output, because those operations would hide gain-staging changes.
 
-Short renders of all thirty-three scenes are evaluated twice in the normal test
+Short renders of all thirty-four scenes are evaluated twice in the normal test
 suite and must be sample-identical, finite, audible and bounded. The full
 renderer additionally rejects silence, exhausted headroom, clipped samples or
 excessive DC before writing a successful manifest. Release validation renders
 the complete suite twice and compares file hashes. These files are listening
 evidence, not measurements of an original instrument.
+
+The portable/reference acceptance suite and its fixed limits are documented in
+[`fidelity/PORTABLE_REFERENCE_COMPARISON.md`](fidelity/PORTABLE_REFERENCE_COMPARISON.md).

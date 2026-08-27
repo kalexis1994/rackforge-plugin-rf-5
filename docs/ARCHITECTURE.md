@@ -28,7 +28,7 @@ The active per-voice routing is:
 ```text
 VCO A ----\
            dual OTA mixer --\
-VCO B ----/                    four-pole VCF -> final VCA -> FIR decimator -> voice output
+VCO B ----/                    four-pole VCF -> final VCA -> voice output
 common noise OTA ------------/       ^               ^
   |                                  |               |
   +-- sync / Poly Mod ---------------+       amplifier envelope
@@ -75,8 +75,10 @@ boundary are recorded in
 The per-voice Poly Mod bus, independent filter envelope, destination routing
 and bounded depth uncertainty are recorded in
 [`fidelity/POLY_MOD_MODEL.md`](fidelity/POLY_MOD_MODEL.md).
-The active five-profile four-pole filter uses an instantaneous nonlinear
-feedback solve rather than a delayed digital return. It and the ten-profile
+The active five-profile four-pole filter uses its physical return-capacitor
+state in the contractive low-Q region, one Newton correction through the normal
+resonant region and a converged nonlinear solve at the extreme high-cutoff
+boundary. It and the ten-profile
 true-RC envelope candidates are documented in
 [`fidelity/FILTER_MODEL.md`](fidelity/FILTER_MODEL.md) and
 [`fidelity/ENVELOPE_MODEL.md`](fidelity/ENVELOPE_MODEL.md).
@@ -85,8 +87,11 @@ documented in
 [`fidelity/PERFORMANCE_MODEL.md`](fidelity/PERFORMANCE_MODEL.md).
 The distinct mixer, per-voice, master and output stages are documented in
 [`fidelity/VCA_AND_OUTPUT_MODEL.md`](fidelity/VCA_AND_OUTPUT_MODEL.md).
-The four-times nonlinear processing boundary and its host-rate reconstruction
-filter are documented in
+The single portable real-time path and the non-distributed four-times fidelity
+reference are documented in
 [`fidelity/OVERSAMPLING_AND_DECIMATION.md`](fidelity/OVERSAMPLING_AND_DECIMATION.md).
+Its retained topology, bounded numerical reductions and Raspberry Pi stress
+gate are documented in
+[`fidelity/REALTIME_CIRCUIT_BUDGET.md`](fidelity/REALTIME_CIRCUIT_BUDGET.md).
 Deterministic listening scenes that exercise this architecture without a UI
 are documented in [`AUDITION_RENDERER.md`](AUDITION_RENDERER.md).

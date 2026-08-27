@@ -12,12 +12,15 @@ will be original RF-5 content.
 
 ## Current status
 
-The active candidate now contains dual four-times-oversampled oscillators,
-fractional hard sync and a 127-tap anti-alias decimator after the nonlinear
-per-voice filter/VCA path. Saw and pulse edges use a two-host-sample PolyBLEP
-correction, while oscillator B's asymmetric triangle uses a one-internal-sample
-PolyBLAMP at both slope transitions. SD431's single falling-edge sync transient
-retains its fractional position inside each internal sample and drives the
+The active candidate uses one platform-independent real-time signal path in
+the distributed WebAssembly component. It contains dual band-limited
+oscillators, fractional hard sync and a nonlinear per-voice filter/VCA path.
+Saw and pulse edges use a two-host-sample PolyBLEP correction, while oscillator
+B's asymmetric triangle uses a local PolyBLAMP correction at both slope
+transitions. A four-times-oversampled path with a 127-tap anti-alias decimator
+is retained as a non-distributed fidelity reference and regression oracle.
+SD431's single falling-edge sync transient retains its fractional position
+inside each internal sample and drives the
 external Figure 5 reset network, one shared LFO, independent pink Wheel-Mod
 and white audio-noise generators,
 audio-rate Poly Mod, a four-pole CEM3320-class filter,
@@ -73,9 +76,10 @@ form a serviced CEM3320 population with 440/880 Hz scale calibration, bounded
 warm-up motion,
 physical resonance gain, clipping span, TL082 large-signal slew and
 second-harmonic character. Their
-nonlinear four-pole feedback loops are solved without inserting a digital
-sample of delay, so self-oscillation follows the calibrated cutoff consistently
-from 44.1 through 192 kHz. Its ten
+nonlinear four-pole feedback loops use their physical capacitor state in the
+contractive low-Q range and Newton closure in the resonant range, so
+self-oscillation follows the calibrated cutoff consistently from 44.1 through
+192 kHz. Its ten
 CEM3310 envelope generators also retain bounded device-specific peak,
 asymptote and RC timing curves, including finite-buffer steps between physical
 phases without discontinuously moving the timing capacitor. It remains a reverse-engineering candidate:
@@ -83,7 +87,7 @@ measured component populations, overload/output levels and original-instrument
 measurements still pass through the evidence gates in
 [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
 
-The first native RF-5 control surface is now active. It is rendered by a Rust
+The integrated RF-5 control surface is now active. It is rendered by a Rust
 WebAssembly module, binds every one of the sixty-three public controls exactly once,
 keeps both program banks below the hardware panel and reorganizes its five
 sections at phone, tablet and desktop widths. Pointer capture gives knobs the
@@ -119,17 +123,24 @@ copy `.cargo/config.toml.example` to `.cargo/config.toml` to use that checkout.
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --release --workspace
-cargo run --release -p rf-5-audition
+cargo run --release -p rf-5-audition --bin rf-5-audition
 rustup target add wasm32-unknown-unknown
 powershell -ExecutionPolicy Bypass -File tools/build-web-ui.ps1
 bash tools/build-package.sh
 ```
 
-The package is written to `artifacts/rf-5-0.1.0.rfplugin`. GitHub Actions tests
-x86-64 and ARM64 before publishing the portable package as a workflow artifact.
-The audition command writes thirty-three unnormalized listening files and their metrics
+The package is written to `artifacts/rf-5-0.1.0.rfplugin`. It contains one
+`wasm-v1` component and has no operating-system or CPU-specific binary. GitHub
+Actions verifies the same source on x86-64 and ARM64, then builds one portable
+package as a workflow artifact. Packaging downloads Binaryen 132 for the build
+host when `wasm-opt` is unavailable, verifies the pinned release checksum and
+applies `-O4` to the universal component. Set `WASM_OPT` (or pass `-WasmOpt` to
+the PowerShell builder) to use an already installed matching executable.
+The audition command writes thirty-four unnormalized listening files and their metrics
 to `artifacts/auditions`; see
 [`docs/AUDITION_RENDERER.md`](docs/AUDITION_RENDERER.md).
+The complete-circuit real-time boundary and Raspberry Pi validation are in
+[`docs/fidelity/REALTIME_CIRCUIT_BUDGET.md`](docs/fidelity/REALTIME_CIRCUIT_BUDGET.md).
 
 ## Independence
 

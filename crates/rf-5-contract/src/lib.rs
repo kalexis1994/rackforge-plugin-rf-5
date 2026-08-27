@@ -246,11 +246,11 @@ impl Default for Settings {
 }
 
 impl Settings {
-    pub fn get(self, parameter: Parameter) -> f32 {
+    pub fn get(&self, parameter: Parameter) -> f32 {
         self.values[parameter as usize]
     }
 
-    pub fn get_index(self, index: u32) -> Option<f32> {
+    pub fn get_index(&self, index: u32) -> Option<f32> {
         let parameter = Parameter::try_from(index).ok()?;
         Some(self.get(parameter))
     }
@@ -266,7 +266,7 @@ impl Settings {
         true
     }
 
-    pub fn as_array(self) -> [f32; PARAMETER_COUNT] {
+    pub fn as_array(&self) -> [f32; PARAMETER_COUNT] {
         self.values
     }
 
@@ -288,7 +288,7 @@ impl Settings {
         true
     }
 
-    pub fn scale_values(self) -> [f32; SCALE_NOTE_COUNT] {
+    pub fn scale_values(&self) -> [f32; SCALE_NOTE_COUNT] {
         core::array::from_fn(|index| self.get(SCALE_PARAMETERS[index]))
     }
 }

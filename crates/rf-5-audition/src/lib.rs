@@ -516,7 +516,34 @@ fn scenes() -> Vec<Scene> {
             scale_codes: EQUAL_TEMPERAMENT,
             events: chord_sequence(&[(0.20, 5.20, &[45, 52, 57])]),
         },
+        Scene {
+            id: "34_baseline_pad_mod_wheel_sweep",
+            program: "baseline-pad",
+            description: "Baseline Pad sustains five voices while MIDI CC1 traverses its complete range",
+            scale_codes: EQUAL_TEMPERAMENT,
+            events: baseline_pad_mod_wheel_sweep(),
+        },
     ]
+}
+
+fn baseline_pad_mod_wheel_sweep() -> Vec<MidiAction> {
+    let mut events = chord_sequence(&[(0.20, 5.35, &[36, 43, 48, 55, 60])]);
+    for step in 0_u8..=32 {
+        let value = u8::try_from(u16::from(step) * 127 / 32).unwrap_or(127);
+        events.push(MidiAction {
+            frame: seconds_to_frame(0.55 + f32::from(step) * 0.065),
+            data: [0xb0, 1, value],
+        });
+    }
+    for step in (0_u8..=32).rev() {
+        let value = u8::try_from(u16::from(step) * 127 / 32).unwrap_or(127);
+        events.push(MidiAction {
+            frame: seconds_to_frame(2.85 + f32::from(32 - step) * 0.065),
+            data: [0xb0, 1, value],
+        });
+    }
+    events.sort_by_key(|event| event.frame);
+    events
 }
 
 fn pitch_wheel_sequence() -> Vec<MidiAction> {

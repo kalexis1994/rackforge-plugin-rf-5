@@ -1,10 +1,9 @@
-//! Bounded elementary functions for the native 1x real-time profile.
+//! Bounded elementary functions for the portable real-time profile.
 //!
-//! The portable 4x reference path retains `libm`. On the Raspberry Pi, the
-//! software implementations of exp2 and tan are too costly to evaluate for
-//! every moving CEM3320 control voltage. These reduced-range polynomials stay
-//! far below the component/model uncertainty while keeping the audio callback
-//! comfortably bounded.
+//! The 4x reference path retains `libm`. The distributed WebAssembly component
+//! uses these reduced-range polynomials on every host. Their error stays far
+//! below the component/model uncertainty while keeping the shared portable
+//! audio callback comfortably bounded.
 
 const LN_2: f32 = core::f32::consts::LN_2;
 
@@ -116,8 +115,47 @@ pub(crate) fn tanh(value: f32) -> f32 {
 }
 
 #[inline(always)]
+#[cfg(test)]
 pub(crate) fn sixth_root(value: f32) -> f32 {
     exp2(ln(value) / (6.0 * LN_2))
+}
+
+/// Evaluate `(1 + excess)^(-1/6)` on the only interval used by the
+/// sixth-order OTA limiter.
+///
+/// Reducing the domain to `[0, 1]` avoids a logarithm/exponential pair in
+/// every voice and master VCA. The degree-seven minimax-style fit stays below
+/// 5e-7 relative error in `f32`, which is tighter than the existing bounded
+/// elementary-function contract.
+#[inline(always)]
+pub(crate) fn inverse_sixth_root_one_plus(excess: f32) -> f32 {
+    let x = excess.clamp(0.0, 1.0);
+    0.999_999_9
+        + x * (-0.166_656_51
+            + x * (0.097_032_495
+                + x * (-0.068_691_954
+                    + x * (0.049_057_283
+                        + x * (-0.029_592_155 + x * (0.012_096_441 + x * -0.002_346_836_7))))))
+}
+
+#[inline(always)]
+pub(crate) fn inverse_sixteenth_root_one_plus(excess: f32) -> f32 {
+    let x = excess.clamp(0.0, 1.0);
+    0.999_999_76
+        + x * (-0.062_485_214
+            + x * (0.032_987_72
+                + x * (-0.021_489_795
+                    + x * (0.013_101_168 + x * (-0.005_720_104 + x * 0.001_209_935_2)))))
+}
+
+#[inline(always)]
+pub(crate) fn inverse_thirty_second_root_one_plus(excess: f32) -> f32 {
+    let x = excess.clamp(0.0, 1.0);
+    0.999_999_9
+        + x * (-0.031_243_07
+            + x * (0.016_012_35
+                + x * (-0.010_283_758
+                    + x * (0.006_220_442_2 + x * (-0.002_704_453_7 + x * 0.000_570_751_7)))))
 }
 
 #[cfg(test)]
@@ -179,5 +217,43 @@ mod tests {
                 maximum_relative_error.max((sixth_root(value) - reference).abs() / reference);
         }
         assert!(maximum_relative_error <= 5.0e-7, "{maximum_relative_error}");
+    }
+
+    #[test]
+    fn reduced_vca_inverse_root_tracks_the_exact_curve() {
+        let mut maximum_relative_error = 0.0_f32;
+        for step in 0..=20_000 {
+            let excess = step as f32 / 20_000.0;
+            let reference = 1.0 / libm::powf(1.0 + excess, 1.0 / 6.0);
+            maximum_relative_error = maximum_relative_error
+                .max((inverse_sixth_root_one_plus(excess) - reference).abs() / reference);
+        }
+        assert!(maximum_relative_error <= 5.0e-7, "{maximum_relative_error}");
+    }
+
+    #[test]
+    fn reduced_filter_inverse_roots_track_the_exact_curves() {
+        let mut maximum_sixteenth_error = 0.0_f32;
+        let mut maximum_thirty_second_error = 0.0_f32;
+        for step in 0..=20_000 {
+            let excess = step as f32 / 20_000.0;
+            let exact_sixteenth = 1.0 / libm::powf(1.0 + excess, 1.0 / 16.0);
+            let exact_thirty_second = 1.0 / libm::powf(1.0 + excess, 1.0 / 32.0);
+            maximum_sixteenth_error = maximum_sixteenth_error.max(
+                (inverse_sixteenth_root_one_plus(excess) - exact_sixteenth).abs() / exact_sixteenth,
+            );
+            maximum_thirty_second_error = maximum_thirty_second_error.max(
+                (inverse_thirty_second_root_one_plus(excess) - exact_thirty_second).abs()
+                    / exact_thirty_second,
+            );
+        }
+        assert!(
+            maximum_sixteenth_error <= 5.0e-7,
+            "{maximum_sixteenth_error}"
+        );
+        assert!(
+            maximum_thirty_second_error <= 5.0e-7,
+            "{maximum_thirty_second_error}"
+        );
     }
 }

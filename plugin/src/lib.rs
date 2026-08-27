@@ -99,9 +99,6 @@ export_processor!(
     max_transfer_bytes = 4096
 );
 
-#[cfg(not(target_arch = "wasm32"))]
-mod native;
-
 #[cfg(all(target_arch = "wasm32", not(test)))]
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo<'_>) -> ! {

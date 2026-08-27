@@ -7,9 +7,16 @@ license.workspace = true
 repository.workspace = true
 
 [features]
-realtime-1x = ["rf-5-voice/realtime-1x"]
+default = ["portable-realtime"]
+portable-realtime = ["rf-5-voice/portable-realtime"]
+host-rate = ["rf-5-voice/host-rate"]
+two-times = ["rf-5-voice/two-times"]
+hybrid-four-two = ["rf-5-voice/hybrid-four-two"]
+held-filter-two-times = ["rf-5-voice/held-filter-two-times"]
+delayed-low-resonance = ["rf-5-voice/delayed-low-resonance"]
+fast-math = ["rf-5-voice/fast-math"]
 
 [dependencies]
 rf-5-contract.workspace = true
-rf-5-voice.workspace = true
+rf-5-voice = { workspace = true, default-features = false }
 libm = "0.2"

@@ -7,14 +7,18 @@ license.workspace = true
 repository.workspace = true
 
 [features]
-realtime-1x = ["rf-5-dsp/realtime-1x"]
+default = ["portable-realtime"]
+portable-realtime = ["rf-5-dsp/portable-realtime"]
+host-rate = ["rf-5-dsp/host-rate"]
+two-times = ["rf-5-dsp/two-times"]
+hybrid-four-two = ["rf-5-dsp/hybrid-four-two"]
+held-filter-two-times = ["rf-5-dsp/held-filter-two-times"]
+delayed-low-resonance = ["rf-5-dsp/delayed-low-resonance"]
+fast-math = ["rf-5-dsp/fast-math"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 rackforge-plugin-sdk.workspace = true
-rf-5-dsp.workspace = true
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-rackforge-plugin-api = { git = "https://github.com/kalexis1994/rackforge.git", rev = "37915a58529b5f57508207fb5f936c279afa0944" }
+rf-5-dsp = { workspace = true, default-features = false }

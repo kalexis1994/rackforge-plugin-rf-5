@@ -580,7 +580,7 @@ impl Engine {
             );
             calibrated_modulation.filter_octaves +=
                 self.cv.filter_keyboard_octaves(voice_index) - filter_keyboard;
-            sample += voice.next(self.sample_rate, applied_settings, calibrated_modulation);
+            sample += voice.next(self.sample_rate, &applied_settings, calibrated_modulation);
         }
         let a440 = self.reference_tone.next(
             !tuning && parameter_enabled(applied_settings, Parameter::A440),

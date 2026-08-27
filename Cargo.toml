@@ -17,8 +17,8 @@ repository = "https://github.com/kalexis1994/rackforge-plugin-rf-5"
 
 [workspace.dependencies]
 rf-5-contract = { path = "crates/rf-5-contract" }
-rf-5-voice = { path = "crates/rf-5-voice" }
-rf-5-dsp = { path = "crates/rf-5-dsp" }
+rf-5-voice = { path = "crates/rf-5-voice", default-features = false }
+rf-5-dsp = { path = "crates/rf-5-dsp", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
@@ -27,8 +27,9 @@ serde_json = "1.0"
 rackforge-plugin-sdk = { git = "https://github.com/kalexis1994/rackforge.git", rev = "37915a58529b5f57508207fb5f936c279afa0944" }
 
 [profile.release]
-# The native DSP adapter benefits materially from whole-program inlining across
-# the voice, engine and RackForge ABI crates. Keep the generated ARM64 package
-# portable; device-specific CPU tuning remains a deployment-time option.
+# The portable WebAssembly processor benefits materially from whole-program
+# inlining across the voice, engine and RackForge ABI crates. These settings
+# produce one component shared by every RackForge platform.
 lto = "fat"
 codegen-units = 1
+panic = "abort"

@@ -62,6 +62,7 @@ const OUTPUT_BUFFER_SWING_TYPICAL_VOLTS: f32 = 13.5;
 const OUTPUT_BUFFER_SLEW_MINIMUM_VOLTS_PER_SECOND: f32 = 8.0e6;
 #[cfg(test)]
 const OUTPUT_BUFFER_SLEW_TYPICAL_VOLTS_PER_SECOND: f32 = 13.0e6;
+#[cfg(not(feature = "fast-math"))]
 const OUTPUT_BUFFER_SOFT_KNEE_ORDER: usize = 32;
 #[cfg(test)]
 const FINAL_VCA_INPUT_OHMS: f32 = 20_000.0;
@@ -186,7 +187,14 @@ impl OutputBuffer {
     }
 
     fn next(&mut self, input: f32, sample_rate: f32, profile: FilterProfile) -> f32 {
-        let output = self.predict(input, sample_rate, profile).0;
+        let target = output_buffer_target(input, profile);
+        let maximum_step = profile.output_buffer_slew_volts_per_second / sample_rate.max(1.0);
+        let delta = target - self.voltage;
+        let output = if delta.abs() <= maximum_step {
+            target
+        } else {
+            self.voltage + delta.signum() * maximum_step
+        };
         self.voltage = output;
         output
     }
@@ -334,12 +342,12 @@ impl FilterCoefficientCache {
                 (self.service_trimmed_cutoff_hz(cutoff_input_log2_hz, profile_index, profile)
                     * warmup_ratio)
                     .clamp(1.0, sample_rate * MAXIMUM_NORMALIZED_CUTOFF);
-            #[cfg(feature = "realtime-1x")]
+            #[cfg(feature = "fast-math")]
             {
                 self.stage_coefficient =
                     crate::realtime_math::tpt_coefficient(cutoff_hz / sample_rate);
             }
-            #[cfg(not(feature = "realtime-1x"))]
+            #[cfg(not(feature = "fast-math"))]
             {
                 let g = libm::tanf(core::f32::consts::PI * cutoff_hz / sample_rate);
                 self.stage_coefficient = g / (1.0 + g);
@@ -367,11 +375,11 @@ impl FilterCoefficientCache {
         }
         let exponent =
             (cutoff_log2_hz.max(0.0) - SERVICE_FILTER_REFERENCE_LOG2_HZ) * self.service_exponent;
-        #[cfg(feature = "realtime-1x")]
+        #[cfg(feature = "fast-math")]
         {
             self.service_low_calibration_hz * crate::realtime_math::exp2(exponent)
         }
-        #[cfg(not(feature = "realtime-1x"))]
+        #[cfg(not(feature = "fast-math"))]
         {
             self.service_low_calibration_hz * libm::exp2f(exponent)
         }
@@ -506,21 +514,67 @@ impl Cem3320Filter {
         let thermal_noise = self.next_thermal_noise();
         let open_input = input + thermal_noise;
         let mut signal = if resonance_drive > 0.0 {
-            let feedback_output = self.solve_feedback(
-                open_input,
-                coefficient,
-                resonance_drive,
-                sample_rate,
-                profile,
-                resonance_coefficients,
-            );
-            let (resonance_voltage, _) = self.resonance_return.predict(
-                feedback_output,
-                sample_rate,
-                profile,
-                resonance_coefficients,
-            );
-            open_input - resonance_voltage * resonance_drive
+            #[cfg(feature = "delayed-low-resonance")]
+            if resonance_drive < resonance_drive_gain(0.16, profile) {
+                // In the contractive low-Q region, the physical return path's
+                // capacitor memories already provide a one-sample prediction.
+                // Reusing that state avoids a redundant four-cell Newton
+                // probe; stronger resonance retains the instantaneous solver.
+                let (resonance_voltage, _) = self.resonance_return.predict(
+                    self.last_output,
+                    sample_rate,
+                    profile,
+                    resonance_coefficients,
+                );
+                open_input - resonance_voltage * resonance_drive
+            } else {
+                let feedback_output =
+                    if coefficient < 0.35 && cfg!(feature = "delayed-low-resonance") {
+                        self.solve_feedback_iterations(
+                            open_input,
+                            coefficient,
+                            resonance_drive,
+                            sample_rate,
+                            profile,
+                            resonance_coefficients,
+                            1,
+                        )
+                    } else {
+                        self.solve_feedback(
+                            open_input,
+                            coefficient,
+                            resonance_drive,
+                            sample_rate,
+                            profile,
+                            resonance_coefficients,
+                        )
+                    };
+                let (resonance_voltage, _) = self.resonance_return.predict(
+                    feedback_output,
+                    sample_rate,
+                    profile,
+                    resonance_coefficients,
+                );
+                open_input - resonance_voltage * resonance_drive
+            }
+            #[cfg(not(feature = "delayed-low-resonance"))]
+            {
+                let feedback_output = self.solve_feedback(
+                    open_input,
+                    coefficient,
+                    resonance_drive,
+                    sample_rate,
+                    profile,
+                    resonance_coefficients,
+                );
+                let (resonance_voltage, _) = self.resonance_return.predict(
+                    feedback_output,
+                    sample_rate,
+                    profile,
+                    resonance_coefficients,
+                );
+                open_input - resonance_voltage * resonance_drive
+            }
         } else {
             open_input
         };
@@ -556,8 +610,6 @@ impl Cem3320Filter {
         if resonance_drive <= 0.0 {
             return self.predict_path(input, coefficient, profile).0;
         }
-        let ceiling = output_ceiling(profile);
-        let mut estimate = self.last_output.clamp(-ceiling, ceiling);
         // Below the service-manual self-oscillation window the loop is
         // contractive enough for one Newton correction. Preserve all three
         // iterations where resonance can sustain or clip.
@@ -567,6 +619,30 @@ impl Cem3320Filter {
             } else {
                 FEEDBACK_SOLVER_ITERATIONS
             };
+        self.solve_feedback_iterations(
+            input,
+            coefficient,
+            resonance_drive,
+            sample_rate,
+            profile,
+            resonance_coefficients,
+            iterations,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn solve_feedback_iterations(
+        &self,
+        input: f32,
+        coefficient: f32,
+        resonance_drive: f32,
+        sample_rate: f32,
+        profile: FilterProfile,
+        resonance_coefficients: ResonanceReturnCoefficients,
+        iterations: usize,
+    ) -> f32 {
+        let ceiling = output_ceiling(profile);
+        let mut estimate = self.last_output.clamp(-ceiling, ceiling);
         for _ in 0..iterations {
             let (resonance_voltage, resonance_slope) = self.resonance_return.predict(
                 estimate,
@@ -581,7 +657,8 @@ impl Cem3320Filter {
             );
             let residual = estimate - predicted;
             let derivative = 1.0 + resonance_drive * resonance_slope.max(0.0) * path_slope.max(0.0);
-            estimate = (estimate - residual / derivative.max(1.0)).clamp(-ceiling, ceiling);
+            let correction = residual / derivative.max(1.0);
+            estimate = (estimate - correction).clamp(-ceiling, ceiling);
         }
         estimate
     }
@@ -680,25 +757,53 @@ fn output_buffer_gain() -> f32 {
 
 #[cfg(test)]
 fn output_buffer(value: f32, profile: FilterProfile) -> f32 {
-    output_buffer_with_slope(value, profile).0
+    output_buffer_target(value, profile)
+}
+
+#[inline(always)]
+fn output_buffer_target(value: f32, profile: FilterProfile) -> f32 {
+    let ceiling = profile.output_buffer_swing_volts;
+    let normalized = (value / ceiling).clamp(-64.0, 64.0);
+    #[cfg(feature = "fast-math")]
+    let curved_normalized = soft_knee_thirty_second_value(normalized);
+    #[cfg(not(feature = "fast-math"))]
+    let curved_normalized = {
+        let squared = normalized * normalized;
+        let fourth = squared * squared;
+        let eighth = fourth * fourth;
+        let sixteenth = eighth * eighth;
+        let thirty_second = sixteenth * sixteenth;
+        normalized
+            * reciprocal_power_of_two_root(
+                1.0 + thirty_second,
+                OUTPUT_BUFFER_SOFT_KNEE_ORDER.ilog2() as usize,
+            )
+    };
+    (ceiling * curved_normalized).clamp(-ceiling, ceiling)
 }
 
 fn output_buffer_with_slope(value: f32, profile: FilterProfile) -> (f32, f32) {
     let ceiling = profile.output_buffer_swing_volts;
     let unclamped = value / ceiling;
     let normalized = unclamped.clamp(-64.0, 64.0);
-    let squared = normalized * normalized;
-    let fourth = squared * squared;
-    let eighth = fourth * fourth;
-    let sixteenth = eighth * eighth;
-    let thirty_second = sixteenth * sixteenth;
-    let soft_base = 1.0 + thirty_second;
-    let reciprocal_root =
-        reciprocal_power_of_two_root(soft_base, OUTPUT_BUFFER_SOFT_KNEE_ORDER.ilog2() as usize);
-    let curved = ceiling * normalized * reciprocal_root;
+    #[cfg(feature = "fast-math")]
+    let (curved_normalized, knee_slope) = soft_knee_thirty_second(normalized);
+    #[cfg(not(feature = "fast-math"))]
+    let (curved_normalized, knee_slope) = {
+        let squared = normalized * normalized;
+        let fourth = squared * squared;
+        let eighth = fourth * fourth;
+        let sixteenth = eighth * eighth;
+        let thirty_second = sixteenth * sixteenth;
+        let soft_base = 1.0 + thirty_second;
+        let reciprocal_root =
+            reciprocal_power_of_two_root(soft_base, OUTPUT_BUFFER_SOFT_KNEE_ORDER.ilog2() as usize);
+        (normalized * reciprocal_root, reciprocal_root / soft_base)
+    };
+    let curved = ceiling * curved_normalized;
     let output = curved.clamp(-ceiling, ceiling);
     let slope = if unclamped == normalized && output == curved {
-        reciprocal_root / soft_base
+        knee_slope
     } else {
         0.0
     };
@@ -791,7 +896,24 @@ fn resonance_calibrated_pole_hz(target_hz: f32, profile: FilterProfile) -> f32 {
 }
 
 fn cell_output(value: f32, profile: FilterProfile) -> f32 {
-    cell_output_with_slope(value, profile).0
+    let ceiling = output_ceiling(profile);
+    let normalized = (value / ceiling).clamp(-64.0, 64.0);
+    #[cfg(feature = "fast-math")]
+    let symmetric_normalized = soft_knee_sixteenth_value(normalized);
+    #[cfg(not(feature = "fast-math"))]
+    let symmetric_normalized = {
+        let squared = normalized * normalized;
+        let fourth = squared * squared;
+        let eighth = fourth * fourth;
+        let sixteenth = eighth * eighth;
+        normalized * reciprocal_power_of_two_root(1.0 + sixteenth, 4)
+    };
+    let symmetric = ceiling * symmetric_normalized;
+    let reference_amplitude = ceiling * SPECIFIED_SIGNAL_FRACTION_OF_CLIP;
+    let even_coefficient =
+        2.0 * profile.passband_second_harmonic * CELL_SECOND_HARMONIC_SHARE / reference_amplitude;
+    let curved = symmetric + even_coefficient * symmetric * symmetric;
+    curved.clamp(-ceiling, ceiling)
 }
 
 fn output_ceiling(profile: FilterProfile) -> f32 {
@@ -805,15 +927,21 @@ fn cell_output_with_slope(value: f32, profile: FilterProfile) -> (f32, f32) {
     // A sixteenth-order soft knee remains nearly linear at the data sheet's
     // distortion test level, then approaches the published clipping swing.
     // Unlike tanh, it does not inject a large third harmonic before clipping.
-    let squared = normalized * normalized;
-    let fourth = squared * squared;
-    let eighth = fourth * fourth;
-    let sixteenth = eighth * eighth;
-    let soft_base = 1.0 + sixteenth;
-    let reciprocal_root = reciprocal_power_of_two_root(soft_base, 4);
-    let symmetric = ceiling * normalized * reciprocal_root;
+    #[cfg(feature = "fast-math")]
+    let (symmetric_normalized, knee_slope) = soft_knee_sixteenth(normalized);
+    #[cfg(not(feature = "fast-math"))]
+    let (symmetric_normalized, knee_slope) = {
+        let squared = normalized * normalized;
+        let fourth = squared * squared;
+        let eighth = fourth * fourth;
+        let sixteenth = eighth * eighth;
+        let soft_base = 1.0 + sixteenth;
+        let reciprocal_root = reciprocal_power_of_two_root(soft_base, 4);
+        (normalized * reciprocal_root, reciprocal_root / soft_base)
+    };
+    let symmetric = ceiling * symmetric_normalized;
     let symmetric_slope = if unclamped == normalized {
-        reciprocal_root / soft_base
+        knee_slope
     } else {
         0.0
     };
@@ -835,9 +963,105 @@ fn cell_output_with_slope(value: f32, profile: FilterProfile) -> (f32, f32) {
     (output, slope.max(0.0))
 }
 
-/// Evaluate the fixed 16th- and 32nd-order soft knees with native square-root
+#[cfg(feature = "fast-math")]
+#[inline(always)]
+fn soft_knee_sixteenth(normalized: f32) -> (f32, f32) {
+    let magnitude = normalized.abs();
+    if magnitude <= 1.0 {
+        let squared = magnitude * magnitude;
+        let fourth = squared * squared;
+        let eighth = fourth * fourth;
+        let excess = eighth * eighth;
+        let root = crate::realtime_math::inverse_sixteenth_root_one_plus(excess);
+        (normalized * root, root / (1.0 + excess))
+    } else {
+        let inverse = 1.0 / magnitude;
+        let squared = inverse * inverse;
+        let fourth = squared * squared;
+        let eighth = fourth * fourth;
+        let excess = eighth * eighth;
+        let root = crate::realtime_math::inverse_sixteenth_root_one_plus(excess);
+        let inverse_sixteenth = excess;
+        (
+            normalized.signum() * root,
+            inverse * inverse_sixteenth * root / (1.0 + excess),
+        )
+    }
+}
+
+#[cfg(feature = "fast-math")]
+#[inline(always)]
+fn soft_knee_sixteenth_value(normalized: f32) -> f32 {
+    let magnitude = normalized.abs();
+    if magnitude <= 1.0 {
+        let squared = magnitude * magnitude;
+        let fourth = squared * squared;
+        let eighth = fourth * fourth;
+        let excess = eighth * eighth;
+        normalized * crate::realtime_math::inverse_sixteenth_root_one_plus(excess)
+    } else {
+        let inverse = 1.0 / magnitude;
+        let squared = inverse * inverse;
+        let fourth = squared * squared;
+        let eighth = fourth * fourth;
+        let excess = eighth * eighth;
+        normalized.signum() * crate::realtime_math::inverse_sixteenth_root_one_plus(excess)
+    }
+}
+
+#[cfg(feature = "fast-math")]
+#[inline(always)]
+fn soft_knee_thirty_second(normalized: f32) -> (f32, f32) {
+    let magnitude = normalized.abs();
+    if magnitude <= 1.0 {
+        let squared = magnitude * magnitude;
+        let fourth = squared * squared;
+        let eighth = fourth * fourth;
+        let sixteenth = eighth * eighth;
+        let excess = sixteenth * sixteenth;
+        let root = crate::realtime_math::inverse_thirty_second_root_one_plus(excess);
+        (normalized * root, root / (1.0 + excess))
+    } else {
+        let inverse = 1.0 / magnitude;
+        let squared = inverse * inverse;
+        let fourth = squared * squared;
+        let eighth = fourth * fourth;
+        let sixteenth = eighth * eighth;
+        let excess = sixteenth * sixteenth;
+        let root = crate::realtime_math::inverse_thirty_second_root_one_plus(excess);
+        (
+            normalized.signum() * root,
+            inverse * excess * root / (1.0 + excess),
+        )
+    }
+}
+
+#[cfg(feature = "fast-math")]
+#[inline(always)]
+fn soft_knee_thirty_second_value(normalized: f32) -> f32 {
+    let magnitude = normalized.abs();
+    if magnitude <= 1.0 {
+        let squared = magnitude * magnitude;
+        let fourth = squared * squared;
+        let eighth = fourth * fourth;
+        let sixteenth = eighth * eighth;
+        let excess = sixteenth * sixteenth;
+        normalized * crate::realtime_math::inverse_thirty_second_root_one_plus(excess)
+    } else {
+        let inverse = 1.0 / magnitude;
+        let squared = inverse * inverse;
+        let fourth = squared * squared;
+        let eighth = fourth * fourth;
+        let sixteenth = eighth * eighth;
+        let excess = sixteenth * sixteenth;
+        normalized.signum() * crate::realtime_math::inverse_thirty_second_root_one_plus(excess)
+    }
+}
+
+/// Evaluate the fixed 16th- and 32nd-order soft knees with square-root
 /// operations. The generic `powf` route computes logarithms and exponentials,
 /// even though these two roots are exact powers of two.
+#[cfg(any(not(feature = "fast-math"), test))]
 #[inline(always)]
 fn reciprocal_power_of_two_root(value: f32, square_roots: usize) -> f32 {
     // In the passband, adding the high-order knee term commonly rounds to
