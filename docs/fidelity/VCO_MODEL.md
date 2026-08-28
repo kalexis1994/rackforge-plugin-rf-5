@@ -23,13 +23,21 @@ different phases, are not reset by note-on, and continue advancing after the
 amplifier envelope becomes inactive. This preserves the free-running behaviour
 of analog VCOs and avoids deterministic, phase-locked attacks.
 
-Saw and pulse discontinuities use a PolyBLEP correction spanning two host
-samples at the four-times internal rate. This wider window is required for the
-documented 1%/99% pulse-width endpoints, where the two edges can share one
-short reconstruction interval. The complete dual-VCO,
-mixer, nonlinear filter and final-VCA path runs at four times the host sample
-rate. A unity-DC, 127-tap low-pass then reconstructs one host-rate sample
-instead of using the former four-sample box average. Triangle is generated
+Saw discontinuities retain the admitted fixed eight-internal-sample PolyBLEP
+window. Pulse is reconstructed from build-time band-limited saw tables. The
+tables use dense harmonic counts in the exposed register, retain every partial
+below the active profile's 90%-of-Nyquist boundary and crossfade the next table
+only after that partial lies below true Nyquist. This avoids the former
+host-rate bug that treated pulse as though every profile were four-times
+oversampled and removed three quarters of its valid high-register spectrum.
+It also handles the
+documented 1%/99% endpoints without overlapping polynomial edges. No table is
+derived from firmware or audio ROM.
+
+The distributed portable path runs the complete dual-VCO, mixer, nonlinear
+filter and final-VCA topology at host rate. The retained four-times reference
+uses a unity-DC, 127-tap low-pass to reconstruct one host-rate sample instead
+of the former four-sample box average. Triangle is generated
 directly from the profiled 45-55% phase geometry, but each of its two slope
 changes receives a one-internal-sample periodic PolyBLAMP correction. This
 keeps the continuous CEM3340 shape and its asymmetry while preventing the
@@ -42,12 +50,10 @@ approximately 1-99% duty-cycle span, with the nearest code to 50% at the
 physical midpoint. Wheel Mod and Poly Mod are summed after that panel law at
 the shared board CV node. They may therefore overdrive a pulse to exactly 0%
 or 100%, where the CEM3340 output becomes steady DC and stops generating sync
-edges until modulation returns it to a finite pulse. Each oscillator retains
-the previous internal pulse-width value so the threshold edge uses the
-relative velocity between phase and comparator threshold. This preserves the
-existing phase-wrap correction, smooths either polarity when audio-rate Poly
-Mod moves the threshold through the core ramp, and makes coincident edges
-cancel exactly at static 0/100% DC.
+edges until modulation returns it to a finite pulse. Static pulse widths use
+the mipmapped reconstruction. When Wheel Mod or audio-rate Poly Mod moves the
+comparator threshold, a two-host-sample velocity-aware PolyBLEP follows that
+moving edge. Coincident edges cancel exactly at static 0/100% DC.
 
 SYNC is resolved at the same four-times internal rate but does not use the
 CEM3340's bidirectional hard-sync pin 6, which SD431 leaves unconnected.
@@ -118,10 +124,11 @@ Mod polarities are documented in
 Numerical spectral sweeps at 44.1, 48, 96 and 192 kHz verify that the corrected
 triangle produces less non-harmonic energy than the uncorrected phase geometry
 at every accepted symmetry, rate and pitch probe. It and the saw, square,
-1%/99% pulse and periodic hard-sync conditions all pass the -40 dB alias
-threshold. Periodic audio-rate PWM at moderate and near-full depth also
-produces less non-harmonic energy with the moving-threshold correction than
-with the former static-threshold correction at every accepted rate. The
+1%/99%, 5%/95%, original Harpsichord-width pulse and periodic hard-sync
+conditions all pass the -40 dB alias threshold. Periodic audio-rate PWM at
+moderate and near-full depth also remains inside that boundary. A dedicated
+program-level regression requires the 1-6 Harpsichord's top-note strike to
+retain at least 45% of its bottom-note RMS level in the portable profile. The
 candidate still requires legally usable hardware measurements
 to bound the remaining waveform curvature and analog sync-transient
 hypotheses.

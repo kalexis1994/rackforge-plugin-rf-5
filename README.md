@@ -24,9 +24,11 @@ the required classic export remains a bit-identical sequential fallback. The
 package is still one portable WebAssembly component, not a set of native builds.
 The state and determinism contract is documented in
 [`docs/PARALLEL_RENDER.md`](docs/PARALLEL_RENDER.md).
-Saw and pulse edges use a two-host-sample PolyBLEP correction, while oscillator
-B's asymmetric triangle uses a local PolyBLAMP correction at both slope
-transitions. A four-times-oversampled path with a 127-tap anti-alias decimator
+Saw edges retain their bounded PolyBLEP correction. Pulse uses build-time
+mipmapped Fourier tables that retain every safe audible partial,
+including the original 1%/99% endpoints, while oscillator B's asymmetric
+triangle uses a local PolyBLAMP correction at both slope transitions. A
+four-times-oversampled path with a 127-tap anti-alias decimator
 is retained as a non-distributed fidelity reference and regression oracle.
 SD431's single falling-edge sync transient retains its fractional position
 inside each internal sample and drives the

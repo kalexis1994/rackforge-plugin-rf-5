@@ -6,11 +6,11 @@
 
 const OCTAVE_SEMITONES: f32 = 12.0;
 
-// SD431 routes PMOD through R4357 to the CEM3340 oscillator-A summing node.
+// SD431 routes PMOD through R4360 to the CEM3340 oscillator-A summing node.
 // The board's calibrated pitch input uses 100 kohm for one volt per octave,
-// so the 30.1 kohm PMOD input supplies 100/30.1 octaves per PMOD volt.
+// so the populated 301 kohm PMOD input supplies 100/301 octaves per PMOD volt.
 const PITCH_REFERENCE_INPUT_OHMS: f32 = 100_000.0;
-const PITCH_POLY_MOD_INPUT_OHMS: f32 = 30_100.0;
+const PITCH_POLY_MOD_INPUT_OHMS: f32 = 301_000.0;
 
 // R4112 feeds the inverting U432 pulse-width summer and R4162 closes its
 // feedback loop. The CEM3340's complete duty-cycle control range is 5 V.
@@ -56,7 +56,7 @@ mod tests {
     #[test]
     fn one_physical_bus_volt_drives_every_destination() {
         let routed = destinations(1.0);
-        assert!((routed.oscillator_a_semitones - 39.867_107).abs() < 1.0e-5);
+        assert!((routed.oscillator_a_semitones - 3.986_711).abs() < 1.0e-5);
         assert!((routed.oscillator_a_pulse_width - 0.347_508_3).abs() < 1.0e-5);
         assert!((routed.filter_octaves - 1.821_493_6).abs() < 1.0e-5);
     }

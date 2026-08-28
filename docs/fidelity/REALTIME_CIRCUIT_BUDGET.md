@@ -49,6 +49,9 @@ The portable profile reduces arithmetic cost without deleting topology:
   converged three-correction solve;
 - fixed sixteenth- and thirty-second-order soft knees use degree-six inverse
   root polynomials rather than four or five square roots;
+- pulse spectra come from build-time mipmapped Fourier tables; the audio
+  thread performs bounded interpolation and no trigonometric series, with the
+  harmonic boundary scaled to the active one-, two- or four-times profile;
 - the committed audio path evaluates only transfer values; slope derivatives
   remain available to the Newton predictor but are not calculated and then
   discarded for each of the four committed cells;

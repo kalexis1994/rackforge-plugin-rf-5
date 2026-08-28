@@ -1555,6 +1555,37 @@ mod tests {
     }
 
     #[test]
+    fn original_harpsichord_retains_high_register_level() {
+        fn strike_rms(note: u8) -> f32 {
+            const SAMPLE_RATE: usize = 48_000;
+            let mut engine = Engine::default();
+            assert!(engine.prepare(SAMPLE_RATE as f64));
+            assert!(engine.load_program("original-16-harpsichord"));
+            for _ in 0..SAMPLE_RATE * 2 {
+                let _ = engine.next_sample();
+            }
+            engine.note_on(0, note, 127);
+            let mut energy = 0.0;
+            let mut count = 0;
+            for frame in 0..SAMPLE_RATE * 3 / 10 {
+                let sample = engine.next_sample();
+                if frame >= SAMPLE_RATE / 200 {
+                    energy += sample * sample;
+                    count += 1;
+                }
+            }
+            libm::sqrtf(energy / count as f32)
+        }
+
+        let low = strike_rms(36);
+        let high = strike_rms(96);
+        assert!(
+            high / low >= 0.45,
+            "harpsichord high-register level collapsed: low={low}, high={high}"
+        );
+    }
+
+    #[test]
     fn filter_audition_programs_are_audible_and_distinct() {
         let mut signatures = [0.0_f32; 2];
         for (signature, id) in signatures

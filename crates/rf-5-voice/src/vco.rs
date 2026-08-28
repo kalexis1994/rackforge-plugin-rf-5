@@ -57,6 +57,10 @@ pub struct Vco {
     profile_index: usize,
     previous_pulse_width: f32,
     pulse_width_initialized: bool,
+    previous_pulse_harmonic_limit: f32,
+    pulse_spectrum_initialized: bool,
+    pulse_transition_offset: f32,
+    pulse_transition_remaining: u16,
 }
 
 impl Default for Vco {
@@ -66,6 +70,10 @@ impl Default for Vco {
             profile_index: 0,
             previous_pulse_width: 0.5,
             pulse_width_initialized: false,
+            previous_pulse_harmonic_limit: 1.0,
+            pulse_spectrum_initialized: false,
+            pulse_transition_offset: 0.0,
+            pulse_transition_remaining: 0,
         }
     }
 }
@@ -113,10 +121,50 @@ const PULSE_UPPER_VOLTS: f32 =
 // SD431 derives 2.27 V TRI REF and U451 subtracts it from OSC B's raw
 // positive-going triangle before the Poly Mod amount OTA.
 const TRIANGLE_POLY_MOD_REFERENCE_VOLTS: f32 = 2.27;
-// The correction spans two host samples at the four-times internal rate. A
-// wider polynomial transition is necessary when the 1%/99% hardware pulse
-// endpoints put both discontinuities inside one short reconstruction window.
+// The populated 1 nF timing capacitor turns the CEM3340 data-sheet typical
+// 570 uA charge/discharge boundary into 57 kHz:
+// f = 3 I / (2 Vcc C), with Vcc = 15 V. Poly Mod can command considerably
+// more exponential current than the core can use, so this physical ceiling
+// must precede the numerical Nyquist guard below.
+const CEM3340_TYPICAL_MAXIMUM_FREQUENCY_HZ: f32 = 57_000.0;
+// The saw correction keeps its admitted eight-sample numerical window. Pulse
+// uses the mipmapped path below and therefore no longer inherits that wide
+// host-rate smoothing window.
 const POLY_BLEP_WIDTH: f32 = 8.0;
+
+// A moving PWM threshold needs a time-domain correction. Keep that correction
+// two host samples wide in every active render profile.
+#[cfg(feature = "host-rate")]
+const PWM_POLY_BLEP_WIDTH: f32 = 2.0;
+#[cfg(all(not(feature = "host-rate"), feature = "two-times"))]
+const PWM_POLY_BLEP_WIDTH: f32 = 4.0;
+#[cfg(not(any(feature = "host-rate", feature = "two-times")))]
+const PWM_POLY_BLEP_WIDTH: f32 = 8.0;
+
+// Highest admitted partial as a fraction of the active oscillator rate. The
+// wavetable ends at 90% of host Nyquist in every profile, independently of
+// whether the voice oscillator itself runs at one, two or four times host.
+#[cfg(feature = "host-rate")]
+const PULSE_HARMONIC_RATE_FRACTION: f32 = 0.45;
+#[cfg(all(not(feature = "host-rate"), feature = "two-times"))]
+const PULSE_HARMONIC_RATE_FRACTION: f32 = 0.225;
+#[cfg(not(any(feature = "host-rate", feature = "two-times")))]
+const PULSE_HARMONIC_RATE_FRACTION: f32 = 0.1125;
+
+// A pitch S/H can replace several octaves in about 1.75 us. An ideal
+// band-limited representation then changes its harmonic basis in one sample,
+// although the physical comparator waveform itself remains phase-continuous.
+// Carry only that numerical basis difference through a short half-millisecond
+// ramp. Scaling by the active oscillator rate keeps the correction identical
+// at the host boundary in every render profile.
+#[cfg(feature = "host-rate")]
+const PULSE_TRANSITION_INTERNAL_SAMPLES: u16 = 24;
+#[cfg(all(not(feature = "host-rate"), feature = "two-times"))]
+const PULSE_TRANSITION_INTERNAL_SAMPLES: u16 = 48;
+#[cfg(not(any(feature = "host-rate", feature = "two-times")))]
+const PULSE_TRANSITION_INTERNAL_SAMPLES: u16 = 96;
+
+include!(concat!(env!("OUT_DIR"), "/pulse_wavetable.rs"));
 
 /// CEM3340 pulse-output high level under a resistive pull-down.
 ///
@@ -154,6 +202,7 @@ impl Vco {
             profile_index: profile_index % OUTPUT_PROFILE_COUNT,
             previous_pulse_width: 0.5,
             pulse_width_initialized: false,
+            ..Self::default()
         }
     }
 
@@ -189,7 +238,12 @@ impl Vco {
         external_sync: Option<HardSyncEvent>,
     ) -> OscillatorSample {
         let profile = self.profile_index;
-        let frequency = triangle_loaded_frequency(frequency.max(0.0), profile, waves.triangle);
+        let frequency = if frequency.is_finite() {
+            frequency.clamp(0.0, CEM3340_TYPICAL_MAXIMUM_FREQUENCY_HZ)
+        } else {
+            0.0
+        };
+        let frequency = triangle_loaded_frequency(frequency, profile, waves.triangle);
         let increment = (frequency / sample_rate.max(1.0)).clamp(0.0, 0.49);
         let pulse_width = if pulse_width.is_finite() {
             pulse_width.clamp(0.0, 1.0)
@@ -230,7 +284,12 @@ impl Vco {
             poly_mod_source_conductance += SAW_TRIANGLE_MIXER_CONDUCTANCE;
         }
         if waves.pulse {
-            let centered = band_limited_pulse(phase, increment, previous_pulse_width, pulse_width);
+            let centered = self.band_limited_pulse_continuous(
+                phase,
+                increment,
+                previous_pulse_width,
+                pulse_width,
+            );
             let half_range = (PULSE_UPPER_VOLTS - PULSE_LOWER_VOLTS) * 0.5;
             let midpoint = (PULSE_UPPER_VOLTS + PULSE_LOWER_VOLTS) * 0.5;
             let equivalent_source_volts =
@@ -256,6 +315,59 @@ impl Vco {
             wrapped,
             hard_sync_event,
         }
+    }
+
+    fn band_limited_pulse_continuous(
+        &mut self,
+        phase: f32,
+        phase_increment: f32,
+        previous_pulse_width: f32,
+        pulse_width: f32,
+    ) -> f32 {
+        if pulse_width <= 0.0 || pulse_width >= 1.0 {
+            self.pulse_spectrum_initialized = false;
+            self.pulse_transition_offset = 0.0;
+            self.pulse_transition_remaining = 0;
+            return pulse_width * 2.0 - 1.0;
+        }
+        if (pulse_width - previous_pulse_width).abs() > f32::EPSILON {
+            self.pulse_spectrum_initialized = false;
+            self.pulse_transition_offset = 0.0;
+            self.pulse_transition_remaining = 0;
+            return moving_threshold_pulse(
+                phase,
+                phase_increment,
+                previous_pulse_width,
+                pulse_width,
+            );
+        }
+
+        let harmonic_limit = pulse_safe_harmonics(phase_increment);
+        let raw = band_limited_pulse_at_harmonic_limit(phase, pulse_width, harmonic_limit);
+        if self.pulse_spectrum_initialized {
+            let previous_limit = self.previous_pulse_harmonic_limit;
+            let ratio =
+                harmonic_limit.max(previous_limit) / harmonic_limit.min(previous_limit).max(1.0);
+            if ratio >= 1.25 {
+                let previous =
+                    band_limited_pulse_at_harmonic_limit(phase, pulse_width, previous_limit);
+                self.pulse_transition_offset += previous - raw;
+                self.pulse_transition_remaining = PULSE_TRANSITION_INTERNAL_SAMPLES;
+            }
+        } else {
+            self.pulse_spectrum_initialized = true;
+        }
+        self.previous_pulse_harmonic_limit = harmonic_limit;
+
+        let output = raw + self.pulse_transition_offset;
+        if self.pulse_transition_remaining > 0 {
+            self.pulse_transition_remaining -= 1;
+            self.pulse_transition_offset *= f32::from(self.pulse_transition_remaining)
+                / f32::from(self.pulse_transition_remaining + 1);
+        } else {
+            self.pulse_transition_offset = 0.0;
+        }
+        output
     }
 
     fn advance_with_sync(&mut self, increment: f32, sync_event: Option<HardSyncEvent>) -> bool {
@@ -323,14 +435,57 @@ fn band_limited_saw(phase: f32, increment: f32) -> f32 {
     naive - poly_blep(phase, blep_width(increment))
 }
 
+#[cfg(test)]
 pub(crate) fn band_limited_pulse(
     phase: f32,
     phase_increment: f32,
     previous_pulse_width: f32,
     pulse_width: f32,
 ) -> f32 {
+    if pulse_width <= 0.0 || pulse_width >= 1.0 {
+        return pulse_width * 2.0 - 1.0;
+    }
+    if (pulse_width - previous_pulse_width).abs() > f32::EPSILON {
+        return moving_threshold_pulse(phase, phase_increment, previous_pulse_width, pulse_width);
+    }
+    // Keep the highest generated partial below 90% of the active profile's
+    // host Nyquist boundary. This is compile-time profile data, so the audio
+    // loop pays no branch for portable 1x versus reference 2x/4x rendering.
+    let safe_harmonics = pulse_safe_harmonics(phase_increment);
+    band_limited_pulse_at_harmonic_limit(phase, pulse_width, safe_harmonics)
+}
+
+fn pulse_safe_harmonics(phase_increment: f32) -> f32 {
+    (PULSE_HARMONIC_RATE_FRACTION / phase_increment.max(f32::MIN_POSITIVE)).max(1.0)
+}
+
+fn band_limited_pulse_at_harmonic_limit(phase: f32, pulse_width: f32, safe_harmonics: f32) -> f32 {
+    let lower_level = pulse_harmonic_level(safe_harmonics as u32);
+    let upper_level = (lower_level + 1).min(PULSE_HARMONIC_LEVELS - 1);
+    let upper_harmonics = f32::from(PULSE_HARMONIC_COUNTS[upper_level]);
+    // The nominal table boundary is 90% of host Nyquist. Introduce the next
+    // table only after all of its partials lie below true Nyquist, then finish
+    // the crossfade at the conservative boundary. This avoids octave-spaced
+    // timbre steps without admitting a folded partial.
+    let transition_start = upper_harmonics * 0.9;
+    let blend = if upper_level == lower_level {
+        0.0
+    } else {
+        ((safe_harmonics - transition_start) / (upper_harmonics - transition_start)).clamp(0.0, 1.0)
+    };
+    let lower = band_limited_pulse_from_table(phase, pulse_width, lower_level);
+    let upper = band_limited_pulse_from_table(phase, pulse_width, upper_level);
+    lower + (upper - lower) * blend
+}
+
+fn moving_threshold_pulse(
+    phase: f32,
+    phase_increment: f32,
+    previous_pulse_width: f32,
+    pulse_width: f32,
+) -> f32 {
     let naive = if phase < pulse_width { 1.0 } else { -1.0 };
-    let rising_correction = poly_blep(phase, blep_width(phase_increment));
+    let rising_correction = poly_blep(phase, pwm_blep_width(phase_increment));
     let threshold_velocity = phase_increment - (pulse_width - previous_pulse_width);
     if threshold_velocity >= 0.0 {
         let falling_phase = if phase >= pulse_width {
@@ -338,7 +493,8 @@ pub(crate) fn band_limited_pulse(
         } else {
             phase + (1.0 - pulse_width)
         };
-        naive + rising_correction - poly_blep(falling_phase, blep_width(threshold_velocity.abs()))
+        naive + rising_correction
+            - poly_blep(falling_phase, pwm_blep_width(threshold_velocity.abs()))
     } else {
         let rising_threshold_phase = if pulse_width >= phase {
             pulse_width - phase
@@ -347,12 +503,66 @@ pub(crate) fn band_limited_pulse(
         };
         naive
             + rising_correction
-            + poly_blep(rising_threshold_phase, blep_width(threshold_velocity.abs()))
+            + poly_blep(
+                rising_threshold_phase,
+                pwm_blep_width(threshold_velocity.abs()),
+            )
     }
+}
+
+fn pulse_harmonic_level(safe_harmonics: u32) -> usize {
+    let safe = safe_harmonics.clamp(1, 1_024);
+    match safe {
+        1..=32 => (safe - 1) as usize,
+        33..=64 => (31 + (safe - 32) / 2) as usize,
+        65..=128 => (47 + (safe - 64) / 4) as usize,
+        129..=256 => (63 + (safe - 128) / 8) as usize,
+        257..=512 => (79 + (safe - 256) / 16) as usize,
+        _ => (95 + (safe - 512) / 32) as usize,
+    }
+}
+
+fn band_limited_pulse_from_table(phase: f32, pulse_width: f32, level: usize) -> f32 {
+    let delayed_phase = if phase >= pulse_width {
+        phase - pulse_width
+    } else {
+        phase + (1.0 - pulse_width)
+    };
+    band_limited_saw_lookup(delayed_phase, level) - band_limited_saw_lookup(phase, level)
+        + 2.0 * pulse_width
+        - 1.0
+}
+
+fn band_limited_saw_lookup(phase: f32, level: usize) -> f32 {
+    let wrapped_phase = phase % 1.0;
+    let wrapped_phase = if wrapped_phase < 0.0 {
+        wrapped_phase + 1.0
+    } else {
+        wrapped_phase
+    };
+    let position = wrapped_phase * PULSE_TABLE_SIZE as f32;
+    let base_index = position as usize;
+    let fraction = position - base_index as f32;
+    let mask = PULSE_TABLE_SIZE - 1;
+    let index = base_index & mask;
+    let table = &BAND_LIMITED_SAW_TABLES[level];
+    let previous = table[index.wrapping_sub(1) & mask];
+    let current = table[index];
+    let next = table[(index + 1) & mask];
+    let following = table[(index + 2) & mask];
+    let c0 = current;
+    let c1 = 0.5 * (next - previous);
+    let c2 = previous - 2.5 * current + 2.0 * next - 0.5 * following;
+    let c3 = 0.5 * (following - previous) + 1.5 * (current - next);
+    ((c3 * fraction + c2) * fraction + c1) * fraction + c0
 }
 
 fn blep_width(increment: f32) -> f32 {
     (increment * POLY_BLEP_WIDTH).min(0.5)
+}
+
+fn pwm_blep_width(increment: f32) -> f32 {
+    (increment * PWM_POLY_BLEP_WIDTH).min(0.5)
 }
 
 pub(crate) fn naive_triangle(phase: f32, symmetry: f32) -> f32 {
@@ -534,7 +744,7 @@ mod tests {
     }
 
     #[test]
-    fn moving_pwm_threshold_uses_its_velocity_relative_to_phase() {
+    fn moving_pwm_is_phase_continuous_symmetric_and_bounded() {
         let rising = band_limited_pulse(0.50, 0.0, 0.49, 0.51);
         let falling = band_limited_pulse(0.50, 0.0, 0.51, 0.49);
         let stationary_high = band_limited_pulse(0.50, 0.0, 0.51, 0.51);
@@ -543,8 +753,42 @@ mod tests {
         assert!((0.0..1.0).contains(&rising));
         assert!((-1.0..0.0).contains(&falling));
         assert!((rising + falling).abs() < 1.0e-6);
-        assert_eq!(stationary_high, 1.0);
-        assert_eq!(stationary_low, -1.0);
+        assert!(stationary_high.is_finite());
+        assert!(stationary_low.is_finite());
+        assert!(stationary_high.abs() <= 1.0);
+        assert!(stationary_low.abs() <= 1.0);
+    }
+
+    #[test]
+    fn pulse_mipmap_selects_the_largest_safe_harmonic_table() {
+        for harmonic in 1..=32 {
+            assert_eq!(
+                PULSE_HARMONIC_COUNTS[pulse_harmonic_level(harmonic)],
+                harmonic as u16
+            );
+        }
+        for harmonic in [33, 34, 63, 64, 65, 68, 127, 128, 129, 136, 255, 256, 1_024] {
+            let selected = u32::from(PULSE_HARMONIC_COUNTS[pulse_harmonic_level(harmonic)]);
+            assert!(selected <= harmonic);
+            let next = pulse_harmonic_level(harmonic) + 1;
+            assert!(
+                next == PULSE_HARMONIC_LEVELS || u32::from(PULSE_HARMONIC_COUNTS[next]) > harmonic
+            );
+        }
+    }
+
+    #[test]
+    fn pulse_table_lookup_wraps_at_the_phase_boundary() {
+        for level in [0, PULSE_HARMONIC_LEVELS / 2, PULSE_HARMONIC_LEVELS - 1] {
+            assert_eq!(
+                band_limited_saw_lookup(1.0, level),
+                band_limited_saw_lookup(0.0, level)
+            );
+            assert_eq!(
+                band_limited_saw_lookup(2.0, level),
+                band_limited_saw_lookup(0.0, level)
+            );
+        }
     }
 
     #[test]
@@ -617,6 +861,36 @@ mod tests {
             oscillator.hard_sync_reset();
             assert_eq!(oscillator.phase(), 0.0);
         }
+    }
+
+    #[test]
+    fn hard_sync_retains_the_slave_saw_ac_excursion() {
+        let mut master = Vco::with_phase(0.317);
+        let mut slave = Vco::with_phase(0.731);
+        let silent = WaveSelection::default();
+        let saw = WaveSelection {
+            saw: true,
+            ..WaveSelection::default()
+        };
+        let mut sum = 0.0_f64;
+        let mut square_sum = 0.0_f64;
+        let frames = 48_000;
+        for _ in 0..frames {
+            let master_sample = master.next(880.0, 48_000.0, 0.472_441, silent);
+            let slave_sample = slave.next_with_sync(
+                1_046.502_3,
+                48_000.0,
+                0.5,
+                saw,
+                master_sample.hard_sync_event,
+            );
+            let value = f64::from(slave_sample.mixer_positive_source_volts);
+            sum += value;
+            square_sum += value * value;
+        }
+        let mean = sum / f64::from(frames);
+        let ac_rms = (square_sum / f64::from(frames) - mean * mean).sqrt();
+        assert!(ac_rms > 2.0, "hard-sync saw AC RMS collapsed to {ac_rms}");
     }
 
     #[test]

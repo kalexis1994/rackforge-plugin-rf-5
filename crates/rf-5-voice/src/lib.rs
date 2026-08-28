@@ -977,6 +977,61 @@ mod tests {
     }
 
     #[test]
+    fn sync_i_poly_mod_sweep_retains_audible_voice_energy() {
+        let mut settings = Settings::default();
+        for (parameter, value) in [
+            (Parameter::OscillatorALevel, 58.0 / 127.0),
+            (Parameter::OscillatorBLevel, 61.0 / 127.0),
+            (Parameter::OscillatorAFrequency, 31.0 / 127.0),
+            (Parameter::OscillatorBFrequency, 25.0 / 127.0),
+            (Parameter::OscillatorASaw, 1.0),
+            (Parameter::OscillatorAPulse, 0.0),
+            (Parameter::OscillatorBSaw, 0.0),
+            (Parameter::OscillatorBTriangle, 0.0),
+            (Parameter::OscillatorBPulse, 0.0),
+            (Parameter::OscillatorSync, 1.0),
+            (Parameter::PolyModFilterEnvelopeAmount, 86.0 / 127.0),
+            (Parameter::PolyModOscillatorAFrequency, 1.0),
+            (Parameter::FilterCutoff, 75.0 / 127.0),
+            (Parameter::FilterResonance, 13.0 / 127.0),
+            (Parameter::FilterEnvelopeAmount, 0.0),
+            (Parameter::FilterKeyboard, 1.0),
+            (Parameter::AmpAttack, 0.0),
+            (Parameter::AmpDecay, 0.0),
+            (Parameter::AmpSustain, 120.0 / 127.0),
+            (Parameter::AmpRelease, 93.0 / 127.0),
+            (Parameter::FilterAttack, 41.0 / 127.0),
+            (Parameter::FilterDecay, 80.0 / 127.0),
+            (Parameter::FilterSustain, 0.0),
+            (Parameter::FilterRelease, 90.0 / 127.0),
+        ] {
+            assert!(settings.set(parameter as u32, value));
+        }
+        let mut dry_settings = settings;
+        assert!(dry_settings.set(Parameter::PolyModFilterEnvelopeAmount as u32, 0.0));
+
+        let mut swept = Voice::initialized(0);
+        let mut dry = Voice::initialized(0);
+        swept.start(0, 72, 100, 0);
+        dry.start(0, 72, 100, 0);
+        let mut swept_energy = 0.0_f64;
+        let mut dry_energy = 0.0_f64;
+        let measurement_frames = 14_400;
+        for _ in 0..measurement_frames {
+            let swept_sample = swept.next(48_000.0, &settings, VoiceModulation::default());
+            let dry_sample = dry.next(48_000.0, &dry_settings, VoiceModulation::default());
+            swept_energy += f64::from(swept_sample) * f64::from(swept_sample);
+            dry_energy += f64::from(dry_sample) * f64::from(dry_sample);
+        }
+        let swept_rms = (swept_energy / f64::from(measurement_frames)).sqrt();
+        let dry_rms = (dry_energy / f64::from(measurement_frames)).sqrt();
+        assert!(
+            swept_rms > dry_rms * 0.15,
+            "Sync I's official Poly Mod sweep collapsed the voice: swept={swept_rms}, dry={dry_rms}"
+        );
+    }
+
+    #[test]
     fn oscillator_b_poly_mod_is_independent_of_b_mixer_level() {
         let mut dry_settings = Settings::default();
         assert!(dry_settings.set(Parameter::OscillatorBLevel as u32, 0.0));

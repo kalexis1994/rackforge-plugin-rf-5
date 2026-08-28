@@ -57,9 +57,9 @@ separate route.
 - The common bus is smoothly bounded at the CA3280 data sheet's guaranteed
   minimum +/-12 V output swing on +/-15 V rails. This is a conservative
   electrical compliance boundary, not a host-audio clamp.
-- Oscillator-A frequency follows R4357 (30.1 kohm) relative to the calibrated
+- Oscillator-A frequency follows R4360 (301 kohm) relative to the calibrated
   100 kohm, one-volt-per-octave pitch path. One physical PMOD volt therefore
-  spans approximately 39.867 semitones.
+  spans approximately 3.9867 semitones.
 - Oscillator-A pulse width follows R4112 (30.1 kohm), U432 feedback R4162
   (52.3 kohm) and the CEM3340's 5 V duty-cycle range, producing approximately
   0.3475 normalized duty-cycle units per physical PMOD volt.
