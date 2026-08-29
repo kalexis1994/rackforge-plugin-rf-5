@@ -55,6 +55,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+      - name: Install matching WebAssembly bindings generator
+        run: cargo install wasm-bindgen-cli --version 0.2.127 --locked
       - name: Cache Cargo dependencies and build outputs
         uses: actions/cache@v5
         with:
