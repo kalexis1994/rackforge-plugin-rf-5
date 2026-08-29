@@ -474,12 +474,7 @@ impl Voice {
             self.active = false;
         }
         if !allocated {
-            self.advance_dormant_signal_path(
-                sample_rate,
-                settings,
-                modulation,
-                filter_envelope,
-            );
+            self.advance_dormant_signal_path(sample_rate, settings, modulation, filter_envelope);
             self.signal_path_dormant = true;
             return 0.0;
         }
@@ -544,15 +539,13 @@ impl Voice {
             poly_filter_envelope_control_current,
             self.voice_index,
         );
-        let poly_oscillator_b_amount =
-            quantize_analog_pot(settings.poly_mod_oscillator_b_amount);
+        let poly_oscillator_b_amount = quantize_analog_pot(settings.poly_mod_oscillator_b_amount);
         let poly_oscillator_b_control_current = self.poly_mod_oscillator_b_current.get(
             poly_oscillator_b_amount,
             vca::poly_mod_oscillator_b_control_current_amps,
         );
         let poly_source_live = poly_oscillator_destinations
-            && (poly_filter_envelope_current != 0.0
-                || poly_oscillator_b_control_current > 0.0);
+            && (poly_filter_envelope_current != 0.0 || poly_oscillator_b_control_current > 0.0);
 
         for _ in 0..OSCILLATOR_OVERSAMPLING {
             if poly_source_live {
@@ -573,8 +566,7 @@ impl Voice {
                 let frequency = if poly_frequency_a {
                     frequency_a
                         * semitone_ratio(
-                            modulation.oscillator_a_semitones
-                                + destinations.oscillator_a_semitones,
+                            modulation.oscillator_a_semitones + destinations.oscillator_a_semitones,
                         )
                 } else {
                     common_frequency_a

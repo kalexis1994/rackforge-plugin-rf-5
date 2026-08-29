@@ -269,8 +269,7 @@ impl Vco {
         } else {
             0.0
         };
-        let frequency =
-            triangle_loaded_frequency(frequency, self.profile_index, triangle_selected);
+        let frequency = triangle_loaded_frequency(frequency, self.profile_index, triangle_selected);
         let increment = (frequency / sample_rate.max(1.0)).clamp(0.0, 0.49);
         let pulse_width = if pulse_width.is_finite() {
             pulse_width.clamp(0.0, 1.0)
