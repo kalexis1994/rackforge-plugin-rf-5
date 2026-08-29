@@ -32,6 +32,36 @@ fn escape_html(value: &str) -> String {
 }
 
 #[cfg(any(target_arch = "wasm32", test))]
+fn prophet_switch_svg(
+    index: u32,
+    primary_active: bool,
+    secondary_active: Option<bool>,
+    light_button: bool,
+) -> String {
+    let primary_x = if secondary_active.is_some() { 19 } else { 26 };
+    let secondary = secondary_active.map_or_else(String::new, |active| {
+        format!(
+            "<g class=\"led{}\" transform=\"translate(33 13)\"><circle class=\"led-rim\" r=\"5\"></circle><circle class=\"led-lens\" r=\"3.5\"></circle><circle class=\"led-glint\" cx=\"-1.2\" cy=\"-1.2\" r=\"0.8\"></circle></g>",
+            if active { " on" } else { "" }
+        )
+    });
+    let block_stops = if light_button {
+        "<stop offset=\"0\" stop-color=\"#f4f3ed\"></stop><stop offset=\"0.48\" stop-color=\"#c5c4bd\"></stop><stop offset=\"1\" stop-color=\"#858681\"></stop>"
+    } else {
+        "<stop offset=\"0\" stop-color=\"#36373b\"></stop><stop offset=\"0.42\" stop-color=\"#1d1e22\"></stop><stop offset=\"1\" stop-color=\"#0a0b0e\"></stop>"
+    };
+    let rocker_stops = if light_button {
+        "<stop offset=\"0\" stop-color=\"#f1f0e9\"></stop><stop offset=\"0.42\" stop-color=\"#c5c4bd\"></stop><stop offset=\"1\" stop-color=\"#858681\"></stop>"
+    } else {
+        "<stop offset=\"0\" stop-color=\"#35363a\"></stop><stop offset=\"0.42\" stop-color=\"#202126\"></stop><stop offset=\"1\" stop-color=\"#101115\"></stop>"
+    };
+    format!(
+        "<svg class=\"prophet-switch\" viewBox=\"0 0 52 72\" aria-hidden=\"true\"><defs><linearGradient id=\"switch-block-{index}\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\">{block_stops}</linearGradient><linearGradient id=\"switch-rocker-{index}\" x1=\"0\" y1=\"0\" x2=\"0.82\" y2=\"1\">{rocker_stops}</linearGradient></defs><g class=\"switch-block\"><rect class=\"switch-base\" x=\"3\" y=\"2\" width=\"46\" height=\"66\" rx=\"1\" fill=\"url(#switch-block-{index})\"></rect><path class=\"switch-deck\" d=\"M3 2H49V24H3Z\"></path><path class=\"switch-deck-seam\" d=\"M3 24H49\"></path><g class=\"led{}\" transform=\"translate({primary_x} 13)\"><circle class=\"led-rim\" r=\"5\"></circle><circle class=\"led-lens\" r=\"3.5\"></circle><circle class=\"led-glint\" cx=\"-1.2\" cy=\"-1.2\" r=\"0.8\"></circle></g>{secondary}<g class=\"switch-rocker\"><path class=\"switch-rocker-left\" d=\"M3 24L8 29V66L3 68Z\"></path><path class=\"switch-rocker-right\" d=\"M49 24L44 29V66L49 68Z\"></path><path class=\"switch-rocker-face\" d=\"M8 29H44V66H8Z\" fill=\"url(#switch-rocker-{index})\"></path><path class=\"switch-rocker-top\" d=\"M3 24H49L44 29H8Z\"></path><path class=\"switch-rocker-highlight\" d=\"M9 30H10V64H9Z\"></path><path class=\"switch-rocker-foot\" d=\"M8 64H44V66H8Z\"></path></g><path class=\"switch-block-highlight\" d=\"M4 3H48M4 3V23\"></path></g></svg>",
+        if primary_active { " on" } else { "" }
+    )
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
 fn relative_knob_value(
     start_value: f64,
     delta_y: f64,
@@ -353,16 +383,16 @@ mod browser {
         fn render_button(&self, parameter: &Parameter, value: f64) -> String {
             let active = value >= 0.5;
             let symbol = waveform_symbol(&parameter.id);
+            let switch = prophet_switch_svg(parameter.index, active, None, parameter.id == "tune");
             let action = if parameter.id == "tune" {
                 "momentary"
             } else {
                 "toggle"
             };
             format!(
-                "<div class=\"parameter-control button-control parameter-{}\"><span class=\"control-label\">{}</span>{symbol}<span class=\"led{}\" aria-hidden=\"true\"><span></span></span><span class=\"button-well\"><button type=\"button\" class=\"hardware-button{}{}\" data-action=\"{action}\" data-index=\"{}\" data-rackforge-parameter-index=\"{}\" aria-label=\"{}\" aria-pressed=\"{}\"></button></span><output data-output-index=\"{}\">{}</output></div>",
+                "<div class=\"parameter-control button-control parameter-{}\"><span class=\"control-label\">{}</span><span class=\"wave-symbol-slot\" aria-hidden=\"true\">{symbol}</span><button type=\"button\" class=\"hardware-button{}{}\" data-action=\"{action}\" data-index=\"{}\" data-rackforge-parameter-index=\"{}\" aria-label=\"{}\" aria-pressed=\"{}\">{switch}</button><output data-output-index=\"{}\">{}</output></div>",
                 parameter.id,
                 panel_label(&parameter.id, &parameter.name),
-                if active { " on" } else { "" },
                 if active { " active" } else { "" },
                 if parameter.id == "tune" {
                     " tune-button"
@@ -386,7 +416,7 @@ mod browser {
             let angle = -135.0 + normalized * 270.0;
             let ticks = knob_ticks();
             format!(
-                "<div class=\"parameter-control knob-control parameter-{}\"><span class=\"control-label\">{}</span><div class=\"knob-shell\" data-knob-index=\"{}\" data-rackforge-parameter-index=\"{}\" style=\"--knob-turn:{angle:.3}deg\"><svg class=\"knob-scale\" viewBox=\"0 0 100 100\" aria-hidden=\"true\">{ticks}<text class=\"knob-number knob-zero\" x=\"11\" y=\"87\">0</text><text class=\"knob-number knob-five\" x=\"50\" y=\"8\">5</text><text class=\"knob-number knob-ten\" x=\"89\" y=\"87\">10</text></svg><span class=\"knob-shadow\" aria-hidden=\"true\"></span><span class=\"knob-cap\" aria-hidden=\"true\"><span class=\"knob-top\"></span><span class=\"knob-marker\"></span></span><input class=\"knob-input\" type=\"range\" data-action=\"parameter\" data-index=\"{}\" min=\"{minimum}\" max=\"{maximum}\" step=\"{step}\" value=\"{value}\" aria-label=\"{}\"></div><output data-output-index=\"{}\">{}</output></div>",
+                "<div class=\"parameter-control knob-control parameter-{}\"><span class=\"control-label\">{}</span><div class=\"knob-shell\" data-knob-index=\"{}\" data-rackforge-parameter-index=\"{}\" style=\"--knob-turn:{angle:.3}deg\"><svg class=\"knob-scale\" viewBox=\"0 0 100 100\" aria-hidden=\"true\">{ticks}<text class=\"knob-number knob-zero\" x=\"7\" y=\"91\">0</text><text class=\"knob-number knob-five\" x=\"50\" y=\"-1\">5</text><text class=\"knob-number knob-ten\" x=\"93\" y=\"91\">10</text></svg><span class=\"knob-shadow\" aria-hidden=\"true\"></span><span class=\"knob-cap\" aria-hidden=\"true\"><span class=\"knob-top\"></span><span class=\"knob-marker\"></span></span><input class=\"knob-input\" type=\"range\" data-action=\"parameter\" data-index=\"{}\" min=\"{minimum}\" max=\"{maximum}\" step=\"{step}\" value=\"{value}\" aria-label=\"{}\"></div><output data-output-index=\"{}\">{}</output></div>",
                 parameter.id,
                 panel_label(&parameter.id, &parameter.name),
                 parameter.index,
@@ -688,15 +718,15 @@ mod browser {
             let _ = knob.set_attribute("style", &format!("--knob-turn:{angle:.3}deg"));
         }
         if let Ok(Some(button)) =
-            document.query_selector(&format!("[data-action=toggle][data-index='{index}']"))
+            document.query_selector(&format!(".hardware-button[data-index='{index}']"))
         {
             let active = value >= 0.5;
             let _ = button.set_attribute("aria-pressed", if active { "true" } else { "false" });
             let _ = button.class_list().toggle_with_force("active", active);
-            if let Some(parent) = button.parent_element()
-                && let Ok(Some(led)) = parent.query_selector(".led")
+            if let Ok(Some(control)) = button.closest(".button-control")
+                && let Ok(Some(led)) = control.query_selector(".led")
             {
-                led.set_class_name(if active { "led on" } else { "led" });
+                let _ = led.set_attribute("class", if active { "led on" } else { "led" });
             }
         }
     }
@@ -1247,6 +1277,26 @@ mod tests {
         let enabled: ParameterDefault = serde_json::from_str("true").unwrap();
         assert_eq!(number.as_f64(), 0.625);
         assert_eq!(enabled.as_f64(), 1.0);
+    }
+
+    #[test]
+    fn prophet_switch_svg_supports_one_or_two_independent_leds() {
+        let single = prophet_switch_svg(4, true, None, false);
+        assert_eq!(single.matches("<g class=\"led").count(), 1);
+        assert!(single.contains("class=\"led on\""));
+        assert!(single.contains("url(#switch-rocker-4)"));
+        assert!(single.contains("class=\"switch-block\""));
+        assert!(!single.contains("switch-well"));
+        assert!(!single.contains("switch-frame"));
+
+        let dual = prophet_switch_svg(9, false, Some(true), false);
+        assert_eq!(dual.matches("<g class=\"led").count(), 2);
+        assert_eq!(dual.matches("class=\"led on\"").count(), 1);
+        assert!(dual.contains("translate(19 13)"));
+        assert!(dual.contains("translate(33 13)"));
+
+        let light = prophet_switch_svg(11, false, None, true);
+        assert!(light.contains("stop-color=\"#f1f0e9\""));
     }
 
     #[test]

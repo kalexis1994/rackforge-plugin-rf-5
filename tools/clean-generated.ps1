@@ -4,7 +4,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $rfRepoRoot = (Resolve-Path -LiteralPath (Split-Path -Parent $PSScriptRoot)).Path
-$rfCanonicalPackage = Join-Path $rfRepoRoot "artifacts\rf-5-0.1.13.rfplugin"
+$rfCanonicalPackage = Join-Path $rfRepoRoot "artifacts\rf-5-0.1.14.rfplugin"
 $rfCanonicalAuditions = Join-Path $rfRepoRoot "artifacts\auditions"
 
 function Remove-RfGeneratedPath {

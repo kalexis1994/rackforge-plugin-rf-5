@@ -309,10 +309,6 @@ function __wbg_get_imports() {
             getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
             getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
         }, arguments); },
-        __wbg_parentElement_ef76606593484767: function(arg0) {
-            const ret = arg0.parentElement;
-            return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
-        },
         __wbg_parent_4ba794fc7861855d: function() { return handleError(function (arg0) {
             const ret = arg0.parent;
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
@@ -374,9 +370,6 @@ function __wbg_get_imports() {
         }, arguments); },
         __wbg_set_a80955eb93b145c6: function(arg0, arg1, arg2) {
             arg0[arg1 >>> 0] = arg2;
-        },
-        __wbg_set_className_bc6ed54ffff19a12: function(arg0, arg1, arg2) {
-            arg0.className = getStringFromWasm0(arg1, arg2);
         },
         __wbg_set_innerHTML_7d84b81d6f2a9fdf: function(arg0, arg1, arg2) {
             arg0.innerHTML = getStringFromWasm0(arg1, arg2);

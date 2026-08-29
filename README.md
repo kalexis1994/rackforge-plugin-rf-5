@@ -147,7 +147,7 @@ powershell -ExecutionPolicy Bypass -File tools/build-web-ui.ps1
 bash tools/build-package.sh
 ```
 
-The package is written to `artifacts/rf-5-0.1.13.rfplugin`. It contains one
+The package is written to `artifacts/rf-5-0.1.14.rfplugin`. It contains one
 `wasm-v1` component and has no operating-system or CPU-specific binary. GitHub
 Actions verifies the same source on x86-64 and ARM64, then builds one portable
 package as a workflow artifact. Packaging downloads Binaryen 132 for the build

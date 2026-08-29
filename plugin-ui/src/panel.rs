@@ -93,15 +93,16 @@ const AMPLIFIER: ControlGroup = ControlGroup {
 const PERFORMANCE: ControlGroup = ControlGroup {
     id: "performance",
     title: "PERFORMANCE",
-    parameter_ids: &["glide", "unison", "release-enable"],
+    parameter_ids: &["glide", "unison"],
 };
 const OUTPUT: ControlGroup = ControlGroup {
     id: "output",
     title: "OUTPUT",
     parameter_ids: &[
         "master-tune",
-        "master-volume",
         "a-440",
+        "release-enable",
+        "master-volume",
         "tune",
         "vintage-spread",
     ],

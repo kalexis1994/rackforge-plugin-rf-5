@@ -337,7 +337,8 @@ button { -webkit-tap-highlight-color: transparent; }
   min-height: 392px;
   padding: 25px 20px 20px;
   display: grid;
-  grid-template-columns: var(--section-columns, repeat(3, minmax(0, 1fr)));
+  grid-template-columns: var(--section-columns, 1fr);
+  grid-template-areas: var(--section-areas, none);
   align-items: stretch;
   gap: 10px;
   background:
@@ -347,17 +348,59 @@ button { -webkit-tap-highlight-color: transparent; }
     var(--panel-base);
 }
 
-.section-modulation .panel-surface { --section-columns: 1.15fr 0.9fr 0.95fr; }
-.section-oscillators .panel-surface { --section-columns: 1.15fr 1.45fr 0.65fr; }
-.section-filter .panel-surface { --section-columns: 1.65fr 1fr; }
-.section-voice .panel-surface { --section-columns: 0.72fr 1.28fr; }
-.section-scale .panel-surface { --section-columns: 1fr; }
+.section-modulation .panel-surface {
+  --section-columns: minmax(0, 900px);
+  min-height: 0;
+  justify-content: start;
+  gap: 17px;
+}
+
+.section-modulation .group-lfo {
+  width: 74%;
+  margin-inline: auto;
+}
+
+.section-oscillators .panel-surface {
+  --section-columns: minmax(560px, 1.7fr) minmax(260px, 0.7fr);
+  --section-areas:
+    "oscillator-a mixer"
+    "oscillator-b oscillator-b";
+  min-height: 0;
+}
+
+.section-oscillators .group-oscillator-a { grid-area: oscillator-a; }
+.section-oscillators .group-oscillator-b { grid-area: oscillator-b; }
+.section-oscillators .group-mixer { grid-area: mixer; }
+
+.section-filter .panel-surface {
+  --section-columns: minmax(420px, 1.45fr) minmax(330px, 1fr);
+  --section-areas: "filter amplifier";
+  min-height: 0;
+}
+
+.section-filter .group-filter { grid-area: filter; }
+.section-filter .group-amplifier {
+  grid-area: amplifier;
+  align-self: end;
+}
+
+.section-voice .panel-surface {
+  --section-columns: minmax(220px, 0.42fr) minmax(620px, 1.58fr);
+  --section-areas: "performance output";
+  min-height: 0;
+  align-items: end;
+}
+
+.section-voice .group-performance { grid-area: performance; }
+.section-voice .group-output { grid-area: output; }
+.section-scale .panel-surface { --section-columns: 1fr; min-height: 0; }
 
 .control-group {
   min-width: 0;
   padding: 23px 8px 10px;
   position: relative;
   border: 2px solid var(--line);
+  border-top-color: transparent;
   border-radius: 9px;
   background: rgba(4, 5, 7, 0.055);
   box-shadow:
@@ -366,29 +409,37 @@ button { -webkit-tap-highlight-color: transparent; }
 }
 
 .control-group h2 {
-  width: calc(100% - 24px);
+  width: 100%;
   height: 16px;
   margin: 0;
-  padding: 0 7px;
+  padding: 0;
   position: absolute;
-  top: -9px;
-  left: 12px;
+  top: -8px;
+  left: 0;
   display: flex;
   align-items: center;
+  gap: 7px;
   color: var(--ivory);
-  background: var(--panel-base);
+  background: transparent;
   font-size: 10px;
   letter-spacing: 0.095em;
   line-height: 16px;
   white-space: nowrap;
 }
 
+.control-group h2::before {
+  content: "";
+  width: 12px;
+  height: 2px;
+  flex: 0 0 12px;
+  background: var(--line);
+}
+
 .control-group h2::after {
   content: "";
-  height: 1px;
-  margin-left: 10px;
+  height: 2px;
   flex: 1;
-  background: rgba(241, 239, 230, 0.74);
+  background: var(--line);
 }
 
 .control-grid {
@@ -400,11 +451,7 @@ button { -webkit-tap-highlight-color: transparent; }
   gap: 8px 1px;
 }
 
-.group-oscillator-a .control-grid,
-.group-mixer .control-grid,
-.group-performance .control-grid {
-  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
-}
+.group-poly-mod .control-grid { grid-template-columns: 1.15fr 1.15fr repeat(3, 0.82fr); }
 
 .group-lfo .control-grid {
   grid-template-columns: repeat(4, minmax(64px, 1fr));
@@ -414,15 +461,31 @@ button { -webkit-tap-highlight-color: transparent; }
   grid-template-columns: repeat(5, minmax(66px, 1fr));
 }
 
-.group-oscillator-b .control-grid,
-.group-wheel-mod .control-grid {
-  grid-template-columns: repeat(4, minmax(70px, 1fr));
-}
+.group-wheel-mod .control-grid { grid-template-columns: 1.18fr repeat(5, 0.82fr); }
+.group-oscillator-b .control-grid { grid-template-columns: repeat(8, minmax(64px, 1fr)); }
+.group-mixer .control-grid { grid-template-columns: repeat(3, minmax(76px, 1fr)); }
 
 .group-filter .control-grid,
 .group-amplifier .control-grid {
   grid-template-columns: repeat(4, minmax(74px, 1fr));
 }
+
+.group-performance .control-grid {
+  grid-template-columns: 1.2fr 0.8fr;
+}
+
+.group-output .control-grid {
+  min-height: 304px;
+  grid-template-columns: repeat(5, minmax(82px, 1fr));
+  grid-template-rows: repeat(2, minmax(144px, 1fr));
+}
+
+.group-output .parameter-master-tune { grid-column: 1; grid-row: 1; }
+.group-output .parameter-a-440 { grid-column: 2; grid-row: 1; }
+.group-output .parameter-vintage-spread { grid-column: 5; grid-row: 1; }
+.group-output .parameter-release-enable { grid-column: 1; grid-row: 2; }
+.group-output .parameter-master-volume { grid-column: 3; grid-row: 2; }
+.group-output .parameter-tune { grid-column: 5; grid-row: 2; }
 
 .group-scale .control-grid {
   grid-template-columns: repeat(12, minmax(72px, 1fr));
@@ -464,7 +527,17 @@ button { -webkit-tap-highlight-color: transparent; }
   text-align: center;
 }
 
-.knob-control { grid-template-rows: 24px 100px 16px; }
+.knob-control {
+  grid-template-rows: 100px 24px 16px;
+  grid-template-areas:
+    "knob"
+    "label"
+    "output";
+}
+
+.knob-control > .control-label { grid-area: label; }
+.knob-control > .knob-shell { grid-area: knob; }
+.knob-control > output { grid-area: output; }
 
 .knob-shell {
   --knob-turn: 0deg;
@@ -516,40 +589,53 @@ button { -webkit-tap-highlight-color: transparent; }
 }
 
 .knob-cap {
-  width: 58px;
-  height: 58px;
+  width: 60px;
+  height: 60px;
   position: absolute;
-  top: 21px;
-  border: 2px solid #050506;
+  top: 20px;
+  border: 1px solid #030304;
   border-radius: 50%;
   overflow: hidden;
   background:
-    radial-gradient(circle at 29% 19%, rgba(255, 255, 255, 0.18), transparent 30%),
-    repeating-conic-gradient(from 2deg, #17181b 0deg 5deg, #292a2e 5deg 8deg, #0b0c0e 8deg 11deg),
-    #111216;
+    repeating-conic-gradient(from 1deg, #07080a 0deg 3deg, #26272a 3deg 5deg, #0b0c0e 5deg 8deg),
+    #0b0c0e;
   box-shadow:
-    inset 2px 2px 3px rgba(255, 255, 255, 0.09),
-    inset -3px -3px 5px rgba(0, 0, 0, 0.7),
-    0 4px 5px rgba(0, 0, 0, 0.58);
+    inset 1px 1px 2px rgba(255, 255, 255, 0.1),
+    inset -2px -2px 4px rgba(0, 0, 0, 0.78),
+    0 4px 5px rgba(0, 0, 0, 0.62);
   pointer-events: none;
 }
 
 .knob-top {
   position: absolute;
-  inset: 7px;
-  border: 1px solid #25262a;
+  inset: 3px;
+  border: 1px solid #5d5e61;
   border-radius: 50%;
   background:
-    linear-gradient(112deg, transparent 9%, rgba(255, 255, 255, 0.1) 30%, rgba(255, 255, 255, 0.02) 46%, transparent 66%),
-    radial-gradient(circle at 34% 23%, #3d3e42, #17181b 42%, #08090a 82%);
+    repeating-linear-gradient(92deg, rgba(255, 255, 255, 0.13) 0 1px, rgba(0, 0, 0, 0.035) 1px 3px),
+    linear-gradient(112deg, #66676a 0%, #dedfdf 25%, #85868a 49%, #d5d5d3 72%, #5b5c60 100%);
   box-shadow:
-    inset 1px 1px 2px rgba(255, 255, 255, 0.08),
-    inset -2px -2px 3px rgba(0, 0, 0, 0.68);
+    inset 1px 1px 1px rgba(255, 255, 255, 0.62),
+    inset -1px -1px 2px rgba(0, 0, 0, 0.42);
 }
 
-.parameter-master-tune .knob-top,
-.parameter-master-volume .knob-top {
-  border-color: #717277;
+.knob-top::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border: 1px solid #161619;
+  border-radius: 50%;
+  background:
+    linear-gradient(112deg, transparent 8%, rgba(255, 255, 255, 0.055) 30%, rgba(255, 255, 255, 0.012) 48%, transparent 69%),
+    radial-gradient(circle at 35% 24%, #302c2d, #211f21 45%, #111114 84%);
+  box-shadow:
+    inset 1px 1px 2px rgba(255, 255, 255, 0.035),
+    inset -1px -1px 2px rgba(0, 0, 0, 0.55);
+}
+
+.parameter-master-tune .knob-top::after,
+.parameter-master-volume .knob-top::after {
+  border-color: #77787b;
   background:
     repeating-linear-gradient(91deg, rgba(255, 255, 255, 0.13) 0 1px, rgba(0, 0, 0, 0.035) 1px 3px),
     linear-gradient(108deg, #74757a 0%, #d6d7d8 24%, #8c8d91 49%, #e1e1df 70%, #68696d 100%);
@@ -573,11 +659,11 @@ button { -webkit-tap-highlight-color: transparent; }
 .knob-marker::before {
   content: "";
   width: 4px;
-  height: 20px;
+  height: 21px;
   position: absolute;
-  top: 3px;
+  top: 8px;
   left: 50%;
-  border-radius: 0 0 1px 1px;
+  border-radius: 1px;
   background: #efede4;
   box-shadow: 0 0 1px rgba(255, 255, 255, 0.5);
   transform: translateX(-50%);
@@ -592,7 +678,24 @@ button { -webkit-tap-highlight-color: transparent; }
   cursor: ns-resize;
 }
 
-.button-control { grid-template-rows: 24px 22px 15px 42px 16px; }
+.button-control {
+  grid-template-rows: 24px 22px 72px 16px;
+  grid-template-areas:
+    "label"
+    "symbol"
+    "switch"
+    "output";
+}
+
+.button-control > .control-label { grid-area: label; }
+
+.wave-symbol-slot {
+  width: 34px;
+  height: 20px;
+  display: grid;
+  grid-area: symbol;
+  place-items: center;
+}
 
 .wave-symbol {
   width: 34px;
@@ -607,81 +710,99 @@ button { -webkit-tap-highlight-color: transparent; }
   vector-effect: non-scaling-stroke;
 }
 
-.led {
-  width: 10px;
-  height: 10px;
-  position: relative;
-  display: block;
-  border: 1px solid #020202;
-  border-radius: 50%;
-  background: #260807;
-  box-shadow:
-    inset 0 1px 2px #000,
-    0 1px rgba(255, 255, 255, 0.05);
-}
-
-.led span {
-  position: absolute;
-  inset: 2px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.035);
-}
-
-.led.on {
-  background: var(--red-hot);
-  box-shadow:
-    0 0 6px 2px rgba(255, 48, 43, 0.62),
-    0 0 15px rgba(255, 48, 43, 0.23),
-    inset 0 1px rgba(255, 255, 255, 0.75);
-}
-
-.button-well {
-  width: 43px;
-  height: 37px;
-  padding: 4px 5px 5px;
-  display: grid;
-  border: 1px solid #020203;
-  border-radius: 2px;
-  background: linear-gradient(180deg, #07080a, #17181c 58%, #050607);
-  box-shadow:
-    inset 0 2px 4px rgba(0, 0, 0, 0.92),
-    0 1px rgba(255, 255, 255, 0.05);
-}
+.button-control > output { grid-area: output; }
 
 .hardware-button {
-  width: 100%;
-  height: 100%;
+  width: 52px;
+  height: 72px;
   padding: 0;
-  border: 1px solid #050506;
-  border-radius: 1px;
-  background:
-    linear-gradient(110deg, rgba(255, 255, 255, 0.08), transparent 38%),
-    linear-gradient(180deg, #292a2e, #141519 74%);
-  box-shadow:
-    inset 0 1px rgba(255, 255, 255, 0.11),
-    0 2px 0 #030303;
+  display: block;
+  place-self: center;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   cursor: pointer;
 }
 
-.hardware-button:hover {
-  background:
-    linear-gradient(110deg, rgba(255, 255, 255, 0.1), transparent 38%),
-    linear-gradient(180deg, #313237, #18191d 74%);
+.prophet-switch {
+  width: 52px;
+  height: 72px;
+  display: block;
+  overflow: visible;
 }
 
-.hardware-button.active {
-  transform: translateY(2px);
-  background: linear-gradient(180deg, #15161a, #26272b);
-  box-shadow:
-    inset 0 2px 3px rgba(0, 0, 0, 0.72),
-    0 0 0 #030303;
+.switch-block {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  filter: drop-shadow(0 2px 1px rgba(0, 0, 0, 0.58));
+  transition: transform 65ms ease-out, filter 65ms ease-out;
 }
 
-.hardware-button.tune-button {
-  background: linear-gradient(180deg, #deddd5, #aaa9a2);
-  box-shadow:
-    inset 0 1px rgba(255, 255, 255, 0.66),
-    0 2px 0 #030303;
+.switch-deck { fill: rgba(255, 255, 255, 0.025); }
+
+.switch-deck-seam {
+  fill: none;
+  stroke: rgba(0, 0, 0, 0.56);
+  stroke-width: 1;
+}
+
+.switch-block-highlight {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.09);
+  stroke-width: 0.7;
+}
+
+.led-rim {
+  fill: #020203;
+  stroke: #000;
+  stroke-width: 0.7;
+}
+
+.led-lens {
+  fill: #310a09;
+  stroke: #5c1512;
+  stroke-width: 0.5;
+  transition: fill 90ms linear;
+}
+
+.led-glint { fill: rgba(255, 255, 255, 0.1); }
+
+.led.on .led-lens {
+  fill: var(--red-hot);
+  stroke: #ff8d87;
+  filter: drop-shadow(0 0 3px rgba(255, 49, 44, 0.95));
+}
+
+.led.on .led-glint { fill: rgba(255, 255, 255, 0.85); }
+
+.switch-rocker {
+  pointer-events: none;
+}
+
+.switch-rocker-left { fill: #0a0b0e; }
+.switch-rocker-right { fill: #050608; }
+.switch-rocker-top { fill: #3b3c40; }
+
+.switch-rocker-highlight {
+  fill: rgba(255, 255, 255, 0.11);
+}
+
+.switch-rocker-foot { fill: rgba(0, 0, 0, 0.4); }
+
+.hardware-button.tune-button .switch-rocker-left { fill: #aaa9a3; }
+.hardware-button.tune-button .switch-rocker-right { fill: #73746f; }
+.hardware-button.tune-button .switch-rocker-top { fill: #efeee7; }
+.hardware-button.tune-button .switch-rocker-highlight { fill: rgba(255, 255, 255, 0.48); }
+.hardware-button.tune-button .switch-rocker-foot { fill: #777873; }
+
+.hardware-button:hover .switch-block {
+  filter: brightness(1.08);
+}
+
+.hardware-button:not(.rackforge-context-press):active .switch-block {
+  transform: translateY(1.5px) scaleY(0.985);
+  filter: brightness(0.9) drop-shadow(0 1px 0 rgba(0, 0, 0, 0.42));
 }
 
 .hardware-button.rackforge-context-press:active,
@@ -796,13 +917,49 @@ button { -webkit-tap-highlight-color: transparent; }
 @media (max-width: 1260px) {
   .panel-surface {
     grid-template-columns: 1fr;
+    grid-template-areas: none;
     gap: 18px;
   }
 
+  .section-modulation .group-lfo {
+    width: 100%;
+    margin-inline: 0;
+  }
+
+  .section-oscillators .group-oscillator-a,
+  .section-oscillators .group-oscillator-b,
+  .section-oscillators .group-mixer,
+  .section-filter .group-filter,
+  .section-filter .group-amplifier,
+  .section-voice .group-performance,
+  .section-voice .group-output {
+    grid-area: auto;
+  }
+
+  .section-filter .group-amplifier { align-self: stretch; }
+
   .control-grid,
+  .group-poly-mod .control-grid,
+  .group-lfo .control-grid,
+  .group-oscillator-a .control-grid,
   .group-wheel-mod .control-grid,
-  .group-oscillator-b .control-grid {
+  .group-oscillator-b .control-grid,
+  .group-mixer .control-grid,
+  .group-filter .control-grid,
+  .group-amplifier .control-grid,
+  .group-performance .control-grid {
     grid-template-columns: repeat(auto-fit, minmax(86px, 1fr));
+  }
+
+  .group-output .control-grid {
+    min-height: 0;
+    grid-template-columns: repeat(6, minmax(82px, 1fr));
+    grid-template-rows: auto;
+  }
+
+  .group-output .parameter-control {
+    grid-column: auto;
+    grid-row: auto;
   }
 
   .group-scale .control-grid {
@@ -833,10 +990,16 @@ button { -webkit-tap-highlight-color: transparent; }
   }
 
   .control-grid,
+  .group-poly-mod .control-grid,
+  .group-lfo .control-grid,
+  .group-oscillator-a .control-grid,
   .group-wheel-mod .control-grid,
   .group-oscillator-b .control-grid,
+  .group-mixer .control-grid,
   .group-filter .control-grid,
-  .group-amplifier .control-grid {
+  .group-amplifier .control-grid,
+  .group-performance .control-grid,
+  .group-output .control-grid {
     grid-template-columns: repeat(4, minmax(76px, 1fr));
   }
 
@@ -880,10 +1043,16 @@ button { -webkit-tap-highlight-color: transparent; }
   .panel-tab span { display: none; }
 
   .control-grid,
+  .group-poly-mod .control-grid,
+  .group-lfo .control-grid,
+  .group-oscillator-a .control-grid,
   .group-wheel-mod .control-grid,
   .group-oscillator-b .control-grid,
+  .group-mixer .control-grid,
   .group-filter .control-grid,
-  .group-amplifier .control-grid {
+  .group-amplifier .control-grid,
+  .group-performance .control-grid,
+  .group-output .control-grid {
     grid-template-columns: repeat(2, minmax(78px, 1fr));
   }
 
