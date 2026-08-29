@@ -693,7 +693,9 @@ mod tests {
                     if block < 7 {
                         strike_peak = strike_peak.max(
                             actual
-                                .chunks_exact(2)
+                                .as_chunks::<2>()
+                                .0
+                                .iter()
                                 .map(|frame| frame[0].abs())
                                 .fold(0.0_f32, f32::max),
                         );
