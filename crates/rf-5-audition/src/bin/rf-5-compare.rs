@@ -563,9 +563,11 @@ fn read_pcm16_mono(path: &Path) -> io::Result<Wav> {
     if data.len() % 2 != 0 {
         return Err(io::Error::other("WAV PCM payload is not sample-aligned"));
     }
-    let samples = data
-        .chunks_exact(2)
-        .map(|bytes| f32::from(i16::from_le_bytes([bytes[0], bytes[1]])) / f32::from(i16::MAX))
+    let (sample_bytes, remainder) = data.as_chunks::<2>();
+    debug_assert!(remainder.is_empty());
+    let samples = sample_bytes
+        .iter()
+        .map(|bytes| f32::from(i16::from_le_bytes(*bytes)) / f32::from(i16::MAX))
         .collect();
     Ok(Wav {
         sample_rate,
