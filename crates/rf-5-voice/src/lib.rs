@@ -278,6 +278,7 @@ pub struct Voice {
     oscillator_a: Vco,
     oscillator_b: Vco,
     oscillators_initialized: bool,
+    signal_path_dormant: bool,
     voice_index: usize,
     amplifier_envelope: AdsrEnvelope,
     filter_envelope: AdsrEnvelope,
@@ -356,6 +357,7 @@ impl Voice {
     }
 
     pub fn start(&mut self, channel: u8, note: u8, _velocity: u8, voice_index: usize) {
+        let pitch_changed = self.note != note;
         self.note = note;
         self.channel = channel;
         self.voice_index = voice_index % INITIAL_PHASE_A.len();
@@ -368,13 +370,54 @@ impl Voice {
             self.channel = active_channel;
             self.active = true;
         }
+        if pitch_changed {
+            self.oscillator_a.admit_pitch_step();
+            self.oscillator_b.admit_pitch_step();
+        }
+        if self.signal_path_dormant {
+            // The oversampling FIR and held/interpolated samples are numerical
+            // reconstruction state, not capacitors on the voice card. Keeping
+            // their pre-dormancy contents while the physical VCO phase moves
+            // forward creates a synthetic edge when the VCA opens again.
+            #[cfg(any(feature = "two-times", feature = "hybrid-four-two"))]
+            {
+                self.decimator = decimator::Decimator2x::default();
+            }
+            #[cfg(not(any(
+                feature = "host-rate",
+                feature = "two-times",
+                feature = "hybrid-four-two",
+                feature = "held-filter-two-times"
+            )))]
+            {
+                self.decimator = decimator::Decimator4x::default();
+            }
+            #[cfg(feature = "held-filter-two-times")]
+            {
+                self.decimator = decimator::Decimator4x::default();
+                self.filter_phase = 0;
+                self.filter_mixer_accumulator = 0.0;
+                self.filter_cutoff_accumulator = 0.0;
+                self.held_voice_sample = 0.0;
+            }
+            #[cfg(feature = "hybrid-four-two")]
+            {
+                self.mixer_decimator = decimator::WideTransitionDecimator2x::default();
+            }
+            self.signal_path_dormant = false;
+        }
         self.amplifier_envelope.trigger();
         self.filter_envelope.trigger();
     }
 
     pub fn retune(&mut self, channel: u8, note: u8) {
+        let pitch_changed = self.note != note;
         self.note = note;
         self.channel = channel;
+        if pitch_changed {
+            self.oscillator_a.admit_pitch_step();
+            self.oscillator_b.admit_pitch_step();
+        }
     }
 
     pub fn release(&mut self) {
@@ -430,14 +473,145 @@ impl Voice {
         if self.amplifier_envelope.is_idle() {
             self.active = false;
         }
-        let voice_output = self.next_signal_path(
+        if !allocated {
+            self.advance_dormant_signal_path(
+                sample_rate,
+                settings,
+                modulation,
+                filter_envelope,
+            );
+            self.signal_path_dormant = true;
+            return 0.0;
+        }
+        self.next_signal_path(
             sample_rate,
             settings,
             modulation,
             filter_envelope,
             amplifier_envelope,
+        )
+    }
+
+    fn advance_dormant_signal_path(
+        &mut self,
+        sample_rate: f32,
+        settings: &VoiceSettings,
+        modulation: VoiceModulation,
+        filter_envelope: f32,
+    ) {
+        let waves_b = WaveSelection {
+            saw: enabled(settings.oscillator_b_saw),
+            triangle: enabled(settings.oscillator_b_triangle),
+            pulse: enabled(settings.oscillator_b_pulse),
+        };
+        let pulse_width_a = pulse_width::add_modulation(
+            pulse_width::panel_duty_cycle(settings.oscillator_a_pulse_width),
+            modulation.oscillator_a_pulse_width,
         );
-        if allocated { voice_output } else { 0.0 }
+        let pulse_width_b = pulse_width::add_modulation(
+            pulse_width::panel_duty_cycle(settings.oscillator_b_pulse_width),
+            modulation.oscillator_b_pulse_width,
+        );
+        let frequency_a = self
+            .oscillator_a_frequency
+            .oscillator_a(self.note, settings.oscillator_a_frequency);
+        let frequency_b = self.oscillator_b_frequency.oscillator_b(
+            self.note,
+            settings.oscillator_b_frequency,
+            settings.oscillator_b_detune,
+            enabled(settings.oscillator_b_keyboard),
+            enabled(settings.oscillator_b_low_frequency),
+        ) * self
+            .oscillator_b_modulation_ratio
+            .get(modulation.oscillator_b_semitones);
+        let oscillator_rate = sample_rate.max(1.0) * OSCILLATOR_OVERSAMPLING as f32;
+        let common_frequency_a = frequency_a
+            * self
+                .oscillator_a_modulation_ratio
+                .get(modulation.oscillator_a_semitones);
+        let sync = enabled(settings.oscillator_sync);
+        let poly_frequency_a = enabled(settings.poly_mod_oscillator_a_frequency);
+        let poly_pulse_width_a = enabled(settings.poly_mod_oscillator_a_pulse_width);
+        let poly_oscillator_destinations = poly_frequency_a || poly_pulse_width_a;
+        let poly_filter_envelope_amount =
+            quantize_analog_pot(settings.poly_mod_filter_envelope_amount);
+        let poly_filter_envelope_control_current = self.poly_mod_filter_envelope_current.get(
+            poly_filter_envelope_amount,
+            vca::poly_mod_filter_envelope_control_current_amps,
+        );
+        let poly_filter_envelope_current = vca::poly_mod_filter_envelope_with_control_current_amps(
+            filter_envelope,
+            poly_filter_envelope_control_current,
+            self.voice_index,
+        );
+        let poly_oscillator_b_amount =
+            quantize_analog_pot(settings.poly_mod_oscillator_b_amount);
+        let poly_oscillator_b_control_current = self.poly_mod_oscillator_b_current.get(
+            poly_oscillator_b_amount,
+            vca::poly_mod_oscillator_b_control_current_amps,
+        );
+        let poly_source_live = poly_oscillator_destinations
+            && (poly_filter_envelope_current != 0.0
+                || poly_oscillator_b_control_current > 0.0);
+
+        for _ in 0..OSCILLATOR_OVERSAMPLING {
+            if poly_source_live {
+                let sample_b =
+                    self.oscillator_b
+                        .next(frequency_b, oscillator_rate, pulse_width_b, waves_b);
+                let poly_oscillator_b_current =
+                    vca::poly_mod_oscillator_b_with_control_current_amps(
+                        sample_b.poly_mod_source_volts,
+                        sample_b.poly_mod_source_conductance,
+                        poly_oscillator_b_control_current,
+                        self.voice_index,
+                    );
+                let destinations = poly_mod::destinations(vca::poly_mod_bus_voltage(
+                    poly_filter_envelope_current,
+                    poly_oscillator_b_current,
+                ));
+                let frequency = if poly_frequency_a {
+                    frequency_a
+                        * semitone_ratio(
+                            modulation.oscillator_a_semitones
+                                + destinations.oscillator_a_semitones,
+                        )
+                } else {
+                    common_frequency_a
+                };
+                let pulse_width = if poly_pulse_width_a {
+                    pulse_width::add_modulation(
+                        pulse_width_a,
+                        destinations.oscillator_a_pulse_width,
+                    )
+                } else {
+                    pulse_width_a
+                };
+                let sync_event = sync.then_some(sample_b.hard_sync_event).flatten();
+                let _ = self.oscillator_a.advance_silent(
+                    frequency,
+                    oscillator_rate,
+                    pulse_width,
+                    false,
+                    sync_event,
+                );
+            } else {
+                let sync_event = self.oscillator_b.advance_silent(
+                    frequency_b,
+                    oscillator_rate,
+                    pulse_width_b,
+                    waves_b.triangle,
+                    None,
+                );
+                let _ = self.oscillator_a.advance_silent(
+                    common_frequency_a,
+                    oscillator_rate,
+                    pulse_width_a,
+                    false,
+                    sync.then_some(sync_event).flatten(),
+                );
+            }
+        }
     }
 
     fn next_signal_path(
@@ -587,6 +761,7 @@ impl Voice {
                 oscillator_rate,
                 pulse_width::add_modulation(pulse_width_a, poly_pulse_width),
                 waves_a,
+                sync,
                 sync_event,
             );
             let poly_filter_octaves = if poly_filter {
@@ -764,6 +939,13 @@ fn filter_cutoff_log2_hz(
 mod tests {
     use super::*;
 
+    #[cfg(feature = "portable-realtime")]
+    #[test]
+    fn portable_profile_keeps_oscillators_at_four_times_and_filter_at_two_times() {
+        assert_eq!(OSCILLATOR_OVERSAMPLING, 4);
+        assert_eq!(FILTER_OVERSAMPLING, 2);
+    }
+
     #[test]
     fn equal_temperament_reference_notes_are_stable() {
         assert!((note_frequency(69) - 440.0).abs() < 0.01);
@@ -844,27 +1026,43 @@ mod tests {
             Parameter::FilterRelease as u32,
             f64::from(RELEASE_DISABLED_EQUIVALENT_NORMALIZED)
         ));
+        let mut minimum = enabled;
+        assert!(minimum.set(Parameter::AmpRelease as u32, 0.0));
+        assert!(minimum.set(Parameter::FilterRelease as u32, 0.0));
         let mut long = Voice::default();
         let mut short = Voice::default();
+        let mut fastest = Voice::default();
         long.start(0, 60, 100, 0);
         short.start(0, 60, 100, 0);
+        fastest.start(0, 60, 100, 0);
         for _ in 0..4_096 {
             let _ = long.next(48_000.0, &enabled, VoiceModulation::default());
             let _ = short.next(48_000.0, &disabled, VoiceModulation::default());
+            let _ = fastest.next(48_000.0, &minimum, VoiceModulation::default());
         }
         long.release();
         short.release();
+        fastest.release();
         let mut disabled_release_frames = 0;
         while short.is_active() && disabled_release_frames < 48_000 {
             let _ = short.next(48_000.0, &disabled, VoiceModulation::default());
             disabled_release_frames += 1;
+        }
+        let mut minimum_release_frames = 0;
+        while fastest.is_active() && minimum_release_frames < 48_000 {
+            let _ = fastest.next(48_000.0, &minimum, VoiceModulation::default());
+            minimum_release_frames += 1;
         }
         for _ in 0..48_000 {
             let _ = long.next(48_000.0, &enabled, VoiceModulation::default());
         }
         assert!(long.is_active());
         assert!(!short.is_active());
-        assert!((2_000..=5_000).contains(&disabled_release_frames));
+        assert!(
+            (300..=800).contains(&disabled_release_frames),
+            "disabled release took {disabled_release_frames} frames"
+        );
+        assert!(minimum_release_frames < disabled_release_frames);
     }
 
     #[test]
@@ -911,6 +1109,54 @@ mod tests {
             );
         }
         assert_ne!(voice.oscillator_a.phase(), phase_before);
+    }
+
+    #[test]
+    fn dormant_card_reentry_does_not_create_a_numerical_click() {
+        let mut settings = Settings::default();
+        assert!(settings.set(Parameter::FilterCutoff as u32, 1.0));
+        assert!(settings.set(Parameter::FilterResonance as u32, 0.7));
+        assert!(settings.set(Parameter::AmpAttack as u32, 0.0));
+        assert!(settings.set(Parameter::AmpRelease as u32, 0.0));
+        let modulation = VoiceModulation::default();
+        let mut fresh = Voice::default();
+        fresh.start(0, 40, 100, 0);
+        let mut fresh_previous = 0.0_f32;
+        let mut fresh_maximum_step = 0.0_f32;
+        for _ in 0..2_048 {
+            let sample = fresh.next(48_000.0, &settings, modulation);
+            fresh_maximum_step = fresh_maximum_step.max((sample - fresh_previous).abs());
+            fresh_previous = sample;
+        }
+        let mut voice = Voice::default();
+        voice.start(0, 76, 100, 0);
+        for _ in 0..2_048 {
+            let _ = voice.next(48_000.0, &settings, modulation);
+        }
+        voice.release();
+        for _ in 0..48_000 {
+            let _ = voice.next(48_000.0, &settings, modulation);
+            if !voice.is_active() {
+                break;
+            }
+        }
+        assert!(!voice.is_active());
+        for _ in 0..96_000 {
+            assert_eq!(voice.next(48_000.0, &settings, modulation), 0.0);
+        }
+
+        voice.start(0, 40, 100, 0);
+        let mut previous = 0.0_f32;
+        let mut maximum_step = 0.0_f32;
+        for _ in 0..2_048 {
+            let sample = voice.next(48_000.0, &settings, modulation);
+            maximum_step = maximum_step.max((sample - previous).abs());
+            previous = sample;
+        }
+        assert!(
+            maximum_step <= fresh_maximum_step * 1.05 + 1.0e-4,
+            "dormant voice reentry step {maximum_step} exceeded fresh attack {fresh_maximum_step}"
+        );
     }
 
     #[test]
@@ -1029,6 +1275,22 @@ mod tests {
             swept_rms > dry_rms * 0.15,
             "Sync I's official Poly Mod sweep collapsed the voice: swept={swept_rms}, dry={dry_rms}"
         );
+    }
+
+    #[test]
+    fn sync_i_programmed_poly_mod_does_not_pin_the_shared_bus() {
+        // Program 1-7 stores 86/127 on Q304. PCB3 produces one collector
+        // current which fans out to the five U422 IABC inputs; treating that
+        // total as a per-card current pins U431 near its 12 V compliance limit
+        // and turns the descending sync attack into a sustained whistle.
+        for voice in 0..5 {
+            let current = vca::poly_mod_filter_envelope_current_amps(1.0, 86.0 / 127.0, voice);
+            let bus = vca::poly_mod_bus_voltage(current, 0.0);
+            assert!(
+                (4.5..=6.5).contains(&bus),
+                "voice {voice} Sync I peak bus {bus} V",
+            );
+        }
     }
 
     #[test]

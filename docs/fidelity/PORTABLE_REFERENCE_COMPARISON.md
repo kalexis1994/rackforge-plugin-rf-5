@@ -2,12 +2,12 @@
 
 ## Decision
 
-The current host-rate distributed profile is **not accepted as perceptually
+The former host-rate distributed profile was **not accepted as perceptually
 negligible** relative to the four-times fidelity reference. The fast bounded
-elementary functions are accepted; removing four-times processing is the
+elementary functions were accepted; removing internal-rate processing was the
 dominant source of the measured difference.
 
-This decision does not mean that the portable profile is unstable or unusable.
+That decision did not mean that the host-rate profile was unstable or unusable.
 All thirty-four renders are finite, audible, unclipped and within host
 headroom. It means only that the present 1x reduction cannot be described as
 indistinguishable from the admitted reference under the limits below.
@@ -45,7 +45,7 @@ delay is not counted as a timbral difference. Spectral comparison uses
 reports raw and gain-matched temporal error, correlation, maximum band delta
 and 12-20 kHz excess for every scene.
 
-## 2026-08-27 result
+## 2026-08-27 host-rate result
 
 | Candidate against four-times precise reference | Level | Critical bands | Aligned error | 12-20 kHz excess | Decision |
 | --- | ---: | ---: | ---: | ---: | --- |
@@ -65,14 +65,17 @@ Baseline Pad stays finite and unclipped throughout its full wheel sweep, so the
 former catastrophic failure is fixed even though its 1x/reference timbral
 delta is not yet accepted.
 
-Subsequent selective- and two-times experiments confirmed the tradeoff: moving
-more of the nonlinear boundary toward the oracle can reduce the render delta,
-but the candidates that did so were not real-time safe under five-voice
-Raspberry Pi 4 stress. The released profile consequently keeps all modeled
-blocks at host rate and retains the four-times version as an offline oracle.
-This is an explicit engineering boundary, not a claim that the two profiles are
-indistinguishable. Portable arithmetic and solver optimizations are admitted by
-a separate fixed portable-to-portable gate documented in
+Those selective- and two-times experiments established the tradeoff while the
+five cards still had to run serially on one audio core. RackForge's later
+host-owned per-voice worker contract changed that constraint without changing
+the plugin or duplicating shared control state. The released profile now keeps
+the oscillators/mixer at four times and the held/interpolated nonlinear
+filter/final VCA at two times the host rate. A targeted factory 2-1 comparison
+places all five broad spectral bands within 0.03 dB of the complete four-times oracle; the former
+host-rate path was approximately 6.2 dB low in the 3-8 kHz band. A complete
+suite and Raspberry Pi stress rerun remain required before extending that
+targeted result into a universal indistinguishability claim. Portable
+arithmetic and solver optimizations are admitted by a separate gate documented in
 [`REALTIME_CIRCUIT_BUDGET.md`](REALTIME_CIRCUIT_BUDGET.md).
 
 ## Reproduction

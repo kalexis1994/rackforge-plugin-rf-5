@@ -203,6 +203,7 @@ fn hard_sync_alias_ratio(sample_rate: f32, fundamental_bin: usize) -> f32 {
                 internal_rate,
                 0.5,
                 saw,
+                true,
                 master.hard_sync_event,
             );
             if let Some(sample) = decimator.push(slave.mixer_differential_source_volts()) {

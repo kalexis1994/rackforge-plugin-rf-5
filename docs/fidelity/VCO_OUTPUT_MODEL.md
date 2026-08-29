@@ -94,8 +94,9 @@ requires.
 
 ## Numerical treatment
 
-Saw and pulse retain PolyBLEP edge correction, and the full signal path remains
-four-times oversampled. Triangle uses each VCO profile's 45-55% rise/fall
+Saw retains a short internal-rate PolyBLEP reset, static pulse retains the
+profile-scaled mipmapped Fourier reconstruction, and the full oscillator/mixer path remains four-times
+oversampled. Triangle uses each VCO profile's 45-55% rise/fall
 symmetry instead of assuming a perfect 50% shape. A periodic PolyBLAMP rounds
 only its two slope transitions over one internal sample, preserves zero DC and
 stays inside the profiled electrical endpoints. U464 and U428 consume the

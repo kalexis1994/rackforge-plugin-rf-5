@@ -50,7 +50,7 @@ events and writes thirty-four unnormalized 48 kHz mono PCM WAV files:
 
 Scenes 17 and 18 now traverse the absolute SD334/CEM3340 frequency law rather
 than a provisional 20 Hz anchor; their program positions remain suitable for
-direct slow/fast comparison after the corrected approximately 0.0908-55.8 Hz
+direct slow/fast comparison after the corrected approximately 0.0392-26.0 Hz
 nominal endpoint reconstruction.
 
 Run:

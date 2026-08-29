@@ -1,13 +1,14 @@
 param(
     [string]$Output = "",
     [string]$RackForgeRoot = "",
-    [string]$WasmOpt = ""
+    [string]$WasmOpt = "",
+    [string]$Store = ""
 )
 
 $ErrorActionPreference = "Stop"
 $rfRepoRoot = Split-Path -Parent $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($Output)) {
-    $Output = Join-Path $rfRepoRoot "artifacts\rf-5-0.1.0.rfplugin"
+    $Output = Join-Path $rfRepoRoot "artifacts\rf-5-0.1.13.rfplugin"
 }
 if ([string]::IsNullOrWhiteSpace($RackForgeRoot)) {
     $RackForgeRoot = Join-Path (Split-Path -Parent $rfRepoRoot) "rackforge"
@@ -20,6 +21,12 @@ if (Test-Path -LiteralPath $Output) {
 }
 if (-not (Test-Path -LiteralPath (Join-Path $RackForgeRoot "Cargo.toml"))) {
     throw "RackForge checkout not found at $RackForgeRoot"
+}
+if ([string]::IsNullOrWhiteSpace($Store)) {
+    $Store = Join-Path $RackForgeRoot "target\release\rackforge-store.exe"
+}
+if (-not (Test-Path -LiteralPath $Store -PathType Leaf)) {
+    throw "RackForge store executable not found at $Store"
 }
 
 function Resolve-RfWasmOpt {
@@ -107,7 +114,7 @@ try {
         Copy-Item -Path (Join-Path $rfRepoRoot "plugin\package\*") -Destination $rfStage -Recurse
         Copy-Item -LiteralPath (Join-Path $rfRepoRoot "LICENSE") -Destination $rfStage
         Copy-Item -LiteralPath (Join-Path $rfRepoRoot "NOTICE.md") -Destination $rfStage
-        cargo run --manifest-path (Join-Path $RackForgeRoot "Cargo.toml") --locked -p rackforge-store -- pack-wasm $rfStage $rfOptimizedComponent $Output
+        & $Store pack-wasm $rfStage $rfOptimizedComponent $Output
         if ($LASTEXITCODE -ne 0) { throw "RackForge packaging failed" }
     }
     finally {

@@ -2,18 +2,22 @@
 
 ## Decision
 
-The distributed RF-5 component keeps every modeled signal block in the audible
-path. No voice, oscillator, nonlinear filter cell, envelope, OTA stage,
-resonance return, master VCA or output coupling network is removed on Raspberry
-Pi or any other host. The package contains one architecture-independent
-WebAssembly component.
+The distributed RF-5 component keeps every modeled signal block in every
+audible path. No active voice, oscillator, nonlinear filter cell, envelope,
+OTA stage, resonance return, master VCA or output coupling network is removed
+on Raspberry Pi or any other host. Once a card's amplifier envelope is fully
+idle, its VCO, sync, PWM, Poly Mod phase and both envelope states continue, but
+the electrically hidden filter/VCA/FIR evaluation is suspended until the next
+gate. The package contains one architecture-independent WebAssembly component.
 
-The release path is evaluated at host sample rate. The source tree also retains
-a complete four-times profile with 127-tap reconstruction as an offline
-fidelity oracle. The oracle is intentionally not shipped as a selectable mode:
-it exceeds the real-time budget of the Raspberry Pi 4 in worst-case polyphony.
-This sample-rate boundary is the largest known difference between the portable
-component and the oracle; it is not presented as inaudible.
+The release path evaluates the oscillators, audio-rate Poly Mod and mixer at
+four times the host rate, then the nonlinear filter and final voice VCA at two
+times the host rate with held/interpolated samples into the four-to-one voice
+decimator. The source tree also retains a complete four-times profile
+with 127-tap reconstruction as an offline fidelity oracle. The oracle is not a
+selectable mode. The distributed hybrid profile is the closest candidate that
+can exploit RackForge's host-owned per-voice workers without changing the one
+portable component or duplicating shared control state.
 
 ## Retained physical model
 
@@ -31,9 +35,12 @@ After the passive five-input sum, the common master CA3280, output coupling
 capacitor, loaded NE5534 follower and jack isolation are also retained. Control
 scanning, sample-and-hold state, drift, automatic tune, LFO/noise sources and
 performance modulation remain independent physical or firmware-derived state.
-The five oscillator-mixer/filter paths continue evolving while their final
-VCAs are closed; this preserves pulse-wave DC operating points and prevents a
-stale nonlinear filter state from appearing at the next key-down.
+The ten VCO cores and their modulation-dependent phase paths continue evolving
+while their final VCAs are closed. Filter capacitor state is held only after
+the amplifier envelope reaches its idle floor; it resumes beneath the next
+attack from zero. The purely numerical reconstruction history is then cleared,
+and a regression verifies that dormant-card reuse introduces no larger sample
+step than a fresh hardware-style attack.
 
 ## Bounded numerical transformations
 
@@ -49,9 +56,15 @@ The portable profile reduces arithmetic cost without deleting topology:
   converged three-correction solve;
 - fixed sixteenth- and thirty-second-order soft knees use degree-six inverse
   root polynomials rather than four or five square roots;
+- consecutive four-times mixer/cutoff samples are averaged into each two-times
+  filter/VCA evaluation and the intervening output is linearly reconstructed
+  into the four-to-one voice decimator;
 - pulse spectra come from build-time mipmapped Fourier tables; the audio
   thread performs bounded interpolation and no trigonometric series, with the
   harmonic boundary scaled to the active one-, two- or four-times profile;
+- cards whose amplifier VCA has reached its zero-current idle state advance
+  their free-running VCO/sync/PWM/Poly-Mod and envelope state without computing
+  the unobservable nonlinear filter, final VCA and reconstruction FIR;
 - the committed audio path evaluates only transfer values; slope derivatives
   remain available to the Newton predictor but are not calculated and then
   discarded for each of the four committed cells;
@@ -70,13 +83,13 @@ before the render:
 | 12-20 kHz excess | -81.209 dB | -50.00 dB | Pass |
 | Scene outliers | 0 / 34 | 0 | Pass |
 
-These figures accept the optimizations relative to the previous stable
-portable motor. They do not override the separately documented host-rate versus
-four-times-oracle result.
+These figures accepted the arithmetic optimizations relative to the previous
+stable host-rate motor. They do not override the separately documented sample-
+rate comparison. The same bounded arithmetic is retained in the hybrid path.
 
 ## Hardware validation
 
-The optimized universal package was exercised on a Raspberry Pi 4 Model B Rev
+The former host-rate universal package was exercised on a Raspberry Pi 4 Model B Rev
 1.4, 64-bit Cortex-A72 at 1.8 GHz, through the normal RackForge WebAssembly
 runtime and a USB Scarlett Solo. The active profile was 48 kHz, 256 period
 frames and 512 buffer frames.
@@ -89,7 +102,9 @@ frames and 512 buffer frames.
 The same high-resonance test produced sustained XRUNs before the value-only
 transfer split. Raising the buffer to 1024 had not solved that earlier build,
 so the accepted result comes from reducing redundant computation rather than
-hiding it with extra latency.
+hiding it with extra latency. These measurements remain the historical lower-
+cost baseline; the hybrid release path requires a fresh hardware stress pass
+under RackForge's per-voice workers before receiving the same zero-XRUN claim.
 
 ## Remaining uncertainty
 

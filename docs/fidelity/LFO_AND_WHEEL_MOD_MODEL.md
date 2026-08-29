@@ -21,7 +21,7 @@ wheel in RF-5.
   Both its span and absolute anchor now come from SD334 rather than an admitted
   listening guess. C382 is the actual 1 uF timing capacitor; C381 belongs to
   soft sync. R3138's 2.21 Mohm feed establishes 6.787 uA of reference current,
-  while the 681 kohm/+15 V and 101 kohm/+5 V paths establish the zero-code
+  while the 487 kohm/+5 V and 101 kohm/+5 V paths establish the zero-code
   frequency-control current. The 0-10 V DAC joins them through R3136's 110
   kohm path. R3107, R3108 and R3137 populate the CEM3340 multiplier with 30.1
   kohm, 5.62 kohm and 1.82 kohm respectively.
@@ -30,15 +30,11 @@ wheel in RF-5.
   `I_OM = 22 V_T/R_T * (1 - I_C R_Z/3 V)`, `V_B = I_OM R_S`,
   `I_EG = I_REF exp(-V_B/V_T)` and
   `f = 3 I_EG/(2 V_CC C_F)`. Thermal voltage cancels from the combined nominal
-  law. The unbounded populated circuit spans 9.3753 octaves and requests
-  approximately 0.908 uA to 603.2 uA from the exponential generator, placing
-  the slow endpoint at approximately 0.09083 Hz.
-- The CEM3340 data sheet publishes a 400/570/800 uA minimum/typical/maximum
-  timing-capacitor current rather than an exact overload curve. RF-5 therefore
-  applies a deliberately narrow, high-order continuous knee at the 570 uA
-  typical point. It leaves the specified sub-100 uA accurate region unchanged,
-  preserves all 128 distinct panel steps and rounds the nominal fast endpoint
-  to approximately 55.8 Hz instead of imposing an invented hard clip.
+  law. The populated circuit spans 9.3753 octaves and requests approximately
+  0.392 uA to 260.25 uA from the exponential generator, placing the nominal
+  panel endpoints at approximately 0.0392 and 26.0 Hz. The upper current
+  remains below the data sheet's 400 uA minimum timing-capacitor capability,
+  so RF-5 does not invent an overload limiter.
 - Saw, triangle and square are independently summable, but they do not share a
   generic bipolar normalization. The manual states that all raw CEM3340
   outputs are positive-going and that triangle alone must be level-shifted for
@@ -89,16 +85,18 @@ wheel in RF-5.
 The schematic and CEM3340 equations now close the absolute nominal LFO law;
 there is no remaining free 20 Hz anchor. The slow endpoint is above the data
 sheet's preferred 50 nA accurate-current boundary. At the opposite end, the
-raw populated equation asks for approximately 603.2 uA, just above the 570 uA
-typical timing-current ceiling but within its published 400-800 uA population
-range. The data sheet says the oscillator flattens in its uppermost octaves but
-does not publish the knee shape. The isolated continuous knee is consequently
-a bounded device-overload candidate: a populated-unit timing sweep can refine
-the last fast codes without changing the reconstructed reference, scale,
-timing-capacitor or DAC networks. Wheel Mod destination ratios, U380 triangle
-gain and the W-MOD source voltage are circuit-derived. Populated-unit
-measurements can refine the transistor/OTA population without restoring a host
-normalization boundary.
+populated equation asks for approximately 260.25 uA, safely below even the
+published 400 uA minimum timing-current capability. The data sheet specifies
+its tightest exponential-scale accuracy through 100 uA, so a populated-unit
+timing sweep can still refine the upper codes without changing the
+reconstructed reference, scale, timing capacitor or DAC networks. Sequential's
+1-1 Brass sheet independently calls legacy LFO code 92 approximately 5 Hz;
+the nominal circuit produces 4.34 Hz, while the Synthmania Rev 3 recording is
+about 5.29 Hz. This brackets the documented musical setting without a fitted
+correction multiplier. Wheel Mod destination ratios, U380 triangle gain and
+the W-MOD source voltage are circuit-derived. Populated-unit measurements can
+refine the transistor/OTA population without restoring a host normalization
+boundary.
 
 The original Wheel Mod source-mix control now current-mixes the LFO with the
 shared MM5837-class noise candidate through its physical CA3280 rather than a
@@ -110,13 +108,12 @@ and spectral assumptions are documented separately in
 ## Acceptance tests
 
 - the frequency mapping is monotonic and exposes 128 distinct panel steps;
-- the populated scale network produces the 9.3753-octave unbounded sweep;
+- the populated scale network produces the 9.3753-octave sweep;
 - the 2.21 Mohm reference feed, fixed-current inputs and 1 uF timing capacitor
-  reproduce approximately 0.908 uA/0.09083 Hz at panel minimum and request
-  approximately 603.2 uA at panel maximum;
-- the published typical timing-current ceiling leaves the accurate region
-  unchanged, continuously rounds only the fastest codes and produces an
-  approximately 55.8 Hz nominal endpoint;
+  reproduce approximately 0.392 uA/0.0392 Hz at panel minimum and request
+  approximately 260.25 uA/26.0 Hz at panel maximum;
+- original Brass code 92 lands at approximately 4.34 Hz and remains within
+  the manufacturer's documented approximately-5-Hz band;
 - square-wave high and zero intervals are equal within one sample and never
   become negative;
 - simultaneously selected waveforms sum on one shared bus;

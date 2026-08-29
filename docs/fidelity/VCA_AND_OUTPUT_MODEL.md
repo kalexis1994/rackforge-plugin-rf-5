@@ -42,12 +42,15 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
   third mixer OTA on every voice card.
 - The 0-10 V oscillator A/B level cells reach the paired voice-mixer VCAs
   through SD333 Q306/Q302 and 33k emitter resistors. The common noise cell
-  reaches its OTA through Q305 and 75k. Their physical IABC currents now drive
+  reaches its OTA through Q305 and 75k. Each Q306/Q302 collector current is
+  divided across the five parallel voice-card IABC inputs; Q305 instead drives
+  the single common noise OTA. Their physical IABC currents now drive
   CA3280 current limits and the populated filter-input transimpedances; the
   intermediate settings follow the common 2N4250 junction equation instead of
   linear host multipliers.
 - The five final VCAs use substantially wider diode-linearized transfers and
-  are evaluated inside the same four-times-oversampled loop as the filters.
+  are evaluated inside the same two-times-oversampled loop as the filters in
+  the distributed profile (four times in the offline oracle).
   Their small-signal gain is equal after the documented per-voice service
   adjustment, while their strong-signal knees remain distinct.
 - The final-VCA audio input is the same stateful C4164/U474 node that drives
@@ -77,10 +80,10 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
   envelope preserves the serviced level anchor. The admitted 4.7-5.3 V CEM3310
   population can extend slightly above nominal instead of being digitally
   clamped at one.
-- Each complete nonlinear voice path crosses a 127-tap anti-alias low-pass
-  before it enters the host-rate common summer. This keeps filter resonance,
-  VCA curvature and sync products from folding through the former box-average
-  stopband.
+- Each complete nonlinear voice path crosses the profile's anti-alias boundary
+  before it enters the host-rate common summer. The distributed path uses the
+  fixed two-to-one decimator; the complete four-times oracle uses the 127-tap
+  low-pass. Both place reconstruction after filter resonance and VCA curvature.
 - The five post-VCA voice signals cross equal 39 kohm resistors into U480. The
   resulting common signal is their exact passive average; this replaces the
   former unexplained 0.18 host gain with the populated one-fifth network.
@@ -115,8 +118,14 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
 - The three stored amount controls reach their per-voice CA3280s through the
   separate grounded-base SD333 converters: Q301/5.1k for direct filter
   envelope, Q303/5.6k for oscillator-B Poly Mod and Q304/3k for envelope Poly
-  Mod. Their 0-10 V held controls now follow the same source-backed 2N4250
-  junction equation as the audio VCAs instead of linear normalized gains.
+  Mod. Each converter establishes one total current shared by five parallel
+  IABC inputs. Their 0-10 V held controls now follow the same source-backed
+  2N4250 junction equation and physical fanout as the audio VCAs instead of
+  linear normalized gains.
+- U422's direct filter-envelope half carries a bounded 3.15 populated
+  reference gain at the unresolved CA3280 transconductance boundary. This
+  preserves the official 1-4 amount while bringing its documented onset
+  octave beside the fundamental; it is not a patch-specific audio gain or EQ.
 - The two Poly Mod amount stages produce physical CA3280 output currents.
   U422's envelope half uses populated 22k signal/return and 120k diode-bias
   paths; U428's oscillator half retains the enabled 150k/200k waveform-source
@@ -131,7 +140,7 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
   impedance RackForge input leaves R4543 unloaded; a finite external-load
   fixture verifies the divider without silently assuming a particular mixer.
 - All modeled audio stages exchange circuit volts through the jack. One
-  explicit candidate conversion maps four jack volts to one host unit only
+  explicit candidate conversion maps two jack volts to one host unit only
   after U481. The mapping is strictly linear and replaces the former host
   `tanh`, which compressed strong chords before any physical stage reached its
   own overload boundary.
@@ -164,9 +173,10 @@ recorded sweeps from a serviced reference instrument.
 
 - zero bias current closes every physical VCA boundary exactly;
 - gain rises monotonically with control current;
-- Q306/Q302 reach approximately 280 uA at full oscillator level and Q305
-  reaches approximately 125 uA at full noise level; all three preserve their
-  transistor knees and calibrated endpoints;
+- Q306/Q302 each produce approximately 280 uA total at full oscillator level,
+  or about 56 uA per parallel voice-card input, while Q305 reaches approximately
+  125 uA at the one common noise OTA; all three preserve their transistor knees
+  and calibrated endpoints;
 - the 5 V envelope reconstructs 650-680 uA IABC, has a silicon-junction knee,
   and accepts the complete bounded 4.7-5.3 V CEM3310 population;
 - the linearized transfer retains more strong-signal range than the mixer VCA;

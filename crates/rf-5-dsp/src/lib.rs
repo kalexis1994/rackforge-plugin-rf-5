@@ -409,6 +409,7 @@ impl Engine {
     }
 
     fn start_voice(&mut self, unit: usize, channel: u8, note: u8, velocity: u8) {
+        self.admit_voice_pitch(unit, note);
         self.voices[unit].start(channel, note, velocity, unit);
         self.push_voice_command(VoiceCommand {
             unit: unit as u8,
@@ -422,6 +423,7 @@ impl Engine {
     }
 
     fn retune_voice(&mut self, unit: usize, channel: u8, note: u8) {
+        self.admit_voice_pitch(unit, note);
         self.voices[unit].retune(channel, note);
         self.push_voice_command(VoiceCommand {
             unit: unit as u8,
@@ -431,6 +433,19 @@ impl Engine {
             epoch: self.voice_epoch,
             ..VoiceCommand::default()
         });
+    }
+
+    /// Admit a host note at the hardware boundary after keyboard scanning and
+    /// the first complete per-voice pitch pass. The firmware really does
+    /// assert the gate before its following DAC sweep, but exposing that
+    /// private interval directly to sample-accurate MIDI made the newly opened
+    /// VCA reproduce the previous voice assignment for several milliseconds.
+    /// The physical keyboard cannot be observed at that intermediate point.
+    fn admit_voice_pitch(&mut self, unit: usize, note: u8) {
+        self.cv_notes[unit] = note;
+        let settings = self.controls.current(self.settings);
+        let targets = self.cv_targets(settings);
+        self.cv.refresh_voice(unit, targets);
     }
 
     fn release_voice(&mut self, unit: usize) {
@@ -1104,6 +1119,21 @@ mod tests {
     extern crate std;
 
     use super::*;
+    use std::vec::Vec;
+
+    fn windowed_frequency_magnitude(samples: &[f32], sample_rate: f32, frequency: f32) -> f32 {
+        let last = (samples.len() - 1) as f32;
+        let mut real = 0.0_f32;
+        let mut imaginary = 0.0_f32;
+        for (index, sample) in samples.iter().copied().enumerate() {
+            let phase = core::f32::consts::TAU * index as f32 / last;
+            let window = 0.5 - 0.5 * libm::cosf(phase);
+            let angle = core::f32::consts::TAU * frequency * index as f32 / sample_rate;
+            real += sample * window * libm::cosf(angle);
+            imaginary -= sample * window * libm::sinf(angle);
+        }
+        libm::sqrtf(real * real + imaginary * imaginary)
+    }
 
     #[test]
     fn engine_is_silent_until_midi_arrives() {
@@ -1115,20 +1145,64 @@ mod tests {
     }
 
     #[test]
-    fn note_gate_precedes_the_next_cpu_pitch_sweep() {
+    fn high_sync_i_attack_has_no_doubled_numerical_click() {
+        let mut engine = Engine::default();
+        assert!(engine.prepare(48_000.0));
+        assert!(engine.load_program("original-17-sync-i"));
+        for _ in 0..96_000 {
+            let _ = engine.next_sample();
+        }
+
+        engine.note_on(0, 96, 127);
+        let mut previous = 0.0_f32;
+        let mut previous_delta = 0.0_f32;
+        let mut maximum_second_difference = 0.0_f32;
+        for _ in 0..4_800 {
+            let sample = engine.next_sample();
+            let delta = sample - previous;
+            maximum_second_difference =
+                maximum_second_difference.max((delta - previous_delta).abs());
+            previous = sample;
+            previous_delta = delta;
+        }
+
+        assert!(
+            maximum_second_difference < 0.05,
+            "Sync I high-note attack produced a doubled click: {maximum_second_difference}"
+        );
+    }
+
+    #[test]
+    fn factory_e_piano_attack_exposes_its_documented_octave_overtone() {
+        const SAMPLE_RATE: f32 = 48_000.0;
+        let mut engine = Engine::default();
+        assert!(engine.prepare(SAMPLE_RATE as f64));
+        assert!(engine.load_program("original-14-percussive-e-piano"));
+        for _ in 0..96_000 {
+            let _ = engine.next_sample();
+        }
+
+        engine.note_on(0, 50, 127);
+        let samples: Vec<f32> = (0..7_680).map(|_| engine.next_sample()).collect();
+        let attack = &samples[1_440..7_680];
+        let fundamental = windowed_frequency_magnitude(attack, SAMPLE_RATE, 146.832_38);
+        let octave = windowed_frequency_magnitude(attack, SAMPLE_RATE, 293.664_76);
+        let ratio = octave / fundamental;
+
+        assert!(
+            (0.55..=1.50).contains(&ratio),
+            "factory 1-4 octave/fundamental attack ratio {ratio}"
+        );
+    }
+
+    #[test]
+    fn host_note_is_admitted_after_its_first_pitch_sweep() {
         let mut engine = Engine::default();
         assert!(engine.set_parameter(Parameter::FilterKeyboard as u32, 1.0));
         assert!(engine.prepare(48_000.0));
-        let held_a = engine.cv.oscillator_semitones(0, false);
-        let held_b = engine.cv.oscillator_semitones(0, true);
-        let held_filter = engine.cv.filter_keyboard_octaves(0);
         engine.note_on(0, 60, 100);
 
         assert!(engine.voices[0].matches(0, 60));
-        assert_eq!(engine.cv.oscillator_semitones(0, false), held_a);
-        assert_eq!(engine.cv.oscillator_semitones(0, true), held_b);
-        assert_eq!(engine.cv.filter_keyboard_octaves(0), held_filter);
-
         let settings = engine.controls.current(engine.settings);
         let ideal_a = tuning::oscillator_a_tuning_semitones(
             60,
@@ -1141,67 +1215,24 @@ mod tests {
             parameter_enabled(settings, Parameter::OscillatorBKeyboard),
             parameter_enabled(settings, Parameter::OscillatorBLowFrequency),
         );
-        let mut oscillator_a_sample = None;
-        let mut oscillator_b_sample = None;
-        let mut filter_sample = None;
-        for sample in 1..=288 {
-            let _ = engine.next_sample();
-            if oscillator_a_sample.is_none()
-                && (engine.cv.oscillator_semitones(0, false) - held_a).abs() > 1.0
-            {
-                oscillator_a_sample = Some(sample);
-            }
-            if oscillator_b_sample.is_none()
-                && (engine.cv.oscillator_semitones(0, true) - held_b).abs() > 1.0
-            {
-                oscillator_b_sample = Some(sample);
-            }
-            if filter_sample.is_none()
-                && (engine.cv.filter_keyboard_octaves(0) - held_filter).abs() > 0.5
-            {
-                filter_sample = Some(sample);
-            }
-        }
-        let oscillator_a_sample = oscillator_a_sample.expect("oscillator A CV was strobed");
-        let oscillator_b_sample = oscillator_b_sample.expect("oscillator B CV was strobed");
-        let filter_sample = filter_sample.expect("filter CV was strobed");
-        assert!(oscillator_a_sample < oscillator_b_sample);
-        assert!(oscillator_b_sample < filter_sample);
         assert!((engine.cv.oscillator_semitones(0, false) - ideal_a).abs() < 0.03);
         assert!((engine.cv.oscillator_semitones(0, true) - ideal_b).abs() < 0.03);
         assert!((engine.cv.filter_keyboard_octaves(0) - 2.0).abs() < 1.0e-5);
     }
 
     #[test]
-    fn gate_to_first_pitch_strobe_time_is_stable_across_audio_rates() {
-        let mut delays = [0.0_f64; 4];
-        for (index, sample_rate) in [44_100.0, 48_000.0, 96_000.0, 192_000.0]
-            .into_iter()
-            .enumerate()
-        {
+    fn host_note_admission_is_immediate_at_every_audio_rate() {
+        for sample_rate in [44_100.0, 48_000.0, 96_000.0, 192_000.0] {
             let mut engine = Engine::default();
             assert!(engine.prepare(sample_rate));
             let held = engine.cv.oscillator_semitones(0, false);
             engine.note_on(0, 60, 100);
-
-            let maximum_samples = (sample_rate * 0.006) as usize + 2;
-            let first_strobe = (1..=maximum_samples)
-                .find(|_| {
-                    let _ = engine.next_sample();
-                    (engine.cv.oscillator_semitones(0, false) - held).abs() > 1.0
-                })
-                .expect("oscillator A CV was strobed in the first CPU cycle");
-            delays[index] = first_strobe as f64 / sample_rate;
+            assert!((engine.cv.oscillator_semitones(0, false) - held).abs() > 1.0);
         }
-
-        let earliest = delays.into_iter().fold(f64::INFINITY, f64::min);
-        let latest = delays.into_iter().fold(0.0, f64::max);
-        assert!(earliest > 0.0044 && latest < 0.0047, "delays: {delays:?}");
-        assert!(latest - earliest < 25.0e-6, "delays: {delays:?}");
     }
 
     #[test]
-    fn voice_reassignment_waits_for_the_next_cpu_pitch_sweep() {
+    fn voice_reassignment_never_exposes_the_previous_pitch() {
         let mut engine = Engine::default();
         assert!(engine.prepare(48_000.0));
         engine.note_on(0, 36, 100);
@@ -1211,10 +1242,6 @@ mod tests {
         let low = engine.cv.oscillator_semitones(0, false);
         engine.reset_voices();
         engine.note_on(0, 84, 100);
-        assert_eq!(engine.cv.oscillator_semitones(0, false), low);
-        for _ in 0..288 {
-            let _ = engine.next_sample();
-        }
         let high = engine.cv.oscillator_semitones(0, false);
         assert!(high - low > 47.9);
     }
@@ -1608,7 +1635,10 @@ mod tests {
                 }
             }
             assert!(peak > 0.01, "silent filter audition program {id}");
-            assert!(peak <= 1.0, "unbounded filter audition program {id}");
+            assert!(
+                peak <= 1.0,
+                "unbounded filter audition program {id}: peak={peak}",
+            );
         }
         assert!((signatures[0] - signatures[1]).abs() > 1.0);
     }

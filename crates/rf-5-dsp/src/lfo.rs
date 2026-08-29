@@ -3,8 +3,8 @@
 //! The Rev 3 service manual establishes the single-oscillator topology, the
 //! three additive shapes and the square wave's 50% duty cycle. The populated
 //! SD334 timing, reference and scale networks now establish the absolute
-//! frequency law. The CEM3340's published finite timing-capacitor current
-//! bounds retain the remaining populated-device uncertainty at the fast end.
+//! frequency law. The complete panel sweep remains inside the CEM3340's
+//! published timing-capacitor current capability.
 
 use rf_5_contract::hardware::quantize_analog_pot;
 use rf_5_voice::vco::cem3340_loaded_pulse_high_volts;
@@ -20,18 +20,10 @@ const CEM3340_REFERENCE_RESISTANCE_OHMS: f32 = 2_210_000.0;
 const CEM3340_BASE_RESISTANCE_OHMS: f32 = 1_820.0;
 const CEM3340_SCALE_ZERO_RESISTANCE_OHMS: f32 = 30_100.0;
 const CEM3340_SCALE_TIMING_RESISTANCE_OHMS: f32 = 5_620.0;
-const FIXED_POSITIVE_SUPPLY_INPUT_OHMS: f32 = 681_000.0;
-const FIXED_FIVE_VOLT_INPUT_OHMS: f32 = 101_000.0;
+const FIXED_FIVE_VOLT_HIGH_INPUT_OHMS: f32 = 487_000.0;
+const FIXED_FIVE_VOLT_LOW_INPUT_OHMS: f32 = 101_000.0;
 const FIXED_REFERENCE_VOLTS: f32 = 5.0;
 const POPULATED_TIMING_CAPACITANCE_FARADS: f32 = 1.0e-6;
-
-// The data sheet gives 400/570/800 uA minimum/typical/maximum timing-capacitor
-// current. A high-order continuous limiter reaches the nominal-device ceiling
-// without producing duplicate panel steps or changing the accurate sub-100 uA
-// portion of the law. Its order is deliberately isolated because the data
-// sheet specifies the ceiling but not the overload-knee shape.
-const CEM3340_TYPICAL_MAX_TIMING_CURRENT_AMPS: f32 = 570.0e-6;
-const TIMING_CURRENT_KNEE_ORDER: f32 = 16.0;
 
 // SD334 does not AC-centre the complete LFO bus. Saw and pulse remain
 // positive-going through their 4016 switches, while only triangle crosses
@@ -149,18 +141,20 @@ impl Lfo {
 pub fn frequency_hz(control: f32) -> f32 {
     let control = quantize_analog_pot(control);
     let control_volts = control * PANEL_CONTROL_RANGE_VOLTS;
-    let generator_current = bounded_exponential_generator_current_amps(control_volts);
+    let generator_current = exponential_generator_current_amps(control_volts);
     3.0 * generator_current
         / (2.0 * CEM3340_POSITIVE_SUPPLY_VOLTS * POPULATED_TIMING_CAPACITANCE_FARADS)
 }
 
 fn frequency_control_current_amps(control_volts: f32) -> f32 {
-    CEM3340_POSITIVE_SUPPLY_VOLTS / FIXED_POSITIVE_SUPPLY_INPUT_OHMS
-        + FIXED_REFERENCE_VOLTS / FIXED_FIVE_VOLT_INPUT_OHMS
+    // SD334 R3105 and R3110 both originate at +5 V. The scan is easy to
+    // misread: R3105 is 487 kohm, not 681 kohm, and it is not tied to +15 V.
+    FIXED_REFERENCE_VOLTS / FIXED_FIVE_VOLT_HIGH_INPUT_OHMS
+        + FIXED_REFERENCE_VOLTS / FIXED_FIVE_VOLT_LOW_INPUT_OHMS
         + control_volts / POPULATED_FREQUENCY_INPUT_OHMS
 }
 
-fn unbounded_exponential_generator_current_amps(control_volts: f32) -> f32 {
+fn exponential_generator_current_amps(control_volts: f32) -> f32 {
     let reference_current = CEM3340_POSITIVE_SUPPLY_VOLTS / CEM3340_REFERENCE_RESISTANCE_OHMS;
     let control_current = frequency_control_current_amps(control_volts);
 
@@ -172,15 +166,6 @@ fn unbounded_exponential_generator_current_amps(control_volts: f32) -> f32 {
     let exponent = -22.0 * CEM3340_BASE_RESISTANCE_OHMS / CEM3340_SCALE_TIMING_RESISTANCE_OHMS
         * (1.0 - control_current * CEM3340_SCALE_ZERO_RESISTANCE_OHMS / 3.0);
     reference_current * libm::expf(exponent)
-}
-
-fn bounded_exponential_generator_current_amps(control_volts: f32) -> f32 {
-    let raw = unbounded_exponential_generator_current_amps(control_volts);
-    let ratio = raw / CEM3340_TYPICAL_MAX_TIMING_CURRENT_AMPS;
-    raw / libm::powf(
-        1.0 + libm::powf(ratio, TIMING_CURRENT_KNEE_ORDER),
-        1.0 / TIMING_CURRENT_KNEE_ORDER,
-    )
 }
 
 #[cfg(test)]
@@ -209,9 +194,9 @@ mod tests {
     }
 
     #[test]
-    fn circuit_frequency_mapping_is_monotonic_and_bounded() {
-        assert!((frequency_hz(0.0) - 0.090_826_68).abs() < 1.0e-6);
-        assert!((frequency_hz(1.0) - 55.803_21).abs() < 0.001);
+    fn circuit_frequency_mapping_is_monotonic() {
+        assert!((frequency_hz(0.0) - 0.039_187_15).abs() < 1.0e-6);
+        assert!((frequency_hz(1.0) - 26.024_84).abs() < 0.001);
         let mut previous = frequency_hz(0.0);
         for step in 1..=127 {
             let current = frequency_hz(step as f32 / 127.0);
@@ -221,9 +206,9 @@ mod tests {
     }
 
     #[test]
-    fn populated_scale_network_sets_the_unbounded_sweep() {
-        let minimum = unbounded_exponential_generator_current_amps(0.0);
-        let maximum = unbounded_exponential_generator_current_amps(PANEL_CONTROL_RANGE_VOLTS);
+    fn populated_scale_network_sets_the_complete_sweep() {
+        let minimum = exponential_generator_current_amps(0.0);
+        let maximum = exponential_generator_current_amps(PANEL_CONTROL_RANGE_VOLTS);
         let ratio = maximum / minimum;
         let expected_octaves =
             10.0 * CEM3340_BASE_RESISTANCE_OHMS * 22.0 * CEM3340_SCALE_ZERO_RESISTANCE_OHMS
@@ -238,28 +223,21 @@ mod tests {
 
     #[test]
     fn populated_reference_and_timing_network_set_absolute_endpoints() {
-        let minimum_current = unbounded_exponential_generator_current_amps(0.0);
-        let maximum_current =
-            unbounded_exponential_generator_current_amps(PANEL_CONTROL_RANGE_VOLTS);
-        assert!((minimum_current - 0.908_266_9e-6).abs() < 1.0e-12);
-        assert!((maximum_current - 603.195_2e-6).abs() < 0.001e-6);
+        let minimum_current = exponential_generator_current_amps(0.0);
+        let maximum_current = exponential_generator_current_amps(PANEL_CONTROL_RANGE_VOLTS);
+        assert!((minimum_current - 0.391_871_55e-6).abs() < 1.0e-12);
+        assert!((maximum_current - 260.248_43e-6).abs() < 0.001e-6);
         assert!(minimum_current > 50.0e-9);
-        assert!(maximum_current > CEM3340_TYPICAL_MAX_TIMING_CURRENT_AMPS);
+        assert!(maximum_current < 400.0e-6);
     }
 
     #[test]
-    fn finite_timing_current_only_rounds_the_fastest_steps() {
-        let accurate_region = 100.0e-6;
-        let bounded_accurate = bounded_exponential_generator_current_amps(7.0);
-        let raw_accurate = unbounded_exponential_generator_current_amps(7.0);
-        assert!(raw_accurate < accurate_region);
-        assert!((bounded_accurate / raw_accurate - 1.0).abs() < 1.0e-5);
-
-        let raw_max = unbounded_exponential_generator_current_amps(PANEL_CONTROL_RANGE_VOLTS);
-        let bounded_max = bounded_exponential_generator_current_amps(PANEL_CONTROL_RANGE_VOLTS);
-        assert!(bounded_max < raw_max);
-        assert!(bounded_max < CEM3340_TYPICAL_MAX_TIMING_CURRENT_AMPS);
-        assert!(bounded_max > 550.0e-6);
+    fn original_brass_code_matches_the_documented_vibrato_rate() {
+        // Sequential's 1-1 Brass sheet calls this setting approximately 5 Hz.
+        // The official Group 5 program carries legacy LFO code 92.
+        let brass = frequency_hz(92.0 / 127.0);
+        assert!((brass - 4.341_144_6).abs() < 0.001);
+        assert!((4.0..=6.0).contains(&brass));
     }
 
     #[test]

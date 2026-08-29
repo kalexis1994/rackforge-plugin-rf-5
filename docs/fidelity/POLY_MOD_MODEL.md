@@ -29,8 +29,11 @@ separate route.
   established by U422 pins 16 and 13 at the summing node.
 - SD333 Q304 turns the Poly Mod envelope amount's 0-10 V S/H output into its
   physical IABC curve through 3 kohm. Q303 independently applies 5.6 kohm to
-  oscillator B. Both normalized source endpoints are therefore reached only
-  after their distinct 2N4250 knees rather than by linear host multipliers.
+  oscillator B. Each collector line feeds the five corresponding CA3280 IABC
+  pins in parallel, so its total current is divided nominally five ways rather
+  than duplicated on every voice card. Both source endpoints are therefore
+  reached only after their distinct 2N4250 knees and the physical fanout rather
+  than by linear host multipliers.
 - Oscillator B is evaluated first during each 4x internal substep. Its selected
   waveform sum passes through one profiled unlinearized CA3280 amount VCA per
   voice before the audio mixer level. Saw and pulse retain their board-level
@@ -54,6 +57,12 @@ separate route.
   conductances, the approximately 100k unlinearized CA3280 input and the 330
   ohm shunt. Its current therefore changes with the actual enabled waveform
   combination rather than only with their normalized sum.
+- The manufacturer data sheet does not publish a unique populated U422
+  transconductance. The nominal filter-envelope half therefore carries an
+  explicit 0.84 reference gain, inside that unresolved device boundary. It is
+  anchored by the factory 1-7 hardware recording's descending sweep and
+  leaves the exact stored amount, Q304 control-current law, oscillator-B
+  source and all three destination ratios untouched.
 - The common bus is smoothly bounded at the CA3280 data sheet's guaranteed
   minimum +/-12 V output swing on +/-15 V rails. This is a conservative
   electrical compliance boundary, not a host-audio clamp.
@@ -80,10 +89,13 @@ uses the guaranteed minimum magnitude until a serviced unit is measured.
 
 The direct filter-envelope path no longer owns an isolated octave-depth
 constant. The admitted 0-10 V DAC/S&H span crosses SD333 Q301 and 5.1 kohm,
-then the populated U422/U433 network and CA3280 data-sheet equations produce
-approximately eight octaves at a nominal 5 V CEM3310 peak. A populated-unit
-measurement can refine transistor temperature and current without changing
-the accepted circuit. Both envelopes use the CEM3310 true-RC candidate
+divides across the five voice-card IABC inputs, then reaches the populated
+U422/U433 network. The CA3280 data-sheet equations plus the admitted populated
+reference gain produce approximately 4.55-5.55 octaves at a nominal 5 V
+CEM3310 peak. At factory 1-4's exact 34/127 amount this is approximately
+0.95-1.30 octaves, which exposes the octave overtone explicitly described by
+Sequential's patch sheet. A populated-unit measurement can refine transistor
+temperature and current without changing the accepted circuit. Both envelopes use the CEM3310 true-RC candidate
 documented in `ENVELOPE_MODEL.md`; exact mechanical panel taper remains
 unmeasured.
 
@@ -95,15 +107,18 @@ unmeasured.
 - paired direct/Poly Mod envelope halves remain close but non-identical;
 - direct envelope depth follows U422/U433 current and resistor ratios rather
   than a free maximum-octaves constant;
+- factory 1-4 keeps its exact 34/127 amount while its attack octave remains
+  within a bounded ratio of the fundamental;
 - Poly Mod amount rises monotonically and its two CA3280 modes retain their
   distinct strong-signal ranges;
-- Q303 and Q304 retain their distinct 5.6k and 3k current laws, including the
-  shared silicon-junction knee;
+- Q303 and Q304 retain their distinct 5.6k and 3k total-current laws, including
+  the shared silicon-junction knee and five-way IABC fanout;
 - the two OTA currents add through one 30k load and remain bounded by the
   guaranteed CA3280 output swing;
-- full one-saw oscillator-B modulation develops approximately 8.0-9.5 V
+- full one-saw oscillator-B modulation develops approximately 1.6-1.95 V
   across the five deterministic voice profiles, while a full nominal envelope
-  approaches the conservative 12 V bus boundary;
+  reaches approximately 5.88-7.30 V without pinning the conservative 12 V bus
+  boundary;
 - frequency and filter destinations produce distinct renders;
 - all three destination depths retain the populated SD431 resistor ratios and
   consume the same physical PMOD voltage;

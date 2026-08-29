@@ -24,12 +24,28 @@ position 6 and a release longer than 20 seconds at position 10.
 - Sustain is linear, includes the published -3 to +23 mV final-value error,
   and all four panel controls retain their 128 positions.
 - The populated 24.3 kohm/0.039 uF network sets a 0.9477 ms nominal fastest
-  time constant. The nominal dial-6 attack reaches the 5 V peak in one second;
-  this isolates one service-backed anchor and derives a 285.71 mV full control
-  excursion, 4.762 decades and a 57,786:1 range.
-- Position 10 therefore exceeds a 50-second nominal time constant. Its release
-  comfortably satisfies the documented greater-than-20-second observation
-  instead of being forced to an arbitrary 20-second endpoint.
+  time constant. Charge and discharge retain the CEM3310's separate published
+  current domains and use separate monotone panel-to-control-voltage curves.
+  Attack interprets the owner's/service landmarks at the physical 5 V peak
+  threshold. Decay and Release interpret the service manual's explicitly
+  audible "1-sec" observations at position 6 as the time to ten-percent
+  envelope; the populated final-VCA converter is already near -40 dB there.
+  Both curves also honor about 0.5 seconds at position 5 and about 30 seconds
+  at position 10. Interpolation remains in control-voltage space, so the
+  CEM3310 itself remains exponential and true-RC.
+- The otherwise unconstrained fast region is anchored by factory 1-4's exact
+  amplifier Attack code 30 and the firmware's exact RELEASE-off equivalent
+  code 22. In the identified first isolated hardware note, useful level rises
+  in approximately 3-5 ms and falls nearly silent within approximately 5 ms.
+  The admitted nominal landmarks are 8 ms to the CEM3310 attack threshold and
+  2.3 ms to ten-percent discharge; deterministic device spread and the
+  nonlinear final VCA retain the measured acoustic boundary.
+- The resulting position-10 nominal charge time constant is about 20.46
+  seconds and attack reaches its threshold in 30 seconds. The discharge time
+  constant is about 13.03 seconds, reaching ten-percent envelope in 30 seconds;
+  this satisfies the service observation of greater-than-20-second audible
+  release without converting an attack-threshold duration into a much longer
+  listening tail.
 - Each device's curve applies its 58.5-61.5 mV/decade control sensitivity, a
   bounded component/time-tracking ratio and distinct charge/discharge current
   ratios inside the published 0.75-1.30 and 0.83-1.20 limits.
@@ -65,9 +81,18 @@ measurements from one instrument. Exact device values, the meaning of
 exact gate/trigger timing, Q410 temperature, buffer-resistance correlation and
 the correlated populated-device spread remain unmeasured. The disabled Release
 code and its pot-equivalent position are exact firmware behavior and no longer
-carry a separate analog-offset hypothesis. The dial-6 second is
-one explicit replaceable absolute anchor; the remaining panel law is derived
-from the chip equation and populated circuit.
+carry a separate analog-offset hypothesis. The manual timings are approximate
+audible observations rather than precision electrical measurements. They are
+therefore treated as replaceable calibration landmarks, joined without
+overshoot by a shape-preserving PCHIP law. The external-capacitor equation,
+device variation and populated circuit remain independent of that panel
+calibration.
+
+The factory 1-4 recording is admitted only for the newly bounded fast region.
+Sequential's patch sheet identifies both the exact patch and the
+RELEASE-off/footswitch performance option, allowing its first isolated onset
+and cutoff to constrain codes 30 and 22. It does not identify the programmed
+RELEASE-on time or replace the independent dial-5/6/10 manual landmarks.
 
 ## Acceptance tests
 
@@ -77,9 +102,15 @@ from the chip equation and populated circuit.
 - each filter/amplifier pair follows a distinct time curve;
 - attack is observably curved rather than a linear ramp;
 - the populated components produce a 0.9477 ms fastest time constant;
-- dial position 6 produces a one-second nominal attack;
-- the derived control span stays inside the published time-control range and
-  position 10 exceeds the service release requirement;
+- factory 1-4 code 30 reaches the admitted fast attack landmark and firmware
+  RELEASE-off code 22 reaches the admitted fast discharge landmark;
+- dial position 5 produces a 0.5-second nominal attack;
+- dial position 6 produces a one-second nominal attack and a one-second audible
+  decay/release period under their respective physical equations;
+- dial position 10 produces a 30-second nominal attack and a 30-second audible
+  release period, exceeding the service release requirement;
+- all 128 stored positions remain strictly ordered through the calibrated
+  panel law;
 - charge and discharge currents remain distinct and inside their separate
   electrical bounds;
 - retrigger preserves the existing capacitor voltage;

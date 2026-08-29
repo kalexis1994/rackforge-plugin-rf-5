@@ -376,7 +376,7 @@ fn scenes() -> Vec<Scene> {
         Scene {
             id: "18_lfo_fast_range",
             program: "audition-lfo-fast",
-            description: "Fast common-LFO rate below the CEM3340 timing-current knee",
+            description: "Fast common-LFO rate from the populated SD334 control network",
             scale_codes: EQUAL_TEMPERAMENT,
             events: chord_sequence(&[(0.15, 5.35, &[57])]),
         },

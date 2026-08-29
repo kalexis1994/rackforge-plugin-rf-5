@@ -8,7 +8,7 @@ repository.workspace = true
 
 [features]
 default = ["portable-realtime"]
-portable-realtime = ["host-rate", "fast-math", "delayed-low-resonance"]
+portable-realtime = ["held-filter-two-times", "fast-math", "delayed-low-resonance"]
 host-rate = []
 two-times = []
 hybrid-four-two = []

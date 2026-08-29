@@ -34,8 +34,11 @@ end_block (coordinator, serial)
   Rust memory between WebAssembly instances. Ordinary program recall preserves
   the analog card state, as on the hardware.
 - All five physical cards are powered and scheduled from `prepare`, before any
-  key assignment. Their free-running oscillators, oscillator mixers and filter
-  capacitor memories continue advancing after the final VCA becomes idle.
+  key assignment. Their free-running VCO, sync, PWM, Poly Mod and envelope
+  states continue after the final VCA becomes idle. Once the amplifier current
+  reaches its zero floor, the worker holds the electrically hidden filter state
+  and skips its VCA/FIR work until the next gate; numerical reconstruction
+  history is cleared on reentry.
 
 The shared payload contains only the compact settings and modulation values
 required by all voices. The per-unit payload contains calibration data and the

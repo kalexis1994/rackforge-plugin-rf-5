@@ -146,7 +146,7 @@ source = "git+https://github.com/kalexis1994/rackforge.git?rev=03fdb0ea75850405c
 
 [[package]]
 name = "rackforge-rf-5"
-version = "0.1.0"
+version = "0.1.13"
 dependencies = [
  "rackforge-plugin-sdk",
  "rf-5-dsp",
@@ -155,7 +155,7 @@ dependencies = [
 
 [[package]]
 name = "rf-5-audition"
-version = "0.1.0"
+version = "0.1.13"
 dependencies = [
  "rf-5-contract",
  "rf-5-dsp",
@@ -166,11 +166,11 @@ dependencies = [
 
 [[package]]
 name = "rf-5-contract"
-version = "0.1.0"
+version = "0.1.13"
 
 [[package]]
 name = "rf-5-dsp"
-version = "0.1.0"
+version = "0.1.13"
 dependencies = [
  "libm",
  "rf-5-contract",
@@ -179,7 +179,7 @@ dependencies = [
 
 [[package]]
 name = "rf-5-voice"
-version = "0.1.0"
+version = "0.1.13"
 dependencies = [
  "libm",
  "rf-5-contract",
@@ -187,7 +187,7 @@ dependencies = [
 
 [[package]]
 name = "rf-5-web"
-version = "0.1.0"
+version = "0.1.13"
 dependencies = [
  "js-sys",
  "rf-5-contract",

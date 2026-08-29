@@ -23,21 +23,28 @@ different phases, are not reset by note-on, and continue advancing after the
 amplifier envelope becomes inactive. This preserves the free-running behaviour
 of analog VCOs and avoids deterministic, phase-locked attacks.
 
-Saw discontinuities retain the admitted fixed eight-internal-sample PolyBLEP
-window. Pulse is reconstructed from build-time band-limited saw tables. The
-tables use dense harmonic counts in the exposed register, retain every partial
+Saw uses a five-internal-sample PolyBLEP reset in the distributed four-times
+path. It is narrower than the former eight-sample candidate while retaining the
+accepted alias bound. Static pulse is reconstructed from build-time band-limited saw
+tables. The tables use dense harmonic counts in the exposed register, retain every partial
 below the active profile's 90%-of-Nyquist boundary and crossfade the next table
 only after that partial lies below true Nyquist. This avoids the former
 host-rate bug that treated pulse as though every profile were four-times
 oversampled and removed three quarters of its valid high-register spectrum.
-It also handles the
-documented 1%/99% endpoints without overlapping polynomial edges. No table is
-derived from firmware or audio ROM.
+For pulse this also handles the documented 1%/99% endpoints without overlapping
+polynomial edges. When continuous modulation moves far enough to replace the
+safe harmonic basis, RF-5 crossfades the two complete periodic
+reconstructions for 0.5 ms; it does not carry their first-sample difference as
+a decaying DC offset. A keyboard pitch admission explicitly discards this
+numerical transition state while preserving VCO phase and comparator/PWM
+state, so reassigned cards cannot emit one previous-register reconstruction
+transient before settling. No table is derived from firmware or audio ROM.
 
-The distributed portable path runs the complete dual-VCO, mixer, nonlinear
-filter and final-VCA topology at host rate. The retained four-times reference
-uses a unity-DC, 127-tap low-pass to reconstruct one host-rate sample instead
-of the former four-sample box average. Triangle is generated
+The distributed portable path runs the dual-VCO and mixer topology at four
+times the host rate, then feeds a held/interpolated two-times nonlinear filter
+and final-VCA domain. The retained complete four-times reference uses a unity-DC,
+127-tap low-pass to reconstruct one host-rate sample instead of the former
+four-sample box average. Triangle is generated
 directly from the profiled 45-55% phase geometry, but each of its two slope
 changes receives a one-internal-sample periodic PolyBLAMP correction. This
 keeps the continuous CEM3340 shape and its asymmetry while preventing the
@@ -49,20 +56,23 @@ Each seven-bit PULSE WIDTH pot maps monotonically to the owner's manual's
 approximately 1-99% duty-cycle span, with the nearest code to 50% at the
 physical midpoint. Wheel Mod and Poly Mod are summed after that panel law at
 the shared board CV node. They may therefore overdrive a pulse to exactly 0%
-or 100%, where the CEM3340 output becomes steady DC and stops generating sync
-edges until modulation returns it to a finite pulse. Static pulse widths use
-the mipmapped reconstruction. When Wheel Mod or audio-rate Poly Mod moves the
-comparator threshold, a two-host-sample velocity-aware PolyBLEP follows that
-moving edge. Coincident edges cancel exactly at static 0/100% DC.
+or 100%, where the CEM3340 pulse output becomes steady DC. Hard sync remains
+active because its clock comes from oscillator B's saw reset, not this PWM
+edge. Static pulse widths use the mipmapped reconstruction. When Wheel Mod or
+audio-rate Poly Mod moves the comparator threshold, a two-host-sample
+velocity-aware PolyBLEP follows that moving edge. Coincident edges cancel
+exactly at static 0/100% DC.
 
 SYNC is resolved at the same four-times internal rate but does not use the
 CEM3340's bidirectional hard-sync pin 6, which SD431 leaves unconnected.
-Oscillator B's pulse output instead crosses U446 and the populated
+Oscillator B's saw output instead crosses U446 and the populated
 C4107/R4296/R4297/Q401 version of the manufacturer's Figure 5 conventional
-hard-sync circuit. It admits only the falling edge as a negative base pulse.
-RF-5 retains that edge's fractional position inside the internal sample,
+hard-sync circuit. RF-5 retains the saw reset's fractional position inside the internal sample,
 advances A exactly to that instant, starts A at the lower endpoint of a new
-cycle and then advances the remainder. A rising B edge generates no event.
+cycle and then advances the remainder. The physical discontinuity is not
+wrapped in a synthetic multi-sample residual; doing so audibly doubled attack
+transients in high factory Sync I notes. Existing band-limited waveform
+reconstruction remains active on both oscillators.
 Sync remains active even when no B waveform is sent to the audio mixer.
 Detailed acceptance is documented in
 [`HARD_SYNC_MODEL.md`](HARD_SYNC_MODEL.md).

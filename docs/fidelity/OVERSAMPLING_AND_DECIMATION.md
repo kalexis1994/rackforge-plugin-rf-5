@@ -4,14 +4,17 @@
 
 The released `.rfplugin` contains one `wasm-v1` component for every RackForge
 platform. Every voice evaluates both CEM3340 candidates, hard sync, audio-rate
-Poly Mod, the dual CA3280 mixer, the nonlinear four-pole CEM3320 candidate and
-the final CA3280 VCA once per host sample. The common five-input summer, master
-VCA and physical output coupling also run at host rate. Reduced-range
-elementary-function approximations keep this identical component within the
-real-time budget on the supported CPU range; there is no architecture-specific
-DSP implementation or native fallback.
+Poly Mod and the dual CA3280 mixer at four times the host rate. Consecutive
+mixer and cutoff samples are averaged into each nonlinear four-pole CEM3320
+and final-CA3280 evaluation at twice the host rate; the intervening output is
+linearly reconstructed before the four-to-one voice decimator. The common five-input
+summer, master VCA and physical output coupling run at host rate. Reduced-range
+elementary-function approximations keep this identical component portable;
+there is no architecture-specific DSP implementation or native fallback.
 
-Saw and pulse steps use a two-host-sample PolyBLEP correction so the 1%/99%
+Saw uses a short PolyBLEP reset at the four-times oscillator rate. Static pulse
+uses profile-scaled mipmapped Fourier reconstruction; moving pulse edges retain
+a two-host-sample PolyBLEP correction so the 1%/99%
 pulse-width endpoints remain controlled. Oscillator B's continuous asymmetric
 triangle uses a local PolyBLAMP at each slope transition. For audio-rate PWM,
 the pulse-threshold correction width follows the relative velocity between the
@@ -26,9 +29,10 @@ the reconstruction filter documented below. This profile is an offline oracle
 for spectral comparisons and regression tests; it is not a second distributed
 plugin, a platform selection or a user-facing quality mode.
 
-Saw and pulse steps use a two-host-sample PolyBLEP correction so the 1%/99%
-pulse-width endpoints remain controlled when both edges occupy one short
-window. Oscillator B's continuous asymmetric triangle instead uses a periodic
+Saw uses the same short internal-rate PolyBLEP reset. Static pulse uses
+profile-scaled mipmapped Fourier reconstruction. Moving pulse edges retain a two-host-sample PolyBLEP
+correction so the 1%/99% endpoints remain controlled when both edges occupy
+one short window. Oscillator B's continuous asymmetric triangle instead uses a periodic
 PolyBLAMP over one internal sample at each slope transition. The correction
 changes only the corner neighborhoods and precedes both its audio and Poly Mod
 routes. For audio-rate PWM, the pulse-threshold correction width follows the
@@ -70,19 +74,20 @@ mathematically valid harmonic bins must remain below -40 dB relative to total
 AC energy.
 
 The passband/stopband figures describe the reference reconstruction filter, not
-a claimed analog bandwidth for the original instrument or for the distributed
-host-rate component. Populated-unit output bandwidth, a measured portable-versus-
-reference delta and original-instrument spectra remain separate evidence-gated
-questions.
+a claimed analog bandwidth for the original instrument. Populated-unit output
+bandwidth, a measured portable-versus-reference delta and original-instrument
+spectra remain separate evidence-gated questions.
 
-The first complete portable/reference acceptance render is recorded in
+The first complete host-rate/reference acceptance render is recorded in
 [`PORTABLE_REFERENCE_COMPARISON.md`](PORTABLE_REFERENCE_COMPARISON.md). It
-accepts the bounded math but rejects the host-rate reduction as perceptually
-negligible. Selective and two-times candidates were also evaluated, but the
-candidates that approached the oracle did not meet the Raspberry Pi 4
-worst-case real-time budget. The distributed profile therefore keeps the full
-modeled topology at host rate and treats four-times processing as an offline
-oracle, not as a release mode.
+accepts the bounded math but rejects the former host-rate reduction as
+perceptually negligible. RackForge's later host-owned per-voice worker contract
+removes the former requirement that all five cards fit serially on one audio
+core. The distributed profile therefore uses the four-times-oscillator,
+held-two-times-filter candidate: on factory 2-1 its five broad spectral bands differ
+from the four-times oracle by at most 0.03 dB, while the former host-rate path
+lost approximately 6.2 dB in the 3-8 kHz band. Four-times processing remains
+the non-distributed offline oracle, not a user-facing quality mode.
 
 The accepted arithmetic reductions, fixed portable-to-portable comparison and
 zero-XRUN hardware stress result are recorded in

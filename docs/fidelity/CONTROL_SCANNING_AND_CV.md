@@ -49,9 +49,14 @@ panel maximum; Filter Resonance shares that DAC domain and reaches its
 populated 200 kohm current-input resistor. The direct filter-envelope amount
 and both Poly Mod amounts also use the ordinary 0-10 V DAC span before SD333
 Q301/Q303/Q304 convert them to current through populated 5.1k/5.6k/3k emitter
-resistors. Oscillator A level, oscillator B level and noise level use the same
+resistors. Q301/Q303/Q304 each establish one total collector current whose
+common PCB3 line fans out across the five parallel voice-card IABC inputs;
+the five cards do not each receive a copy of that total. Oscillator A level,
+oscillator B level and noise level use the same
 0-10 V span before Q306/Q302/Q305 and their populated 33k/33k/75k emitter
-resistors. Glide retains its separately admitted 0-5 V control span. Other
+resistors. Q306 and Q302 likewise fan their total currents across five mixer
+halves, while Q305 drives the one common noise OTA. Glide retains its separately
+admitted 0-5 V control span. Other
 destinations remain isolated behind the existing candidate mapping until an
 equally specific electrical anchor is available.
 
@@ -135,12 +140,17 @@ the performance path. Stored panel controls enter held state through the CPU
 cycle. Master volume bypasses the scheduler because SD430 shows it as a direct
 analog path to the master CA3280, and program changes preserve its value.
 
-The performance gate and pitch-CV paths nevertheless retain their recovered
-relative ordering. V8.1 scans a new key after the current CV pass, asserts its
-gate, and updates only the external sequencer-output S/H immediately. The new
-voice's oscillator A, oscillator B and filter cells update in that order during
-the next CPU pass. RF-5 latches the voice-note table only at that next cycle
-boundary instead of forcing all three cells on MIDI note-on.
+The firmware's internal gate and pitch-CV paths retain their recovered relative
+ordering. V8.1 scans a new key after the current CV pass, asserts its gate, and
+updates only the external sequencer-output S/H immediately. The new voice's
+oscillator A, oscillator B and filter cells update in that order during the
+next CPU pass. A sample-accurate host note is not equivalent to observing the
+keyboard matrix halfway through that private pass, however. RF-5 therefore
+admits MIDI note-on at the boundary after the assigned voice's first complete
+pitch/filter refresh and before opening its envelopes. This prevents a
+reassigned voice from exposing its previous pitch for several milliseconds,
+an artifact absent from the admitted hardware recordings, while subsequent
+refreshes still follow the exact scheduler and physical S/H paths.
 
 In Unison, common destination 21 contains lowest-key keyboard CV rather than
 the switch state. The switch remains a digital latch; individual oscillator

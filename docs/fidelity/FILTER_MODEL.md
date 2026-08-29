@@ -27,8 +27,11 @@ procedure expects resonance to begin self-oscillating between panel positions
   Common white noise arrives at the same node through each populated 100 kohm
   distribution resistor. Both paths now share the first cell's 90.909 kohm
   current-to-voltage conversion instead of independent normalized gains.
-- Oscillators, audio mixer, audio-rate Poly Mod and all four filter cells run
-  together at four times the host sample rate.
+- In the distributed profile the oscillators, audio mixer and audio-rate Poly
+  Mod run at four times the host sample rate; consecutive mixer/cutoff pairs
+  feed all four filter cells at twice the host rate and their held output is
+  linearly reconstructed. The offline oracle retains the
+  complete four-times path.
 - Service trim 4-20 replaces the former 14 Hz intercept: 2.000 V of panel CV
   with keyboard tracking at A3/A4 must produce 440/880 Hz. Solving that anchor
   places the ten-octave panel sweep above 16.3516 Hz.

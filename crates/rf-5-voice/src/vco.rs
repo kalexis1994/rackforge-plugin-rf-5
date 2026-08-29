@@ -1,8 +1,9 @@
 //! Band-limited numerical model of one CEM3340-class oscillator core.
 //!
-//! The chip topology and available outputs are source-backed. PolyBLEP edge
-//! correction and four-times internal oversampling are RF-5's numerical
-//! strategy, not claims about circuitry inside the physical IC.
+//! The chip topology and available outputs are source-backed. Mipmapped
+//! periodic reconstruction, moving-edge PolyBLEP and four-times internal
+//! oversampling are RF-5's numerical strategy, not claims about circuitry
+//! inside the physical IC.
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct WaveSelection {
@@ -31,9 +32,9 @@ pub struct OscillatorSample {
     /// 150 kohm path. All three sources meet one U428 input.
     pub poly_mod_source_conductance: f32,
     pub wrapped: bool,
-    /// Fractional position of the selected pulse-output falling edge inside
-    /// this internal sample. SD431 shapes only that edge into the negative
-    /// pulse accepted by oscillator A's external hard-sync network.
+    /// Fractional position of oscillator B's saw reset inside this internal
+    /// sample. SD431 AC-couples that edge through C4107/Q401 into oscillator
+    /// A's conventional hard-sync network.
     pub hard_sync_event: Option<HardSyncEvent>,
 }
 
@@ -59,7 +60,7 @@ pub struct Vco {
     pulse_width_initialized: bool,
     previous_pulse_harmonic_limit: f32,
     pulse_spectrum_initialized: bool,
-    pulse_transition_offset: f32,
+    pulse_transition_from_harmonic_limit: f32,
     pulse_transition_remaining: u16,
 }
 
@@ -72,7 +73,7 @@ impl Default for Vco {
             pulse_width_initialized: false,
             previous_pulse_harmonic_limit: 1.0,
             pulse_spectrum_initialized: false,
-            pulse_transition_offset: 0.0,
+            pulse_transition_from_harmonic_limit: 1.0,
             pulse_transition_remaining: 0,
         }
     }
@@ -127,11 +128,14 @@ const TRIANGLE_POLY_MOD_REFERENCE_VOLTS: f32 = 2.27;
 // more exponential current than the core can use, so this physical ceiling
 // must precede the numerical Nyquist guard below.
 const CEM3340_TYPICAL_MAXIMUM_FREQUENCY_HZ: f32 = 57_000.0;
-// The saw correction keeps its admitted eight-sample numerical window. Pulse
-// uses the mipmapped path below and therefore no longer inherits that wide
-// host-rate smoothing window.
-const POLY_BLEP_WIDTH: f32 = 8.0;
-
+// The ordinary reset is reconstructed across 1.25 host samples in the
+// portable four-times profile. This retains a visibly narrower, brighter edge than the
+// earlier two-host-sample residual without introducing a raw discontinuity.
+const SAW_POLY_BLEP_WIDTH: f32 = 5.0;
+// Conventional hard sync introduces a second, non-periodic reset edge. Keep
+// the admitted wider residual for the sync slave, where the extra reset is
+// not periodic with the slave and therefore cannot use the normal treatment.
+const SYNC_SAW_POLY_BLEP_WIDTH: f32 = 8.0;
 // A moving PWM threshold needs a time-domain correction. Keep that correction
 // two host samples wide in every active render profile.
 #[cfg(feature = "host-rate")]
@@ -151,12 +155,14 @@ const PULSE_HARMONIC_RATE_FRACTION: f32 = 0.225;
 #[cfg(not(any(feature = "host-rate", feature = "two-times")))]
 const PULSE_HARMONIC_RATE_FRACTION: f32 = 0.1125;
 
-// A pitch S/H can replace several octaves in about 1.75 us. An ideal
-// band-limited representation then changes its harmonic basis in one sample,
-// although the physical comparator waveform itself remains phase-continuous.
-// Carry only that numerical basis difference through a short half-millisecond
-// ramp. Scaling by the active oscillator rate keeps the correction identical
-// at the host boundary in every render profile.
+// A pitch S/H can replace several octaves in about 1.75 us. The physical
+// comparator remains phase-continuous, while a band-limited representation
+// must replace its harmonic basis. Crossfade the two complete periodic
+// reconstructions for half a millisecond. Carrying only their first-sample
+// difference as a decaying offset creates a non-physical unipolar pulse: after
+// playing high notes that pulse reappears once on every card reassigned to a
+// low note. Scaling by the active oscillator rate keeps this basis transition
+// identical at the host boundary in every render profile.
 #[cfg(feature = "host-rate")]
 const PULSE_TRANSITION_INTERNAL_SAMPLES: u16 = 24;
 #[cfg(all(not(feature = "host-rate"), feature = "two-times"))]
@@ -219,6 +225,20 @@ impl Vco {
         self.phase
     }
 
+    /// Forget only the numerical pulse-spectrum transition at a keyboard
+    /// pitch boundary.
+    ///
+    /// The CEM3340 core keeps running and therefore its phase must survive a
+    /// voice reassignment. The mipmapped pulse reconstruction is not hardware
+    /// state, however: carrying its previous-note basis into the newly gated
+    /// note creates one short chirp per physical card after a large pitch
+    /// jump. The first sample at the admitted pitch establishes a fresh safe
+    /// harmonic basis without touching phase or PWM comparator state.
+    pub(crate) fn admit_pitch_step(&mut self) {
+        self.pulse_spectrum_initialized = false;
+        self.pulse_transition_remaining = 0;
+    }
+
     pub fn next(
         &mut self,
         frequency: f32,
@@ -226,7 +246,46 @@ impl Vco {
         pulse_width: f32,
         waves: WaveSelection,
     ) -> OscillatorSample {
-        self.next_with_sync(frequency, sample_rate, pulse_width, waves, None)
+        self.next_with_sync(frequency, sample_rate, pulse_width, waves, false, None)
+    }
+
+    /// Advance the powered oscillator core while none of its waveform outputs
+    /// can reach the final VCA.
+    ///
+    /// Phase, triangle-output loading, PWM comparator memory and conventional
+    /// sync timing remain live. Only waveform reconstruction is skipped. This
+    /// is the electrically unobservable part of a closed voice-card path and
+    /// avoids evaluating its filter and reconstruction FIR indefinitely.
+    pub(crate) fn advance_silent(
+        &mut self,
+        frequency: f32,
+        sample_rate: f32,
+        pulse_width: f32,
+        triangle_selected: bool,
+        external_sync: Option<HardSyncEvent>,
+    ) -> Option<HardSyncEvent> {
+        let frequency = if frequency.is_finite() {
+            frequency.clamp(0.0, CEM3340_TYPICAL_MAXIMUM_FREQUENCY_HZ)
+        } else {
+            0.0
+        };
+        let frequency =
+            triangle_loaded_frequency(frequency, self.profile_index, triangle_selected);
+        let increment = (frequency / sample_rate.max(1.0)).clamp(0.0, 0.49);
+        let pulse_width = if pulse_width.is_finite() {
+            pulse_width.clamp(0.0, 1.0)
+        } else {
+            0.5
+        };
+        let hard_sync_event = saw_hard_sync_event(self.phase, increment);
+        self.previous_pulse_width = pulse_width;
+        self.pulse_width_initialized = true;
+        // Mipmap transitions are numerical output state, not capacitor state.
+        // Establish a fresh safe basis when this output becomes observable.
+        self.pulse_spectrum_initialized = false;
+        self.pulse_transition_remaining = 0;
+        let _ = self.advance_with_sync(increment, external_sync);
+        hard_sync_event
     }
 
     pub fn next_with_sync(
@@ -235,6 +294,7 @@ impl Vco {
         sample_rate: f32,
         pulse_width: f32,
         waves: WaveSelection,
+        hard_sync_active: bool,
         external_sync: Option<HardSyncEvent>,
     ) -> OscillatorSample {
         let profile = self.profile_index;
@@ -264,7 +324,11 @@ impl Vco {
         let mut poly_mod_source_conductance = 0.0;
 
         if waves.saw {
-            let centered = band_limited_saw(phase, increment);
+            let centered = if hard_sync_active {
+                band_limited_sync_saw(phase, increment)
+            } else {
+                band_limited_saw(phase, increment)
+            };
             let half_range = (SAW_UPPER_VOLTS[profile] - SAW_LOWER_VOLTS[profile]) * 0.5;
             let midpoint = (SAW_UPPER_VOLTS[profile] + SAW_LOWER_VOLTS[profile]) * 0.5;
             let source_volts = centered * half_range + midpoint;
@@ -300,7 +364,7 @@ impl Vco {
             poly_mod_source_conductance += PULSE_MIXER_CONDUCTANCE;
         }
 
-        let hard_sync_event = pulse_hard_sync_event(phase, increment, pulse_width);
+        let hard_sync_event = saw_hard_sync_event(phase, increment);
         self.previous_pulse_width = pulse_width;
         self.pulse_width_initialized = true;
         let wrapped = self.advance_with_sync(increment, external_sync);
@@ -326,13 +390,11 @@ impl Vco {
     ) -> f32 {
         if pulse_width <= 0.0 || pulse_width >= 1.0 {
             self.pulse_spectrum_initialized = false;
-            self.pulse_transition_offset = 0.0;
             self.pulse_transition_remaining = 0;
             return pulse_width * 2.0 - 1.0;
         }
         if (pulse_width - previous_pulse_width).abs() > f32::EPSILON {
             self.pulse_spectrum_initialized = false;
-            self.pulse_transition_offset = 0.0;
             self.pulse_transition_remaining = 0;
             return moving_threshold_pulse(
                 phase,
@@ -349,9 +411,7 @@ impl Vco {
             let ratio =
                 harmonic_limit.max(previous_limit) / harmonic_limit.min(previous_limit).max(1.0);
             if ratio >= 1.25 {
-                let previous =
-                    band_limited_pulse_at_harmonic_limit(phase, pulse_width, previous_limit);
-                self.pulse_transition_offset += previous - raw;
+                self.pulse_transition_from_harmonic_limit = previous_limit;
                 self.pulse_transition_remaining = PULSE_TRANSITION_INTERNAL_SAMPLES;
             }
         } else {
@@ -359,15 +419,20 @@ impl Vco {
         }
         self.previous_pulse_harmonic_limit = harmonic_limit;
 
-        let output = raw + self.pulse_transition_offset;
         if self.pulse_transition_remaining > 0 {
+            let previous = band_limited_pulse_at_harmonic_limit(
+                phase,
+                pulse_width,
+                self.pulse_transition_from_harmonic_limit,
+            );
+            let blend =
+                f32::from(PULSE_TRANSITION_INTERNAL_SAMPLES - self.pulse_transition_remaining)
+                    / f32::from(PULSE_TRANSITION_INTERNAL_SAMPLES);
             self.pulse_transition_remaining -= 1;
-            self.pulse_transition_offset *= f32::from(self.pulse_transition_remaining)
-                / f32::from(self.pulse_transition_remaining + 1);
+            previous + (raw - previous) * blend
         } else {
-            self.pulse_transition_offset = 0.0;
+            raw
         }
-        output
     }
 
     fn advance_with_sync(&mut self, increment: f32, sync_event: Option<HardSyncEvent>) -> bool {
@@ -413,26 +478,25 @@ pub(crate) fn triangle_load_frequency_ratio(profile: usize) -> f32 {
     1.0 - pull
 }
 
-fn pulse_hard_sync_event(phase: f32, increment: f32, pulse_width: f32) -> Option<HardSyncEvent> {
-    if pulse_width <= 0.0 || pulse_width >= 1.0 {
+fn saw_hard_sync_event(phase: f32, increment: f32) -> Option<HardSyncEvent> {
+    if increment <= 0.0 {
         return None;
     }
-    let advanced = phase + increment;
-    let distance = if phase < pulse_width && advanced >= pulse_width {
-        pulse_width - phase
-    } else if advanced >= 1.0 && advanced - 1.0 >= pulse_width {
-        1.0 - phase + pulse_width
-    } else {
-        return None;
-    };
-    (increment > 0.0).then_some(HardSyncEvent {
-        offset: (distance / increment).clamp(0.0, 1.0),
+    let distance = 1.0 - phase;
+    let offset = distance / increment;
+    (offset <= 1.0).then_some(HardSyncEvent {
+        offset: offset.max(0.0),
     })
 }
 
 fn band_limited_saw(phase: f32, increment: f32) -> f32 {
     let naive = phase * 2.0 - 1.0;
-    naive - poly_blep(phase, blep_width(increment))
+    naive - poly_blep(phase, (increment * SAW_POLY_BLEP_WIDTH).min(0.5))
+}
+
+fn band_limited_sync_saw(phase: f32, increment: f32) -> f32 {
+    let naive = phase * 2.0 - 1.0;
+    naive - poly_blep(phase, (increment * SYNC_SAW_POLY_BLEP_WIDTH).min(0.5))
 }
 
 #[cfg(test)]
@@ -534,11 +598,19 @@ fn band_limited_pulse_from_table(phase: f32, pulse_width: f32, level: usize) -> 
 }
 
 fn band_limited_saw_lookup(phase: f32, level: usize) -> f32 {
-    let wrapped_phase = phase % 1.0;
-    let wrapped_phase = if wrapped_phase < 0.0 {
-        wrapped_phase + 1.0
+    // Oscillator and delayed-edge phases are already normalized in the audio
+    // path. Keep the general wrapping fallback for probes and tests without
+    // paying for a floating-point remainder on every oversampled oscillator
+    // evaluation.
+    let wrapped_phase = if (0.0..1.0).contains(&phase) {
+        phase
     } else {
-        wrapped_phase
+        let remainder = phase % 1.0;
+        if remainder < 0.0 {
+            remainder + 1.0
+        } else {
+            remainder
+        }
     };
     let position = wrapped_phase * PULSE_TABLE_SIZE as f32;
     let base_index = position as usize;
@@ -546,19 +618,13 @@ fn band_limited_saw_lookup(phase: f32, level: usize) -> f32 {
     let mask = PULSE_TABLE_SIZE - 1;
     let index = base_index & mask;
     let table = &BAND_LIMITED_SAW_TABLES[level];
-    let previous = table[index.wrapping_sub(1) & mask];
     let current = table[index];
     let next = table[(index + 1) & mask];
-    let following = table[(index + 2) & mask];
-    let c0 = current;
-    let c1 = 0.5 * (next - previous);
-    let c2 = previous - 2.5 * current + 2.0 * next - 0.5 * following;
-    let c3 = 0.5 * (following - previous) + 1.5 * (current - next);
-    ((c3 * fraction + c2) * fraction + c1) * fraction + c0
-}
-
-fn blep_width(increment: f32) -> f32 {
-    (increment * POLY_BLEP_WIDTH).min(0.5)
+    // At 4096 samples per periodic table, linear interpolation is already far
+    // below the admitted oscillator/model uncertainty. It preserves the same
+    // mip level and harmonic content while halving table reads and removing
+    // the cubic polynomial from the four-times-oversampled hot path.
+    current + (next - current) * fraction
 }
 
 fn pwm_blep_width(increment: f32) -> f32 {
@@ -778,6 +844,106 @@ mod tests {
     }
 
     #[test]
+    fn large_pitch_step_crossfades_periodic_pulse_bases_without_a_dc_ramp() {
+        let mut oscillator = Vco::with_phase(0.317);
+        let pulse_width = 0.5;
+        let high_increment = 4_000.0 / 48_000.0;
+        let low_increment = 110.0 / 48_000.0;
+        let high_limit = pulse_safe_harmonics(high_increment);
+        let low_limit = pulse_safe_harmonics(low_increment);
+
+        let _ = oscillator.band_limited_pulse_continuous(
+            0.317,
+            high_increment,
+            pulse_width,
+            pulse_width,
+        );
+        let first_phase = 0.401;
+        let first = oscillator.band_limited_pulse_continuous(
+            first_phase,
+            low_increment,
+            pulse_width,
+            pulse_width,
+        );
+        let previous_first =
+            band_limited_pulse_at_harmonic_limit(first_phase, pulse_width, high_limit);
+        assert!((first - previous_first).abs() < 1.0e-6);
+        assert_eq!(
+            oscillator.pulse_transition_remaining,
+            PULSE_TRANSITION_INTERNAL_SAMPLES - 1
+        );
+
+        let second_phase = 0.409;
+        let second = oscillator.band_limited_pulse_continuous(
+            second_phase,
+            low_increment,
+            pulse_width,
+            pulse_width,
+        );
+        let previous_second =
+            band_limited_pulse_at_harmonic_limit(second_phase, pulse_width, high_limit);
+        let current_second =
+            band_limited_pulse_at_harmonic_limit(second_phase, pulse_width, low_limit);
+        let expected_second = previous_second
+            + (current_second - previous_second) / f32::from(PULSE_TRANSITION_INTERNAL_SAMPLES);
+        assert!((second - expected_second).abs() < 1.0e-6);
+
+        for index in 2..PULSE_TRANSITION_INTERNAL_SAMPLES {
+            let phase = (second_phase + f32::from(index) * low_increment) % 1.0;
+            let _ = oscillator.band_limited_pulse_continuous(
+                phase,
+                low_increment,
+                pulse_width,
+                pulse_width,
+            );
+        }
+        assert_eq!(oscillator.pulse_transition_remaining, 0);
+
+        let settled_phase = 0.731;
+        let settled = oscillator.band_limited_pulse_continuous(
+            settled_phase,
+            low_increment,
+            pulse_width,
+            pulse_width,
+        );
+        let expected_settled =
+            band_limited_pulse_at_harmonic_limit(settled_phase, pulse_width, low_limit);
+        assert!((settled - expected_settled).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn admitted_keyboard_pitch_discards_only_previous_note_reconstruction_state() {
+        let mut oscillator = Vco::with_phase(0.317);
+        let pulse_width = 0.5;
+        let high_increment = 4_000.0 / 48_000.0;
+        let low_increment = 110.0 / 48_000.0;
+        let phase = oscillator.phase();
+
+        let _ = oscillator.band_limited_pulse_continuous(
+            phase,
+            high_increment,
+            pulse_width,
+            pulse_width,
+        );
+        oscillator.admit_pitch_step();
+        assert_eq!(oscillator.phase(), phase);
+
+        let admitted = oscillator.band_limited_pulse_continuous(
+            phase,
+            low_increment,
+            pulse_width,
+            pulse_width,
+        );
+        let expected = band_limited_pulse_at_harmonic_limit(
+            phase,
+            pulse_width,
+            pulse_safe_harmonics(low_increment),
+        );
+        assert!((admitted - expected).abs() < 1.0e-6);
+        assert_eq!(oscillator.pulse_transition_remaining, 0);
+    }
+
+    #[test]
     fn pulse_table_lookup_wraps_at_the_phase_boundary() {
         for level in [0, PULSE_HARMONIC_LEVELS / 2, PULSE_HARMONIC_LEVELS - 1] {
             assert_eq!(
@@ -813,17 +979,19 @@ mod tests {
     }
 
     #[test]
-    fn pulse_dc_endpoints_are_stable_and_emit_no_sync_edge() {
+    fn pulse_dc_endpoints_are_stable_while_saw_sync_clock_keeps_running() {
         for (width, expected) in [
             (0.0, PULSE_LOWER_VOLTS * PULSE_MIXER_CONDUCTANCE),
             (1.0, PULSE_UPPER_VOLTS * PULSE_MIXER_CONDUCTANCE),
         ] {
             let mut oscillator = Vco::default();
+            let mut sync_edges = 0;
             for _ in 0..2_000 {
                 let sample = oscillator.next(440.0, 48_000.0, width, PULSE);
                 assert!((sample.mixer_negative_source_volts - expected).abs() < 1.0e-6);
-                assert_eq!(sample.hard_sync_event, None);
+                sync_edges += usize::from(sample.hard_sync_event.is_some());
             }
+            assert!((17..=19).contains(&sync_edges));
         }
     }
 
@@ -882,6 +1050,7 @@ mod tests {
                 48_000.0,
                 0.5,
                 saw,
+                true,
                 master_sample.hard_sync_event,
             );
             let value = f64::from(slave_sample.mixer_positive_source_volts);
@@ -894,19 +1063,19 @@ mod tests {
     }
 
     #[test]
-    fn pulse_output_reports_only_the_falling_hard_sync_edge() {
+    fn saw_reset_reports_the_hard_sync_edge_independently_of_pulse_width() {
         let mut oscillator = Vco::with_phase(0.45);
-        let falling = oscillator.next(1_000.0, 10_000.0, 0.50, SAW);
-        assert!((falling.hard_sync_event.unwrap().offset - 0.5).abs() < 1.0e-6);
+        let before_wrap = oscillator.next(1_000.0, 10_000.0, 0.01, SAW);
+        assert_eq!(before_wrap.hard_sync_event, None);
 
         let mut oscillator = Vco::with_phase(0.95);
-        let rising = oscillator.next(1_000.0, 10_000.0, 0.50, SAW);
-        assert_eq!(rising.hard_sync_event, None);
+        let wrap = oscillator.next(1_000.0, 10_000.0, 0.99, SAW);
+        assert!((wrap.hard_sync_event.unwrap().offset - 0.5).abs() < 1.0e-6);
     }
 
     #[test]
     fn sync_edges_exist_even_when_pulse_is_not_selected_for_audio() {
-        let mut oscillator = Vco::with_phase(0.45);
+        let mut oscillator = Vco::with_phase(0.95);
         let sample = oscillator.next(1_000.0, 10_000.0, 0.50, WaveSelection::default());
         assert_eq!(sample.mixer_positive_source_volts, 0.0);
         assert_eq!(sample.mixer_negative_source_volts, 0.0);
@@ -915,10 +1084,10 @@ mod tests {
     }
 
     #[test]
-    fn falling_edge_after_wrap_retains_its_fractional_position() {
+    fn saw_reset_retains_its_fractional_position() {
         let mut oscillator = Vco::with_phase(0.95);
         let sample = oscillator.next(4_000.0, 10_000.0, 0.10, WaveSelection::default());
-        assert!((sample.hard_sync_event.unwrap().offset - 0.375).abs() < 1.0e-6);
+        assert!((sample.hard_sync_event.unwrap().offset - 0.125).abs() < 1.0e-6);
     }
 
     #[test]
@@ -929,15 +1098,16 @@ mod tests {
             10_000.0,
             0.5,
             SAW,
+            true,
             Some(HardSyncEvent { offset: 0.25 }),
         );
 
         let expected_phase = 0.10 * 0.75;
         assert!((oscillator.phase() - expected_phase).abs() < 1.0e-6);
 
-        let expected_audio =
-            band_limited_saw(0.20, 0.10) * (SAW_UPPER_VOLTS[0] - SAW_LOWER_VOLTS[0]) * 0.5
-                + (SAW_UPPER_VOLTS[0] + SAW_LOWER_VOLTS[0]) * 0.5;
+        let centered = band_limited_sync_saw(0.20, 0.10);
+        let expected_audio = centered * (SAW_UPPER_VOLTS[0] - SAW_LOWER_VOLTS[0]) * 0.5
+            + (SAW_UPPER_VOLTS[0] + SAW_LOWER_VOLTS[0]) * 0.5;
         assert!((sample.mixer_positive_source_volts - expected_audio).abs() < 1.0e-6);
     }
 
@@ -950,6 +1120,7 @@ mod tests {
                 48_000.0,
                 0.5,
                 SAW,
+                true,
                 Some(HardSyncEvent { offset: f32::NAN }),
             );
             assert!(sample.mixer_differential_source_volts().is_finite());
@@ -1142,16 +1313,15 @@ mod tests {
     }
 
     #[test]
-    fn widened_polyblep_saw_is_continuous_finite_and_bounded() {
+    fn band_limited_saw_is_periodic_finite_and_bounded() {
         for increment in [0.001, 0.01, 0.10, 0.49] {
-            let edge_epsilon = blep_width(increment) * 1.0e-5;
-            let below_wrap = band_limited_saw(1.0 - edge_epsilon, increment);
+            let below_wrap = band_limited_saw(1.0 - 1.0e-6, increment);
             let at_wrap = band_limited_saw(0.0, increment);
-            assert!((below_wrap - at_wrap).abs() < 1.0e-4);
+            assert!((below_wrap - at_wrap).abs() < 1.0e-3);
             for index in 0..10_000 {
                 let sample = band_limited_saw(index as f32 / 10_000.0, increment);
                 assert!(sample.is_finite());
-                assert!(sample.abs() <= 1.0 + f32::EPSILON);
+                assert!(sample.abs() <= 1.0);
             }
         }
     }

@@ -13,8 +13,17 @@ const NOMINAL_ATTACK_ASYMPTOTE_VOLTS: f32 = 6.5;
 const TIMING_RESISTOR_OHMS: f32 = 24_300.0;
 const TIMING_CAPACITOR_FARADS: f32 = 0.039e-6;
 const NOMINAL_BUFFER_OUTPUT_RESISTANCE_OHMS: f32 = 200.0;
+const OWNER_DIAL_FIVE: f32 = 0.5;
+const OWNER_DIAL_FIVE_SECONDS: f32 = 0.5;
 const SERVICE_DIAL_SIX: f32 = 0.6;
 const SERVICE_ATTACK_SECONDS: f32 = 1.0;
+const SERVICE_DISCHARGE_SECONDS: f32 = 1.0;
+const OWNER_DIAL_TEN_SECONDS: f32 = 30.0;
+const FACTORY_E_PIANO_ATTACK_CONTROL: f32 = 30.0 / 127.0;
+const FACTORY_E_PIANO_ATTACK_SECONDS: f32 = 0.008;
+const FIRMWARE_RELEASE_OFF_CONTROL: f32 = 22.0 / 127.0;
+const FACTORY_E_PIANO_RELEASE_OFF_SECONDS: f32 = 0.0023;
+const AUDIBLE_DISCHARGE_FRACTION: f32 = 0.1;
 
 #[derive(Clone, Copy, Debug)]
 struct EnvelopeProfile {
@@ -194,7 +203,8 @@ impl EnvelopeCoefficientCache {
             };
             self.resistance_multiplier = libm::powf(
                 10.0,
-                control * control_span_millivolts() / profile.control_sensitivity_mv_per_decade,
+                calibrated_control_millivolts(control, direction)
+                    / profile.control_sensitivity_mv_per_decade,
             ) / current_ratio;
             self.sample_rate = sample_rate;
             self.control = control;
@@ -390,10 +400,14 @@ fn approach_with_coefficient(value: f32, target: f32, coefficient: f32) -> f32 {
 }
 
 pub fn time_constant_seconds(value: f32) -> f32 {
+    time_constant_seconds_for_direction(value, CurrentDirection::Charge)
+}
+
+fn time_constant_seconds_for_direction(value: f32, direction: CurrentDirection) -> f32 {
     populated_rc_seconds()
         * libm::powf(
             10.0,
-            value.clamp(0.0, 1.0) * control_span_millivolts()
+            calibrated_control_millivolts(value, direction)
                 / NOMINAL_CONTROL_SENSITIVITY_MV_PER_DECADE,
         )
 }
@@ -410,7 +424,7 @@ fn profiled_time_constant_seconds(
     populated_rc_seconds() * profile.component_rc_ratio / current_ratio
         * libm::powf(
             10.0,
-            value.clamp(0.0, 1.0) * control_span_millivolts()
+            calibrated_control_millivolts(value, direction)
                 / profile.control_sensitivity_mv_per_decade,
         )
 }
@@ -423,10 +437,140 @@ fn nominal_attack_threshold_time_constants() -> f32 {
     -libm::logf(1.0 - NOMINAL_PEAK_VOLTS / NOMINAL_ATTACK_ASYMPTOTE_VOLTS)
 }
 
-fn control_span_millivolts() -> f32 {
-    let dial_six_time_constant = SERVICE_ATTACK_SECONDS / nominal_attack_threshold_time_constants();
-    let dial_six_decades = libm::log10f(dial_six_time_constant / populated_rc_seconds());
-    dial_six_decades / SERVICE_DIAL_SIX * NOMINAL_CONTROL_SENSITIVITY_MV_PER_DECADE
+fn nominal_audible_discharge_time_constants() -> f32 {
+    -libm::logf(AUDIBLE_DISCHARGE_FRACTION)
+}
+
+fn attack_duration_to_control_millivolts(duration_seconds: f32) -> f32 {
+    let time_constant = duration_seconds / nominal_attack_threshold_time_constants();
+    NOMINAL_CONTROL_SENSITIVITY_MV_PER_DECADE * libm::log10f(time_constant / populated_rc_seconds())
+}
+
+fn discharge_duration_to_control_millivolts(duration_seconds: f32) -> f32 {
+    let time_constant = duration_seconds / nominal_audible_discharge_time_constants();
+    NOMINAL_CONTROL_SENSITIVITY_MV_PER_DECADE * libm::log10f(time_constant / populated_rc_seconds())
+}
+
+fn panel_calibration_controls(direction: CurrentDirection) -> [f32; 5] {
+    [
+        0.0,
+        match direction {
+            CurrentDirection::Charge => FACTORY_E_PIANO_ATTACK_CONTROL,
+            CurrentDirection::Discharge => FIRMWARE_RELEASE_OFF_CONTROL,
+        },
+        OWNER_DIAL_FIVE,
+        SERVICE_DIAL_SIX,
+        1.0,
+    ]
+}
+
+fn panel_calibration_millivolts(direction: CurrentDirection) -> [f32; 5] {
+    let duration_to_control = match direction {
+        CurrentDirection::Charge => attack_duration_to_control_millivolts,
+        CurrentDirection::Discharge => discharge_duration_to_control_millivolts,
+    };
+    [
+        0.0,
+        duration_to_control(match direction {
+            CurrentDirection::Charge => FACTORY_E_PIANO_ATTACK_SECONDS,
+            CurrentDirection::Discharge => FACTORY_E_PIANO_RELEASE_OFF_SECONDS,
+        }),
+        duration_to_control(OWNER_DIAL_FIVE_SECONDS),
+        duration_to_control(match direction {
+            CurrentDirection::Charge => SERVICE_ATTACK_SECONDS,
+            CurrentDirection::Discharge => SERVICE_DISCHARGE_SECONDS,
+        }),
+        duration_to_control(OWNER_DIAL_TEN_SECONDS),
+    ]
+}
+
+fn calibrated_control_millivolts(value: f32, direction: CurrentDirection) -> f32 {
+    // The CEM3310 remains exponential in control voltage. What was not linear
+    // on the instrument is the complete panel-to-time calibration: the owner
+    // manual gives about 0.5 s at dial 5 and a 1 ms-to-30 s panel range, while
+    // the service procedure independently checks about 1 s at dial 6 and more
+    // than 20 s at dial 10. A monotone cubic in the voltage domain honors all
+    // usable landmarks without putting a discontinuity into a live envelope.
+    // The first point is the populated Rx/Cx floor. The second supplies the
+    // missing fast-region evidence: factory 1-4's exact 30/127 Attack reaches
+    // its useful hardware onset in about 3-5 ms, while the firmware's exact
+    // RELEASE-off equivalent 22/127 is nearly silent within about 5 ms. The
+    // remaining three points retain the owner/service dial landmarks. All are
+    // expressed either as the CEM3310 attack-threshold duration or as the
+    // audible decay/release duration to ten percent envelope. At that point
+    // the populated final-VCA converter is already close to -40 dB.
+    let value = value.clamp(0.0, 1.0);
+    let controls = panel_calibration_controls(direction);
+    let millivolts = panel_calibration_millivolts(direction);
+    monotone_cubic_interpolate(value, controls, millivolts)
+}
+
+fn monotone_cubic_interpolate(value: f32, x: [f32; 5], y: [f32; 5]) -> f32 {
+    // Fritsch-Carlson/PCHIP tangents keep the calibrated voltage strictly
+    // monotone and prevent overshoot between sparse manual/service landmarks.
+    let h = [x[1] - x[0], x[2] - x[1], x[3] - x[2], x[4] - x[3]];
+    let delta = [
+        (y[1] - y[0]) / h[0],
+        (y[2] - y[1]) / h[1],
+        (y[3] - y[2]) / h[2],
+        (y[4] - y[3]) / h[3],
+    ];
+    let mut tangent = [0.0_f32; 5];
+    tangent[0] = endpoint_tangent(h[0], h[1], delta[0], delta[1]);
+    tangent[1] = interior_tangent(h[0], h[1], delta[0], delta[1]);
+    tangent[2] = interior_tangent(h[1], h[2], delta[1], delta[2]);
+    tangent[3] = interior_tangent(h[2], h[3], delta[2], delta[3]);
+    tangent[4] = endpoint_tangent(h[3], h[2], delta[3], delta[2]);
+
+    let segment = if value <= x[1] {
+        0
+    } else if value <= x[2] {
+        1
+    } else if value <= x[3] {
+        2
+    } else {
+        3
+    };
+    let normalized = (value - x[segment]) / h[segment];
+    let normalized_squared = normalized * normalized;
+    let normalized_cubed = normalized_squared * normalized;
+    let start_basis = 2.0 * normalized_cubed - 3.0 * normalized_squared + 1.0;
+    let start_tangent_basis = normalized_cubed - 2.0 * normalized_squared + normalized;
+    let end_basis = -2.0 * normalized_cubed + 3.0 * normalized_squared;
+    let end_tangent_basis = normalized_cubed - normalized_squared;
+    start_basis * y[segment]
+        + start_tangent_basis * h[segment] * tangent[segment]
+        + end_basis * y[segment + 1]
+        + end_tangent_basis * h[segment] * tangent[segment + 1]
+}
+
+fn interior_tangent(left_width: f32, right_width: f32, left_slope: f32, right_slope: f32) -> f32 {
+    if left_slope * right_slope <= 0.0 {
+        return 0.0;
+    }
+    let left_weight = 2.0 * right_width + left_width;
+    let right_weight = right_width + 2.0 * left_width;
+    (left_weight + right_weight) / (left_weight / left_slope + right_weight / right_slope)
+}
+
+fn endpoint_tangent(
+    edge_width: f32,
+    adjacent_width: f32,
+    edge_slope: f32,
+    adjacent_slope: f32,
+) -> f32 {
+    let candidate = ((2.0 * edge_width + adjacent_width) * edge_slope
+        - edge_width * adjacent_slope)
+        / (edge_width + adjacent_width);
+    if candidate.signum() != edge_slope.signum() {
+        0.0
+    } else if edge_slope.signum() != adjacent_slope.signum()
+        && candidate.abs() > 3.0 * edge_slope.abs()
+    {
+        3.0 * edge_slope
+    } else {
+        candidate
+    }
 }
 
 #[cfg(test)]
@@ -506,11 +650,66 @@ mod tests {
     }
 
     #[test]
-    fn control_span_respects_the_published_time_range() {
+    fn service_dial_six_anchors_one_second_audible_release() {
+        let release_seconds =
+            time_constant_seconds_for_direction(SERVICE_DIAL_SIX, CurrentDirection::Discharge)
+                * nominal_audible_discharge_time_constants();
+        assert!((release_seconds - SERVICE_DISCHARGE_SECONDS).abs() < 1.0e-5);
+    }
+
+    #[test]
+    fn factory_e_piano_anchors_the_fast_attack_and_release_off_region() {
+        let attack_seconds = time_constant_seconds(FACTORY_E_PIANO_ATTACK_CONTROL)
+            * nominal_attack_threshold_time_constants();
+        let release_seconds = time_constant_seconds_for_direction(
+            FIRMWARE_RELEASE_OFF_CONTROL,
+            CurrentDirection::Discharge,
+        ) * nominal_audible_discharge_time_constants();
+        assert!((attack_seconds - FACTORY_E_PIANO_ATTACK_SECONDS).abs() < 1.0e-6);
+        assert!((release_seconds - FACTORY_E_PIANO_RELEASE_OFF_SECONDS).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn owner_panel_landmarks_anchor_the_global_calibration() {
+        let dial_five_seconds =
+            time_constant_seconds(OWNER_DIAL_FIVE) * nominal_attack_threshold_time_constants();
+        let dial_ten_seconds =
+            time_constant_seconds(1.0) * nominal_attack_threshold_time_constants();
+        assert!((dial_five_seconds - OWNER_DIAL_FIVE_SECONDS).abs() < 1.0e-5);
+        assert!((dial_ten_seconds - OWNER_DIAL_TEN_SECONDS).abs() < 1.0e-4);
+    }
+
+    #[test]
+    fn calibrated_panel_curve_is_monotone_at_every_stored_position() {
+        for direction in [CurrentDirection::Charge, CurrentDirection::Discharge] {
+            let mut previous_voltage = calibrated_control_millivolts(0.0, direction);
+            let mut previous_time = time_constant_seconds_for_direction(0.0, direction);
+            assert_eq!(previous_voltage, 0.0);
+            for code in 1..=127 {
+                let control = code as f32 / 127.0;
+                let voltage = calibrated_control_millivolts(control, direction);
+                let time = time_constant_seconds_for_direction(control, direction);
+                assert!(voltage > previous_voltage);
+                assert!(time > previous_time);
+                previous_voltage = voltage;
+                previous_time = time;
+            }
+        }
+    }
+
+    #[test]
+    fn control_span_respects_the_instrument_panel_range() {
         let ratio = time_constant_seconds(1.0) / time_constant_seconds(0.0);
-        assert!((50_000.0..=250_000.0).contains(&ratio));
-        assert!((285.0..286.0).contains(&control_span_millivolts()));
-        assert!(time_constant_seconds(1.0) > 50.0);
+        assert!((20_000.0..=35_000.0).contains(&ratio));
+        assert!((259.0..261.0).contains(&calibrated_control_millivolts(
+            1.0,
+            CurrentDirection::Charge,
+        )));
+        assert!((20.0..21.0).contains(&time_constant_seconds(1.0)));
+        let discharge_period =
+            time_constant_seconds_for_direction(1.0, CurrentDirection::Discharge)
+                * nominal_audible_discharge_time_constants();
+        assert!((discharge_period - OWNER_DIAL_TEN_SECONDS).abs() < 1.0e-4);
     }
 
     #[test]
@@ -567,8 +766,16 @@ mod tests {
                 let slow = profiled_time_constant_seconds(1.0, profile, direction);
                 assert!(fast < middle && middle < slow);
                 assert!((0.0007..=0.0013).contains(&fast));
-                assert!((0.5..=0.85).contains(&middle));
-                assert!((40.0..=75.0).contains(&slow));
+                match direction {
+                    CurrentDirection::Charge => {
+                        assert!((0.5..=0.85).contains(&middle));
+                        assert!((15.0..=30.0).contains(&slow));
+                    }
+                    CurrentDirection::Discharge => {
+                        assert!((0.3..=0.6).contains(&middle));
+                        assert!((9.0..=19.0).contains(&slow));
+                    }
+                }
             }
         }
     }
@@ -630,5 +837,50 @@ mod tests {
         let output = envelope.next(48_000.0, 0.0, 0.0, 0.3, 0.0);
         assert!(envelope.value() < capacitor_before);
         assert!(output < envelope.value());
+    }
+
+    #[test]
+    fn slower_release_can_extend_a_zero_sustain_percussive_tail() {
+        // Original program 2-4 stores amplifier D=75, S=0 and R=89. An
+        // early key-up therefore changes the CEM3310 from the faster decay
+        // control to the slower release control; it must not be mistaken for
+        // a rising envelope when the detuned oscillators beat in the tail.
+        const DECAY: f32 = 75.0 / 127.0;
+        const RELEASE: f32 = 89.0 / 127.0;
+        let mut held = AdsrEnvelope::with_profile(0);
+        held.trigger();
+        for _ in 0..2_400 {
+            let _ = held.next(48_000.0, 7.0 / 127.0, DECAY, 0.0, RELEASE);
+        }
+        let mut released = held;
+        released.release();
+        let mut previous_release_value = released.value();
+        for _ in 0..48_000 {
+            let _ = held.next(48_000.0, 7.0 / 127.0, DECAY, 0.0, RELEASE);
+            let _ = released.next(48_000.0, 7.0 / 127.0, DECAY, 0.0, RELEASE);
+            assert!(released.value() <= previous_release_value);
+            previous_release_value = released.value();
+        }
+        assert!(released.value() > held.value());
+    }
+
+    #[test]
+    fn firmware_release_off_code_remains_a_short_click_free_tail() {
+        const RELEASE_OFF_CODE: f32 = 22.0 / 127.0;
+        let mut envelope = AdsrEnvelope::default();
+        envelope.trigger();
+        for _ in 0..48_000 {
+            let _ = envelope.next(48_000.0, 0.0, 0.0, 1.0, RELEASE_OFF_CODE);
+        }
+        envelope.release();
+        let first_release_sample = envelope.next(48_000.0, 0.0, 0.0, 1.0, RELEASE_OFF_CODE);
+        assert!(first_release_sample > 0.0);
+        for _ in 0..48_000 {
+            let _ = envelope.next(48_000.0, 0.0, 0.0, 1.0, RELEASE_OFF_CODE);
+            if envelope.is_idle() {
+                break;
+            }
+        }
+        assert!(envelope.is_idle());
     }
 }

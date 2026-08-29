@@ -61,8 +61,8 @@ The fixture set includes:
 - `Audition - LFO Slow Range` and `Audition - LFO Fast Range` expose two
   widely separated points of the absolute SD334/CEM3340 common-LFO law with
   the same restrained vibrato routing. The law's nominal panel endpoints are
-  approximately 0.0908 and 55.8 Hz; both audition positions remain below the
-  isolated timing-current overload knee.
+  approximately 0.0392 and 26.0 Hz; the two audition positions are
+  approximately 0.0762 and 8.02 Hz.
 - `Audition - LFO Saw Unipolar` and `Audition - LFO Square Unipolar` isolate
   the two positive-going SD334 paths. Unlike the triangle auditions, their
   Wheel Mod movement rises from the unmodulated position instead of travelling

@@ -75,6 +75,10 @@ new voice's A, B or filter cells. Those three destinations receive the new note
 from the next complete `0x0583-0x05C4` CV pass. RF-5 therefore starts the
 envelopes at the performance-event boundary while retaining the previous held
 pitch/filter values until the next CPU sweep, in physical destination order.
+That interval is an internal firmware state, not a separately observable host
+event. MIDI note-on is admitted only after the newly assigned voice's first
+three cells have reached the new target, so an open VCA never reveals the
+previous assignment; all later strobes, acquisition and droop remain physical.
 
 The common cell at RAM/output index `0x15` is also not a Boolean Unison switch.
 V8.1 `0x0336-0x0358` writes the lowest active key there. In Unison,

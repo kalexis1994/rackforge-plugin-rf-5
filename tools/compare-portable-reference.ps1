@@ -47,7 +47,7 @@ try {
     cargo run --locked --release -p rf-5-audition --no-default-features --bin rf-5-audition -- $rfReference
     if ($LASTEXITCODE -ne 0) { throw "Four-times RF-5 reference render failed" }
 
-    cargo run --locked --release -p rf-5-audition --features portable-realtime --bin rf-5-compare -- $rfPortable $rfReference $rfReport "portable host-rate + bounded math and low-resonance solver" "four-times + precise math"
+    cargo run --locked --release -p rf-5-audition --features portable-realtime --bin rf-5-compare -- $rfPortable $rfReference $rfReport "portable four-times oscillator/two-times filter + bounded math and low-resonance solver" "four-times + precise math"
     if ($LASTEXITCODE -ne 0) { throw "RF-5 profile comparison failed" }
 
     cargo run --locked --release -p rf-5-audition --features portable-realtime --bin rf-5-compare -- $rfHostRatePrecise $rfReference $rfHostRateReport "host-rate + precise math" "four-times + precise math"

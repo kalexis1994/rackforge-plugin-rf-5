@@ -9,6 +9,7 @@ const SETTLE_FRAMES: usize = SAMPLE_RATE * 2;
 const DEFAULT_STRIKE_FRAMES: usize = SAMPLE_RATE;
 const RMS_START: usize = SAMPLE_RATE / 200;
 const RMS_END: usize = SAMPLE_RATE * 3 / 10;
+const ATTACK_ANALYSIS_FRAMES: usize = SAMPLE_RATE / 10;
 
 fn main() {
     let program = std::env::args()
@@ -20,20 +21,27 @@ fn main() {
         .map(|note| note.parse::<u8>().expect("note must be a MIDI number"));
     let modifier = std::env::args().nth(4).unwrap_or_default();
     let wave_output = std::env::args().nth(5);
-    let strike_frames = std::env::args()
+    let render_frames = std::env::args()
         .nth(6)
         .map(|seconds| {
             (seconds.parse::<f32>().expect("duration must be seconds") * SAMPLE_RATE as f32).round()
                 as usize
         })
         .unwrap_or(DEFAULT_STRIKE_FRAMES);
+    let gate_frames = std::env::args().nth(7).map(|seconds| {
+        (seconds
+            .parse::<f32>()
+            .expect("gate duration must be seconds")
+            * SAMPLE_RATE as f32)
+            .round() as usize
+    });
 
     let mut source = Engine::default();
     assert!(source.prepare(SAMPLE_RATE as f64));
     assert!(source.load_program(&program), "unknown program {program}");
     let settings = source.settings();
     println!(
-        "RF5_NOTE_SCAN program={program} isolation={isolation} cutoff={:.6} resonance={:.6} keyboard={:.0} filter_env={:.6} a_level={:.6} a_freq={:.6} a_saw={:.0} a_pulse={:.0} a_pw={:.6} b_level={:.6} b_freq={:.6} b_fine={:.6} b_saw={:.0} b_triangle={:.0} b_pulse={:.0} b_pw={:.6} sync={:.0} amp_adsr={:.6}/{:.6}/{:.6}/{:.6} filter_adsr={:.6}/{:.6}/{:.6}/{:.6} lfo_freq={:.6} lfo_shapes={:.0}/{:.0}/{:.0} wheel_mix={:.6} wheel_dest={:.0}/{:.0}/{:.0}/{:.0}/{:.0}",
+        "RF5_NOTE_SCAN program={program} isolation={isolation} cutoff={:.6} resonance={:.6} keyboard={:.0} filter_env={:.6} a_level={:.6} a_freq={:.6} a_saw={:.0} a_pulse={:.0} a_pw={:.6} b_level={:.6} b_freq={:.6} b_fine={:.6} b_saw={:.0} b_triangle={:.0} b_pulse={:.0} b_pw={:.6} sync={:.0} poly={:.6}/{:.6}/{:.0}/{:.0}/{:.0} amp_adsr={:.6}/{:.6}/{:.6}/{:.6} filter_adsr={:.6}/{:.6}/{:.6}/{:.6} release_switch={:.0} glide={:.6} unison={:.0} lfo_freq={:.6} lfo_shapes={:.0}/{:.0}/{:.0} wheel_mix={:.6} wheel_dest={:.0}/{:.0}/{:.0}/{:.0}/{:.0}",
         settings.get(Parameter::FilterCutoff),
         settings.get(Parameter::FilterResonance),
         settings.get(Parameter::FilterKeyboard),
@@ -51,6 +59,11 @@ fn main() {
         settings.get(Parameter::OscillatorBPulse),
         settings.get(Parameter::OscillatorBPulseWidth),
         settings.get(Parameter::OscillatorSync),
+        settings.get(Parameter::PolyModFilterEnvelopeAmount),
+        settings.get(Parameter::PolyModOscillatorBAmount),
+        settings.get(Parameter::PolyModOscillatorAFrequency),
+        settings.get(Parameter::PolyModOscillatorAPulseWidth),
+        settings.get(Parameter::PolyModFilter),
         settings.get(Parameter::AmpAttack),
         settings.get(Parameter::AmpDecay),
         settings.get(Parameter::AmpSustain),
@@ -59,6 +72,9 @@ fn main() {
         settings.get(Parameter::FilterDecay),
         settings.get(Parameter::FilterSustain),
         settings.get(Parameter::FilterRelease),
+        settings.get(Parameter::ReleaseSwitch),
+        settings.get(Parameter::Glide),
+        settings.get(Parameter::Unison),
         settings.get(Parameter::LfoFrequency),
         settings.get(Parameter::LfoSaw),
         settings.get(Parameter::LfoTriangle),
@@ -71,51 +87,113 @@ fn main() {
         settings.get(Parameter::WheelModFilter),
     );
 
-    for note in (36_u8..=96).step_by(3) {
+    for note in 24_u8..=96 {
         if selected_note.is_some_and(|selected| selected != note) {
+            continue;
+        }
+        if selected_note.is_none() && (note - 24) % 3 != 0 {
             continue;
         }
         let mut engine = Engine::default();
         assert!(engine.prepare(SAMPLE_RATE as f64));
         assert!(engine.load_program(&program));
-        if modifier.contains("open") {
-            for (parameter, value) in [
-                (Parameter::FilterCutoff, 1.0),
-                (Parameter::FilterResonance, 0.0),
-                (Parameter::FilterEnvelopeAmount, 0.0),
-                (Parameter::AmpAttack, 0.0),
-                (Parameter::AmpDecay, 0.0),
-                (Parameter::AmpSustain, 1.0),
-            ] {
-                assert!(engine.set_parameter(parameter as u32, value));
+        let mut precondition_pitch = false;
+        let mut glide_target = None;
+        for modifier in modifier.split(',').filter(|value| !value.is_empty()) {
+            if modifier == "open" {
+                for (parameter, value) in [
+                    (Parameter::FilterCutoff, 1.0),
+                    (Parameter::FilterResonance, 0.0),
+                    (Parameter::FilterEnvelopeAmount, 0.0),
+                    (Parameter::AmpAttack, 0.0),
+                    (Parameter::AmpDecay, 0.0),
+                    (Parameter::AmpSustain, 1.0),
+                ] {
+                    assert!(engine.set_parameter(parameter as u32, value));
+                }
+            } else if modifier == "nosync" {
+                assert!(engine.set_parameter(Parameter::OscillatorSync as u32, 0.0));
+            } else if modifier == "levels" {
+                assert!(engine.set_parameter(Parameter::OscillatorALevel as u32, 1.0));
+                assert!(engine.set_parameter(Parameter::OscillatorBLevel as u32, 1.0));
+            } else if modifier == "b-saw" {
+                assert!(engine.set_parameter(Parameter::OscillatorBSaw as u32, 1.0));
+            } else if modifier == "b-triangle" {
+                assert!(engine.set_parameter(Parameter::OscillatorBTriangle as u32, 1.0));
+            } else if modifier == "b-pulse" {
+                assert!(engine.set_parameter(Parameter::OscillatorBPulse as u32, 1.0));
+            } else if modifier == "nopolymod" {
+                assert!(engine.set_parameter(Parameter::PolyModOscillatorAFrequency as u32, 0.0));
+                assert!(engine.set_parameter(Parameter::PolyModFilterEnvelopeAmount as u32, 0.0));
+                assert!(engine.set_parameter(Parameter::PolyModOscillatorBAmount as u32, 0.0));
+            } else if modifier == "release-off" {
+                assert!(engine.set_parameter(Parameter::ReleaseSwitch as u32, 0.0));
+            } else if modifier == "precondition" {
+                precondition_pitch = true;
+            } else if modifier == "unison-off" {
+                assert!(engine.set_parameter(Parameter::Unison as u32, 0.0));
+            } else if let Some(target) = modifier.strip_prefix("glide-to=") {
+                glide_target = Some(
+                    target
+                        .parse::<u8>()
+                        .expect("glide target must be a MIDI note"),
+                );
+            } else if let Some(amount) = modifier.strip_prefix("poly=") {
+                let amount = amount.parse::<f64>().expect("poly amount must be numeric");
+                assert!(
+                    engine.set_parameter(Parameter::PolyModFilterEnvelopeAmount as u32, amount)
+                );
+            } else if let Some(amount) = modifier.strip_prefix("wheel=") {
+                let amount = amount.parse::<f32>().expect("wheel amount must be numeric");
+                let midi_value = (amount.clamp(0.0, 1.0) * 127.0).round() as u8;
+                engine.handle_midi([0xb0, 1, midi_value]);
+            } else if let Some(amount) = modifier.strip_prefix("amp-release=") {
+                let amount = amount
+                    .parse::<f64>()
+                    .expect("amplifier release amount must be numeric");
+                assert!(engine.set_parameter(Parameter::AmpRelease as u32, amount));
+            } else if let Some(amount) = modifier.strip_prefix("amp-attack=") {
+                let amount = amount
+                    .parse::<f64>()
+                    .expect("amplifier attack amount must be numeric");
+                assert!(engine.set_parameter(Parameter::AmpAttack as u32, amount));
+            } else if let Some(amount) = modifier.strip_prefix("filter-release=") {
+                let amount = amount
+                    .parse::<f64>()
+                    .expect("filter release amount must be numeric");
+                assert!(engine.set_parameter(Parameter::FilterRelease as u32, amount));
+            } else if let Some(amount) = modifier.strip_prefix("cutoff=") {
+                let amount = amount
+                    .parse::<f64>()
+                    .expect("filter cutoff amount must be numeric");
+                assert!(engine.set_parameter(Parameter::FilterCutoff as u32, amount));
+            } else if let Some(amount) = modifier.strip_prefix("resonance=") {
+                let amount = amount
+                    .parse::<f64>()
+                    .expect("filter resonance amount must be numeric");
+                assert!(engine.set_parameter(Parameter::FilterResonance as u32, amount));
+            } else if let Some(amount) = modifier.strip_prefix("filter-env=") {
+                let amount = amount
+                    .parse::<f64>()
+                    .expect("filter envelope amount must be numeric");
+                assert!(engine.set_parameter(Parameter::FilterEnvelopeAmount as u32, amount));
+            } else {
+                panic!("unknown modifier {modifier}");
             }
-        }
-        if modifier.contains("nosync") {
-            assert!(engine.set_parameter(Parameter::OscillatorSync as u32, 0.0));
-        }
-        if modifier.contains("levels") {
-            assert!(engine.set_parameter(Parameter::OscillatorALevel as u32, 1.0));
-            assert!(engine.set_parameter(Parameter::OscillatorBLevel as u32, 1.0));
-        }
-        if modifier.contains("nopolymod") {
-            assert!(engine.set_parameter(Parameter::PolyModOscillatorAFrequency as u32, 0.0));
-            assert!(engine.set_parameter(Parameter::PolyModFilterEnvelopeAmount as u32, 0.0));
-            assert!(engine.set_parameter(Parameter::PolyModOscillatorBAmount as u32, 0.0));
-        }
-        if let Some(amount) = modifier.strip_prefix("poly=") {
-            let amount = amount.parse::<f64>().expect("poly amount must be numeric");
-            assert!(engine.set_parameter(Parameter::PolyModFilterEnvelopeAmount as u32, amount));
-        }
-        if let Some(amount) = modifier.strip_prefix("wheel=") {
-            let amount = amount.parse::<f32>().expect("wheel amount must be numeric");
-            let midi_value = (amount.clamp(0.0, 1.0) * 127.0).round() as u8;
-            engine.handle_midi([0xb0, 1, midi_value]);
         }
         match isolation.as_str() {
             "a" => assert!(engine.set_parameter(Parameter::OscillatorBLevel as u32, 0.0)),
             "b" => assert!(engine.set_parameter(Parameter::OscillatorALevel as u32, 0.0)),
             "both" => {}
             _ => panic!("isolation must be one of: both, a, b"),
+        }
+        if precondition_pitch {
+            engine.note_on(0, note, 127);
+            for _ in 0..SETTLE_FRAMES {
+                let _ = engine.next_sample();
+            }
+            engine.note_off(0, note);
+            engine.reset_voices();
         }
         for _ in 0..SETTLE_FRAMES {
             let _ = engine.next_sample();
@@ -132,8 +210,18 @@ fn main() {
         let mut maximum_second_difference = (0.0_f32, 0_usize);
         let mut samples = wave_output
             .as_ref()
-            .map(|_| Vec::with_capacity(strike_frames));
-        for frame in 0..strike_frames {
+            .map(|_| Vec::with_capacity(render_frames));
+        for frame in 0..render_frames {
+            if let Some(target) = glide_target.filter(|_| frame == SAMPLE_RATE / 2) {
+                engine.note_on(0, target, 127);
+                engine.note_off(0, note);
+            }
+            if gate_frames == Some(frame) {
+                if let Some(target) = glide_target {
+                    engine.note_off(0, target);
+                }
+                engine.note_off(0, note);
+            }
             let prepared = engine.prepare_next_sample();
             let mut voice_sum = 0.0_f32;
             for voice in 0..VOICE_COUNT {
@@ -144,10 +232,12 @@ fn main() {
             peak = peak.max(sample.abs());
             let delta = sample - previous;
             let second_difference = delta - previous_delta;
-            if frame < SAMPLE_RATE / 50 && delta.abs() > maximum_delta.0 {
+            if frame < ATTACK_ANALYSIS_FRAMES && delta.abs() > maximum_delta.0 {
                 maximum_delta = (delta.abs(), frame);
             }
-            if frame < SAMPLE_RATE / 50 && second_difference.abs() > maximum_second_difference.0 {
+            if frame < ATTACK_ANALYSIS_FRAMES
+                && second_difference.abs() > maximum_second_difference.0
+            {
                 maximum_second_difference = (second_difference.abs(), frame);
             }
             previous = sample;

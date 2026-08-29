@@ -14,11 +14,14 @@ use rf_5_voice::vca;
 // therefore form an exact passive five-input average, not an arbitrary gain.
 const VOICE_SUMMER_EQUAL_RESISTOR_GAIN: f32 = 1.0 / 5.0;
 // External load and interface reference level are not specified by the
-// instrument. Four circuit volts per host unit leaves the strongest accepted
-// five-voice condition below digital full scale while keeping this conversion
-// strictly linear. It cannot alter analog overload or interaction and remains
-// one replaceable calibration boundary until a reference output sweep exists.
-const CANDIDATE_CIRCUIT_VOLTS_PER_HOST_UNIT: f32 = 4.0;
+// instrument. PCB3's shared oscillator-level current sources divide across
+// the five voice-card IABC inputs; two circuit volts per host unit recovers a
+// practical nominal plugin level after admitting that physical fanout while
+// retaining headroom for the strongest resonant programs.
+// This conversion remains strictly linear and downstream of every analog
+// overload or interaction, so it cannot restore drive removed inside the
+// modeled circuit. A reference output sweep can replace this one boundary.
+const CANDIDATE_CIRCUIT_VOLTS_PER_HOST_UNIT: f32 = 2.0;
 
 // SD430: C4189 couples the U479 master VCA to the U481 output buffer. The
 // following node sees R4562 and R4541 to ground.
@@ -363,9 +366,9 @@ mod tests {
     #[test]
     fn host_boundary_is_linear_and_does_not_replace_analog_overload() {
         assert_eq!(host_from_jack_volts(0.0), 0.0);
-        assert_eq!(host_from_jack_volts(2.0), 0.5);
-        assert_eq!(host_from_jack_volts(4.0), 1.0);
-        assert_eq!(host_from_jack_volts(8.0), 2.0);
+        assert_eq!(host_from_jack_volts(2.0), 1.0);
+        assert_eq!(host_from_jack_volts(4.0), 2.0);
+        assert_eq!(host_from_jack_volts(8.0), 4.0);
     }
 
     #[test]

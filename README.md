@@ -24,9 +24,9 @@ the required classic export remains a bit-identical sequential fallback. The
 package is still one portable WebAssembly component, not a set of native builds.
 The state and determinism contract is documented in
 [`docs/PARALLEL_RENDER.md`](docs/PARALLEL_RENDER.md).
-Saw edges retain their bounded PolyBLEP correction. Pulse uses build-time
-mipmapped Fourier tables that retain every safe audible partial,
-including the original 1%/99% endpoints, while oscillator B's asymmetric
+Saw uses a short oversampled PolyBLEP reset, while static pulse uses build-time
+mipmapped Fourier tables that retain every safe audible partial, including the
+original 1%/99% endpoints. Oscillator B's asymmetric
 triangle uses a local PolyBLAMP correction at both slope transitions. A
 four-times-oversampled path with a 127-tap anti-alias decimator
 is retained as a non-distributed fidelity reference and regression oracle.
@@ -147,7 +147,7 @@ powershell -ExecutionPolicy Bypass -File tools/build-web-ui.ps1
 bash tools/build-package.sh
 ```
 
-The package is written to `artifacts/rf-5-0.1.0.rfplugin`. It contains one
+The package is written to `artifacts/rf-5-0.1.13.rfplugin`. It contains one
 `wasm-v1` component and has no operating-system or CPU-specific binary. GitHub
 Actions verifies the same source on x86-64 and ARM64, then builds one portable
 package as a workflow artifact. Packaging downloads Binaryen 132 for the build

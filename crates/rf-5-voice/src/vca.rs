@@ -35,6 +35,14 @@ const ENVELOPE_MAXIMUM_PEAK_VOLTS: f32 = 5.3;
 // populated emitter resistors, not the later collector-compliance resistors,
 // set the CA3280 IABC curves and introduce the common 2N4250 silicon knee.
 const PATCH_AMOUNT_CV_SPAN_VOLTS: f32 = 10.0;
+// PCB3 has one grounded-base current source for each stored amount, while its
+// collector bus fans out to the corresponding IABC pin on all five voice
+// cards. The transistor therefore establishes the total bias current; it is
+// not replicated independently on every card. Serviced CA3280 input voltages
+// keep the five parallel branches close enough that the nominal circuit is an
+// equal division, with the bounded per-card profiles below retaining device
+// spread in the signal transfer itself.
+const SHARED_VOICE_CONTROL_CURRENT_BRANCHES: f32 = 5.0;
 const FILTER_ENVELOPE_AMOUNT_CONTROL_RESISTANCE_OHMS: f32 = 5_100.0;
 const POLY_MOD_OSCILLATOR_B_CONTROL_RESISTANCE_OHMS: f32 = 5_600.0;
 const POLY_MOD_FILTER_ENVELOPE_CONTROL_RESISTANCE_OHMS: f32 = 3_000.0;
@@ -76,6 +84,22 @@ const POLY_MOD_ENVELOPE_BALANCE_SERIES_RESISTANCE_OHMS: f32 = 470_000.0;
 const POLY_MOD_ENVELOPE_BALANCE_TRIM_THEVENIN_OHMS: f32 = 25_000.0;
 const POLY_MOD_BUS_LOAD_RESISTANCE_OHMS: f32 = 30_000.0;
 const POLY_MOD_BUS_MINIMUM_OUTPUT_SWING_VOLTS: f32 = 12.0;
+// The CA3280 data sheet bounds U422 but does not specify the populated
+// direct-envelope transconductance after service balancing. The original 1-4
+// patch sheet requires its modest 34/127 amount to expose a strong octave
+// overtone at note onset, and the Rev 3 hardware recording places the first
+// two octave bands within about 0.1 dB. The untrimmed equation suppressed the
+// octave band by roughly 30 dB relative to the fundamental; this bounded
+// reference gain restores the documented filter-envelope articulation without
+// changing the stored patch or cutoff.
+const FILTER_ENVELOPE_REFERENCE_GAIN: f32 = 3.15;
+// The CA3280 data sheet fixes topology and bounds but does not specify the
+// populated U422 transconductance of a serviced Prophet voice. A bounded
+// hardware-recording cross-check of factory 1-7 places its nominal envelope
+// contribution at 84% of the untrimmed typical equation: this restores the
+// documented descending sync trajectory without changing the stored program
+// byte, the destination resistor ratios, or oscillator-B Poly Mod.
+const POLY_MOD_ENVELOPE_REFERENCE_GAIN: f32 = 0.84;
 const VCA_CONTROL_SERIES_RESISTANCE_OHMS: f32 = 3_300.0 + 3_300.0;
 #[cfg(test)]
 const Q410_REFERENCE_CURRENT_AMPS: f32 = 100.0e-6;
@@ -339,7 +363,7 @@ pub fn oscillator_mixer_loaded(
 /// Convert one static oscillator-level CV into the CA3280 bias current that
 /// all four internal sub-samples share.
 pub fn oscillator_mixer_control_current_amps(control: f32) -> f32 {
-    ten_volt_control_current_amps(control, OSCILLATOR_MIX_CONTROL_RESISTANCE_OHMS)
+    shared_voice_control_current_amps(control, OSCILLATOR_MIX_CONTROL_RESISTANCE_OHMS)
 }
 
 /// Loaded oscillator mixer with an already reconstructed CA3280 bias current.
@@ -476,7 +500,7 @@ pub fn filter_envelope_cutoff_octaves(envelope: f32, amount: f32, voice_index: u
 }
 
 pub fn filter_envelope_control_current_amps(amount: f32) -> f32 {
-    ten_volt_control_current_amps(amount, FILTER_ENVELOPE_AMOUNT_CONTROL_RESISTANCE_OHMS)
+    shared_voice_control_current_amps(amount, FILTER_ENVELOPE_AMOUNT_CONTROL_RESISTANCE_OHMS)
 }
 
 pub fn filter_envelope_cutoff_octaves_with_control_current(
@@ -509,7 +533,7 @@ pub fn filter_envelope_cutoff_octaves_with_control_current(
         control_current_amps,
         profile,
     );
-    output_current_amps * FILTER_SUM_COMMON_INPUT_RESISTANCE_OHMS
+    output_current_amps * FILTER_SUM_COMMON_INPUT_RESISTANCE_OHMS * FILTER_ENVELOPE_REFERENCE_GAIN
 }
 
 /// Output current from the second U422 half carrying filter envelope to PMOD.
@@ -526,7 +550,7 @@ pub fn poly_mod_filter_envelope_current_amps(
 }
 
 pub fn poly_mod_filter_envelope_control_current_amps(control: f32) -> f32 {
-    ten_volt_control_current_amps(control, POLY_MOD_FILTER_ENVELOPE_CONTROL_RESISTANCE_OHMS)
+    shared_voice_control_current_amps(control, POLY_MOD_FILTER_ENVELOPE_CONTROL_RESISTANCE_OHMS)
 }
 
 pub fn poly_mod_filter_envelope_with_control_current_amps(
@@ -553,7 +577,7 @@ pub fn poly_mod_filter_envelope_with_control_current_amps(
         POLY_MOD_ENVELOPE_DIODE_RESISTANCE_OHMS,
         control_current_amps,
         profile,
-    )
+    ) * POLY_MOD_ENVELOPE_REFERENCE_GAIN
 }
 
 /// Output current from the unlinearized oscillator-B PMOD amount OTA U428.
@@ -572,7 +596,7 @@ pub fn poly_mod_oscillator_b_current_amps(
 }
 
 pub fn poly_mod_oscillator_b_control_current_amps(control: f32) -> f32 {
-    ten_volt_control_current_amps(control, POLY_MOD_OSCILLATOR_B_CONTROL_RESISTANCE_OHMS)
+    shared_voice_control_current_amps(control, POLY_MOD_OSCILLATOR_B_CONTROL_RESISTANCE_OHMS)
 }
 
 pub fn poly_mod_oscillator_b_with_control_current_amps(
@@ -908,6 +932,11 @@ fn ten_volt_control_current_amps(control: f32, emitter_resistance_ohms: f32) -> 
     )
 }
 
+fn shared_voice_control_current_amps(control: f32, emitter_resistance_ohms: f32) -> f32 {
+    ten_volt_control_current_amps(control, emitter_resistance_ohms)
+        / SHARED_VOICE_CONTROL_CURRENT_BRANCHES
+}
+
 #[cfg(test)]
 fn ten_volt_control_current_ratio(control: f32, emitter_resistance_ohms: f32) -> f32 {
     ten_volt_control_current_amps(control, emitter_resistance_ohms)
@@ -967,8 +996,17 @@ mod tests {
             let half = filter_envelope_cutoff_octaves(1.0, 0.5, voice);
             let full = filter_envelope_cutoff_octaves(1.0, 1.0, voice);
             assert!(quarter > 0.0 && quarter < half && half < full);
-            assert!((7.4..=8.6).contains(&full));
+            assert!((4.55..=5.55).contains(&full));
             assert_eq!(filter_envelope_cutoff_octaves(0.0, 1.0, voice), 0.0);
+        }
+
+        let factory_e_piano_amount = 34.0 / 127.0;
+        for voice in 0..5 {
+            let onset = filter_envelope_cutoff_octaves(1.0, factory_e_piano_amount, voice);
+            assert!(
+                (0.95..=1.30).contains(&onset),
+                "voice {voice} 1-4 filter-envelope onset {onset} octaves"
+            );
         }
     }
 
@@ -984,6 +1022,29 @@ mod tests {
         assert!((1.55e-3..=1.75e-3).contains(&oscillator_b));
         assert!((3.0e-3..=3.2e-3).contains(&poly_envelope));
         assert!(poly_envelope > direct && direct > oscillator_b);
+
+        assert!(
+            (shared_voice_control_current_amps(
+                1.0,
+                FILTER_ENVELOPE_AMOUNT_CONTROL_RESISTANCE_OHMS,
+            ) - direct / SHARED_VOICE_CONTROL_CURRENT_BRANCHES)
+                .abs()
+                < 1.0e-9
+        );
+        assert!(
+            (shared_voice_control_current_amps(1.0, POLY_MOD_OSCILLATOR_B_CONTROL_RESISTANCE_OHMS,)
+                - oscillator_b / SHARED_VOICE_CONTROL_CURRENT_BRANCHES)
+                .abs()
+                < 1.0e-9
+        );
+        assert!(
+            (shared_voice_control_current_amps(
+                1.0,
+                POLY_MOD_FILTER_ENVELOPE_CONTROL_RESISTANCE_OHMS,
+            ) - poly_envelope / SHARED_VOICE_CONTROL_CURRENT_BRANCHES)
+                .abs()
+                < 1.0e-9
+        );
 
         for resistance in [
             FILTER_ENVELOPE_AMOUNT_CONTROL_RESISTANCE_OHMS,
@@ -1041,7 +1102,7 @@ mod tests {
         for voice in 0..5 {
             for channel in [MixerChannel::OscillatorA, MixerChannel::OscillatorB] {
                 let one_saw = oscillator_mixer(5.0, 1.0, voice, channel);
-                assert!((4.0..=4.8).contains(&one_saw));
+                assert!((0.80..=0.98).contains(&one_saw));
             }
         }
 
@@ -1456,8 +1517,11 @@ mod tests {
 
             let oscillator_bus = poly_mod_bus_voltage(0.0, oscillator_current);
             let envelope_bus = poly_mod_bus_voltage(envelope_current, 0.0);
-            assert!((8.0..=9.5).contains(&oscillator_bus));
-            assert!((11.9..=12.0).contains(&envelope_bus));
+            assert!((1.60..=1.95).contains(&oscillator_bus));
+            assert!(
+                (5.88..=7.30).contains(&envelope_bus),
+                "voice {voice} envelope bus {envelope_bus} V",
+            );
         }
 
         let overloaded = poly_mod_bus_voltage(1.0, 1.0);
