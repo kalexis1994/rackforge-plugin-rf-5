@@ -48,7 +48,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: kalexis1994/rackforge
-          ref: 37915a58529b5f57508207fb5f936c279afa0944
+          ref: 3095cc0c3fe4b13f74af8de07458ce44d3349908
           path: .rackforge
           persist-credentials: false
       - name: Set up Rust and WebAssembly target
