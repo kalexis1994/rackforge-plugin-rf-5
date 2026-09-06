@@ -8,7 +8,7 @@ param(
 $ErrorActionPreference = "Stop"
 $rfRepoRoot = Split-Path -Parent $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($Output)) {
-    $Output = Join-Path $rfRepoRoot "artifacts\rf-5-0.1.14.rfplugin"
+    $Output = Join-Path $rfRepoRoot "artifacts\rf-5-0.1.15.rfplugin"
 }
 if ([string]::IsNullOrWhiteSpace($RackForgeRoot)) {
     $RackForgeRoot = Join-Path (Split-Path -Parent $rfRepoRoot) "rackforge"
