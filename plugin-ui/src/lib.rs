@@ -32,6 +32,51 @@ fn escape_html(value: &str) -> String {
 }
 
 #[cfg(any(target_arch = "wasm32", test))]
+fn section_outline_path(
+    width: f64,
+    height: f64,
+    label_start: f64,
+    label_end: f64,
+    requested_radius: f64,
+) -> Option<String> {
+    if !width.is_finite()
+        || !height.is_finite()
+        || !label_start.is_finite()
+        || !label_end.is_finite()
+        || !requested_radius.is_finite()
+        || width <= 4.0
+        || height <= 4.0
+        || label_end <= label_start
+    {
+        return None;
+    }
+
+    let inset = 1.0;
+    let left = inset;
+    let top = inset;
+    let right = width - inset;
+    let bottom = height - inset;
+    let radius = requested_radius
+        .max(2.0)
+        .min((width - inset * 2.0) * 0.25)
+        .min((height - inset * 2.0) * 0.5);
+    let gap_start = label_start.clamp(left + radius + 2.0, right - radius - 4.0);
+    let gap_end = label_end.clamp(gap_start + 4.0, right - radius - 2.0);
+
+    Some(format!(
+        "M {gap_start:.2} {top:.2} H {:.2} A {radius:.2} {radius:.2} 0 0 0 {left:.2} {:.2} V {:.2} A {radius:.2} {radius:.2} 0 0 0 {:.2} {bottom:.2} H {:.2} A {radius:.2} {radius:.2} 0 0 0 {right:.2} {:.2} V {:.2} A {radius:.2} {radius:.2} 0 0 0 {:.2} {top:.2} H {gap_end:.2}",
+        left + radius,
+        top + radius,
+        bottom - radius,
+        left + radius,
+        right - radius,
+        bottom - radius,
+        top + radius,
+        right - radius,
+    ))
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
 fn prophet_switch_svg(
     index: u32,
     primary_active: bool,
@@ -58,6 +103,84 @@ fn prophet_switch_svg(
     format!(
         "<svg class=\"prophet-switch\" viewBox=\"0 0 52 72\" aria-hidden=\"true\"><defs><linearGradient id=\"switch-block-{index}\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\">{block_stops}</linearGradient><linearGradient id=\"switch-rocker-{index}\" x1=\"0\" y1=\"0\" x2=\"0.82\" y2=\"1\">{rocker_stops}</linearGradient></defs><g class=\"switch-block\"><rect class=\"switch-base\" x=\"3\" y=\"2\" width=\"46\" height=\"66\" rx=\"1\" fill=\"url(#switch-block-{index})\"></rect><path class=\"switch-deck\" d=\"M3 2H49V24H3Z\"></path><path class=\"switch-deck-seam\" d=\"M3 24H49\"></path><g class=\"led{}\" transform=\"translate({primary_x} 13)\"><circle class=\"led-rim\" r=\"5\"></circle><circle class=\"led-lens\" r=\"3.5\"></circle><circle class=\"led-glint\" cx=\"-1.2\" cy=\"-1.2\" r=\"0.8\"></circle></g>{secondary}<g class=\"switch-rocker\"><path class=\"switch-rocker-left\" d=\"M3 24L8 29V66L3 68Z\"></path><path class=\"switch-rocker-right\" d=\"M49 24L44 29V66L49 68Z\"></path><path class=\"switch-rocker-face\" d=\"M8 29H44V66H8Z\" fill=\"url(#switch-rocker-{index})\"></path><path class=\"switch-rocker-top\" d=\"M3 24H49L44 29H8Z\"></path><path class=\"switch-rocker-highlight\" d=\"M9 30H10V64H9Z\"></path><path class=\"switch-rocker-foot\" d=\"M8 64H44V66H8Z\"></path></g><path class=\"switch-block-highlight\" d=\"M4 3H48M4 3V23\"></path></g></svg>",
         if primary_active { " on" } else { "" }
+    )
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+fn identity_plaque_svg() -> &'static str {
+    r##"<svg class="identity-plaque" viewBox="0 0 420 104" role="img" aria-label="RF-5, five-voice programmable polyphonic synthesizer"><defs><linearGradient id="plaque-face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#25262a"></stop><stop offset="0.46" stop-color="#17181c"></stop><stop offset="1" stop-color="#0d0e11"></stop></linearGradient><linearGradient id="plaque-sheen" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ffffff" stop-opacity="0"></stop><stop offset="0.34" stop-color="#ffffff" stop-opacity="0.025"></stop><stop offset="0.52" stop-color="#ffffff" stop-opacity="0.09"></stop><stop offset="0.7" stop-color="#ffffff" stop-opacity="0.025"></stop><stop offset="1" stop-color="#ffffff" stop-opacity="0"></stop></linearGradient><radialGradient id="plaque-fastener" cx="35%" cy="28%" r="72%"><stop offset="0" stop-color="#6e6f70"></stop><stop offset="0.28" stop-color="#252629"></stop><stop offset="1" stop-color="#030304"></stop></radialGradient></defs><path class="plaque-shadow" d="M20 4H400L416 20V84L400 100H20L4 84V20Z"></path><path class="plaque-rim" d="M20 2H400L418 20V84L400 102H20L2 84V20Z"></path><path class="plaque-face" d="M21 6H399L414 21V83L399 98H21L6 83V21Z"></path><path class="plaque-sheen" d="M21 6H399L414 21V83L399 98H21L6 83V21Z"></path><circle class="plaque-fastener" cx="20" cy="52" r="5.4"></circle><circle class="plaque-fastener-core" cx="20" cy="52" r="2.1"></circle><circle class="plaque-fastener" cx="400" cy="52" r="5.4"></circle><circle class="plaque-fastener-core" cx="400" cy="52" r="2.1"></circle><text class="plaque-model" x="210" y="61" text-anchor="middle">RF-5</text><text class="plaque-description" x="210" y="83" text-anchor="middle">FIVE-VOICE POLYPHONIC SYNTHESIZER</text></svg>"##
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+fn program_display_digits(name: &str) -> [char; 2] {
+    let mut display = ['-'; 2];
+    for (slot, digit) in display
+        .iter_mut()
+        .zip(name.chars().filter(char::is_ascii_digit).take(2))
+    {
+        *slot = digit;
+    }
+    display
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+fn seven_segment_mask(digit: char) -> u8 {
+    const A: u8 = 1 << 0;
+    const B: u8 = 1 << 1;
+    const C: u8 = 1 << 2;
+    const D: u8 = 1 << 3;
+    const E: u8 = 1 << 4;
+    const F: u8 = 1 << 5;
+    const G: u8 = 1 << 6;
+
+    match digit {
+        '0' => A | B | C | D | E | F,
+        '1' => B | C,
+        '2' => A | B | D | E | G,
+        '3' => A | B | C | D | G,
+        '4' => B | C | F | G,
+        '5' => A | C | D | F | G,
+        '6' => A | C | D | E | F | G,
+        '7' => A | B | C,
+        '8' => A | B | C | D | E | F | G,
+        '9' => A | B | C | D | F | G,
+        '-' => G,
+        _ => 0,
+    }
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+fn seven_segment_digit_svg(digit: char, x: u8) -> String {
+    const SEGMENTS: [(&str, &str); 7] = [
+        ("a", "5,2 19,2 22,5 19,8 5,8 2,5"),
+        ("b", "20,6 23,9 23,19 20,22 17,19 17,9"),
+        ("c", "20,24 23,27 23,37 20,40 17,37 17,27"),
+        ("d", "5,38 19,38 22,41 19,44 5,44 2,41"),
+        ("e", "4,24 7,27 7,37 4,40 1,37 1,27"),
+        ("f", "4,6 7,9 7,19 4,22 1,19 1,9"),
+        ("g", "5,20 19,20 22,23 19,26 5,26 2,23"),
+    ];
+    let mask = seven_segment_mask(digit);
+    let mut svg = format!("<g class=\"seven-segment-digit\" transform=\"translate({x} 1)\">");
+    for (index, (name, points)) in SEGMENTS.iter().enumerate() {
+        let active = mask & (1 << index) != 0;
+        svg.push_str(&format!(
+            "<polygon class=\"seven-segment{} segment-{name}\" points=\"{points}\"></polygon>",
+            if active { " on" } else { "" }
+        ));
+    }
+    svg.push_str("</g>");
+    svg
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+fn seven_segment_display_svg(program_name: &str) -> String {
+    let digits = program_display_digits(program_name);
+    format!(
+        "<svg class=\"seven-segment-display\" viewBox=\"0 0 62 48\" role=\"img\" aria-label=\"Selected program {}\"><rect class=\"seven-segment-bezel\" x=\"0.5\" y=\"0.5\" width=\"61\" height=\"47\" rx=\"1.5\"></rect>{}{}</svg>",
+        escape_html(program_name),
+        seven_segment_digit_svg(digits[0], 5),
+        seven_segment_digit_svg(digits[1], 33)
     )
 }
 
@@ -287,24 +410,16 @@ mod browser {
         fn render(&self) {
             let mut html = String::from("<div class=\"rf5-frame\">");
             html.push_str("<div class=\"wood-rail wood-rail-top\" aria-hidden=\"true\"></div>");
-            html.push_str(&self.render_header());
             html.push_str(&self.render_tabs());
             html.push_str(&self.render_panel());
-            html.push_str("<div class=\"wood-rail wood-rail-middle\" aria-hidden=\"true\"></div>");
+            html.push_str("<div class=\"wood-rail wood-rail-middle\">");
+            html.push_str(identity_plaque_svg());
+            html.push_str("</div>");
             html.push_str(&self.render_programs());
             html.push_str("<div class=\"wood-rail wood-rail-bottom\" aria-hidden=\"true\"></div>");
             html.push_str("</div>");
             self.root.set_inner_html(&html);
-        }
-
-        fn render_header(&self) -> String {
-            let program = self
-                .selected_sound()
-                .map(|sound| escape_html(&sound.name))
-                .unwrap_or_else(|| "Waiting for RackForge".to_owned());
-            format!(
-                "<header class=\"instrument-header\"><div class=\"identity\"><strong>RF-5</strong><span>FIVE-VOICE PROGRAMMABLE POLYPHONIC SYNTHESIZER</span></div><div class=\"panel-badges\"><span>REV 3 VOICE ARCHITECTURE</span><span>ANALOG CONTROL SURFACE</span></div><div class=\"current-program\"><small>CURRENT PROGRAM</small><strong>{program}</strong></div></header>"
-            )
+            layout_group_outlines(&self.root);
         }
 
         fn render_tabs(&self) -> String {
@@ -352,7 +467,7 @@ mod browser {
                     }
                 }
                 groups.push_str(&format!(
-                    "<section class=\"control-group group-{}\"><h2><span>{}</span></h2><div class=\"control-grid\">{controls}</div></section>",
+                    "<section class=\"control-group group-{}\"><svg class=\"section-outline\" aria-hidden=\"true\" preserveAspectRatio=\"none\"><path></path></svg><h2><span>{}</span></h2><div class=\"control-grid\">{controls}</div></section>",
                     group.id,
                     group.title
                 ));
@@ -433,6 +548,10 @@ mod browser {
                 return "<section class=\"program-library waiting\">Waiting for the RackForge program catalog…</section>".to_owned();
             };
             let selected = self.selected_sound_id().unwrap_or_default();
+            let selected_program = self
+                .selected_sound()
+                .map(|sound| seven_segment_display_svg(&sound.name))
+                .unwrap_or_else(|| seven_segment_display_svg("--"));
             let mut cards = String::new();
             let mut current_bank = "";
             for sound in &context.instance.sounds {
@@ -460,12 +579,47 @@ mod browser {
                 cards.push_str("</div>");
             }
             format!(
-                "<section class=\"program-library\"><header><div class=\"memory-identity\"><small>PROGRAM MEMORY</small><h2>RF-5 PROGRAM SELECT</h2></div><div class=\"memory-display\"><small>LOADED</small><strong>{}</strong></div><span class=\"program-count\">{} programs</span></header>{cards}</section>",
-                self.selected_sound()
-                    .map(|sound| escape_html(&sound.name))
-                    .unwrap_or_else(|| "--".to_owned()),
+                "<section class=\"program-library\"><header><div class=\"memory-identity\"><small>PROGRAM MEMORY</small><h2>RF-5 PROGRAM SELECT</h2></div><div class=\"memory-display\"><small>BANK / PROGRAM</small>{selected_program}</div><span class=\"program-count\">{} programs</span></header>{cards}</section>",
                 context.instance.sounds.len()
             )
+        }
+    }
+
+    fn layout_group_outlines(root: &Element) {
+        const LABEL_PADDING: f64 = 7.0;
+        const CORNER_RADIUS: f64 = 15.0;
+
+        for section in panel::SECTIONS {
+            for group in section.groups {
+                let selector = format!(".control-group.group-{}", group.id);
+                let Ok(Some(container)) = root.query_selector(&selector) else {
+                    continue;
+                };
+                let Ok(Some(label)) = container.query_selector("h2 span") else {
+                    continue;
+                };
+                let Ok(Some(outline)) = container.query_selector(".section-outline") else {
+                    continue;
+                };
+                let Ok(Some(path)) = outline.query_selector("path") else {
+                    continue;
+                };
+
+                let container_rect = container.get_bounding_client_rect();
+                let label_rect = label.get_bounding_client_rect();
+                let width = container_rect.width();
+                let height = container_rect.height();
+                let label_start = label_rect.left() - container_rect.left() - LABEL_PADDING;
+                let label_end = label_rect.right() - container_rect.left() + LABEL_PADDING;
+                let Some(path_data) =
+                    section_outline_path(width, height, label_start, label_end, CORNER_RADIUS)
+                else {
+                    continue;
+                };
+
+                let _ = outline.set_attribute("viewBox", &format!("0 0 {width:.2} {height:.2}"));
+                let _ = path.set_attribute("d", &path_data);
+            }
         }
     }
 
@@ -1118,6 +1272,15 @@ mod browser {
             guard.forget();
         }
 
+        let resize_app = app.clone();
+        let resize = Closure::<dyn FnMut(Event)>::new(move |_event: Event| {
+            layout_group_outlines(&resize_app.borrow().root);
+        });
+        app.borrow()
+            .window
+            .add_event_listener_with_callback("resize", resize.as_ref().unchecked_ref())?;
+        resize.forget();
+
         let message_app = app.clone();
         let message = Closure::<dyn FnMut(MessageEvent)>::new(move |event: MessageEvent| {
             let source_is_parent = message_app
@@ -1246,6 +1409,16 @@ mod tests {
     }
 
     #[test]
+    fn section_outline_is_one_continuous_path_with_a_label_gap() {
+        let path = section_outline_path(320.0, 150.0, 22.0, 91.0, 15.0).unwrap();
+        assert_eq!(path.matches("M ").count(), 1);
+        assert_eq!(path.matches(" A ").count(), 4);
+        assert!(path.starts_with("M 22.00 1.00"));
+        assert!(path.ends_with("H 91.00"));
+        assert!(!path.contains('Z'));
+    }
+
+    #[test]
     fn knob_drag_is_relative_quantized_and_clamped() {
         assert_eq!(
             relative_knob_value(0.5, 0.0, 0.0, 1.0, 1.0 / 127.0),
@@ -1297,6 +1470,26 @@ mod tests {
 
         let light = prophet_switch_svg(11, false, None, true);
         assert!(light.contains("stop-color=\"#f1f0e9\""));
+    }
+
+    #[test]
+    fn identity_plaque_uses_flat_satin_silver_lettering() {
+        let plaque = identity_plaque_svg();
+        assert!(plaque.contains("class=\"identity-plaque\""));
+        assert!(plaque.contains(">RF-5</text>"));
+        assert!(plaque.contains(">FIVE-VOICE POLYPHONIC SYNTHESIZER</text>"));
+        assert!(!plaque.contains("plaque-model-gradient"));
+    }
+
+    #[test]
+    fn program_number_is_rendered_as_two_real_seven_segment_digits() {
+        assert_eq!(program_display_digits("1-7 Sync I"), ['1', '7']);
+        assert_eq!(program_display_digits("No program"), ['-', '-']);
+
+        let display = seven_segment_display_svg("2-4 Toy Piano");
+        assert!(display.contains("class=\"seven-segment-display\""));
+        assert_eq!(display.matches("class=\"seven-segment on").count(), 9);
+        assert!(display.contains("aria-label=\"Selected program 2-4 Toy Piano\""));
     }
 
     #[test]

@@ -15,6 +15,7 @@ const MAX_OUTPUT_CHANNELS: usize = 2;
 const MAX_MIDI_EVENTS: usize = 256;
 const MAX_PARAMETER_EVENTS: usize = 256;
 const MAX_COMMANDS_PER_UNIT: usize = 800;
+const DEFAULT_PRESET_ID: &str = "original-11-brass";
 const WIRE_VERSION: u32 = 1;
 const SHARED_MAGIC: u32 = u32::from_le_bytes(*b"RFSH");
 const DISPATCH_MAGIC: u32 = u32::from_le_bytes(*b"RFDU");
@@ -118,8 +119,11 @@ pub struct Rf5Processor {
 
 impl Default for Rf5Processor {
     fn default() -> Self {
+        let mut engine = Engine::default();
+        let loaded = engine.load_program(DEFAULT_PRESET_ID);
+        debug_assert!(loaded, "RF-5 default preset must remain packaged");
         Self {
-            engine: Engine::default(),
+            engine,
             end_frames: [EndFrame::default(); MAX_FRAMES],
             calibrations: [[VoiceCalibration::default(); MAX_FRAMES]; VOICE_COUNT],
             commands: [[WireVoiceCommand::default(); MAX_COMMANDS_PER_UNIT]; VOICE_COUNT],
@@ -543,6 +547,7 @@ mod tests {
         let _guard = parallel_export_test_guard();
         let mut reference = Engine::default();
         let mut parallel = RackForgeParallelExport::default();
+        assert!(reference.load_program(DEFAULT_PRESET_ID));
         assert!(reference.prepare(48_000.0));
         assert!(parallel.prepare(48_000.0, TEST_FRAMES, 0, 2));
         assert!(reference.load_program("original-34-high-strings"));
@@ -653,6 +658,10 @@ mod tests {
         for program in ["original-14-percussive-e-piano", "original-16-harpsichord"] {
             let mut reference = Engine::default();
             let mut parallel = RackForgeParallelExport::default();
+            // The packaged processor powers up on the catalog-selected Brass
+            // program. Give the sequential oracle the same analog history
+            // before comparing later recalls sample for sample.
+            assert!(reference.load_program(DEFAULT_PRESET_ID));
             assert!(reference.prepare(48_000.0));
             assert!(parallel.prepare(48_000.0, TEST_FRAMES, 0, 2));
             assert!(reference.load_program(program));
@@ -784,5 +793,30 @@ mod tests {
 
         assert!(!processor.load_preset("baseline-pad"));
         assert!(!processor.load_preset("audition-filter-resonance"));
+    }
+
+    #[test]
+    fn processor_audio_state_starts_on_the_catalog_selected_program() {
+        let catalog: serde_json::Value =
+            serde_json::from_str(include_str!("../package/metadata/presets.json")).unwrap();
+        let first_preset = catalog["presets"][0]["id"].as_str().unwrap();
+        assert_eq!(first_preset, DEFAULT_PRESET_ID);
+
+        let mut processor = RackForgeParallelExport::default();
+        let mut explicit = Engine::default();
+        assert!(explicit.load_program(DEFAULT_PRESET_ID));
+
+        let mut index = 0;
+        while let Some(expected) = explicit.parameter(index) {
+            assert_eq!(processor.get_parameter(index), Some(expected));
+            index += 1;
+        }
+        assert!(index > 0);
+        assert_eq!(processor.get_parameter(index), None);
+
+        assert!(processor.prepare(48_000.0, TEST_FRAMES, 0, 2));
+        for index in 0..index {
+            assert_eq!(processor.get_parameter(index), explicit.parameter(index));
+        }
     }
 }
