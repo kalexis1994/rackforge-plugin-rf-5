@@ -42,6 +42,45 @@ pub struct RenderMetrics {
     pub path: PathBuf,
 }
 
+/// Every scene's render, folded into one number. See
+/// `every_scene_renders_what_it_has_always_rendered`.
+const FINGERPRINTS: &[(&str, u64)] = &[
+    ("01_baseline_warm_chords", 0x07a8b2605364c5fa),
+    ("02_filter_drive", 0x8c77d48782a6c572),
+    ("03_filter_resonance", 0x882b9f997f4d91e3),
+    ("04_wheel_vibrato", 0xd03fadb516d7b959),
+    ("05_wheel_pwm", 0xdafc8f9ed29105bd),
+    ("06_wheel_filter", 0x1a3d73de749563fd),
+    ("07_envelope_punch", 0x003cf58f4d62ef89),
+    ("08_envelope_slow", 0x87d0f3b81a67055f),
+    ("09_ca3280_drive", 0xd5e529feb91270ec),
+    ("10_common_noise_vca", 0x4bc622ef02e84b59),
+    ("11_poly_mod_oscillator_b", 0xf8e16d2727162c63),
+    ("12_poly_mod_filter_envelope", 0x6741b51bd3667541),
+    ("13_wheel_noise_filter", 0x6a0171d02469f13d),
+    ("14_cem3340_hard_sync", 0x4c00f60a426a0032),
+    ("15_voice_assignment", 0xd66edf88a6c00686),
+    ("16_unison_low_note_legato", 0x50b85a3571f7a1d3),
+    ("17_lfo_slow_range", 0xfefc2dda0faeb215),
+    ("18_lfo_fast_range", 0xcc9a0bac11846818),
+    ("19_unison_glide_circuit", 0x5052e12b56daf9c2),
+    ("20_scale_mode_just_c", 0x9251b54dbd0df438),
+    ("21_release_switch_off", 0xbd9167cb969f9375),
+    ("22_pitch_wheel_deadband", 0x7c7373b50ce97ad4),
+    ("23_oscillator_b_fine_zero", 0xb67c8c7a23bb9997),
+    ("24_oscillator_b_fine_semitone", 0xc68fe863aeccea11),
+    ("25_pulse_width_one_percent", 0x6402a79c03c2ea5a),
+    ("26_pulse_width_fifty_percent", 0xfbc7f88db71a2680),
+    ("27_pulse_width_ninety_nine_percent", 0x6ecc55fb7cc2f282),
+    ("28_cem3340_triangle", 0x16ce144dc82fe336),
+    ("29_audio_rate_pwm", 0xfd06448080884c33),
+    ("30_filter_slew_transient", 0xd6975535a6834e4d),
+    ("31_envelope_phase_steps", 0x153f61d3effed13b),
+    ("32_lfo_saw_unipolar", 0xd2be005b7a30836e),
+    ("33_lfo_square_unipolar", 0x7b4cae4b41e3bb14),
+    ("34_baseline_pad_mod_wheel_sweep", 0x9488856f09bc31b6),
+];
+
 pub fn render_suite(output_directory: &Path) -> io::Result<Vec<RenderMetrics>> {
     fs::create_dir_all(output_directory)?;
     let scenes = scenes();
@@ -77,7 +116,13 @@ fn validate_metrics(metrics: &RenderMetrics) -> io::Result<()> {
     Ok(())
 }
 
-fn render_scene(output_directory: &Path, scene: &Scene) -> io::Result<RenderMetrics> {
+/// One scene's samples: the engine prepared, its program loaded, its scale
+/// applied, and its events delivered on the frames they belong to.
+///
+/// Lifted out of `render_scene` so that the fingerprint below and the WAV
+/// suite drive the SAME code. A guard that reimplements what it guards
+/// agrees with whatever that thing gets wrong.
+fn render_scene_samples(scene: &Scene, seconds: u32) -> io::Result<Vec<f32>> {
     let mut engine = Engine::default();
     if !engine.prepare(f64::from(SAMPLE_RATE)) || !engine.load_diagnostic_program(scene.program) {
         return Err(io::Error::other(format!(
@@ -96,13 +141,9 @@ fn render_scene(output_directory: &Path, scene: &Scene) -> io::Result<RenderMetr
         }
     }
 
-    let frame_count = SAMPLE_RATE * SCENE_SECONDS;
+    let frame_count = SAMPLE_RATE * seconds;
     let mut samples = Vec::with_capacity(frame_count as usize);
     let mut event_index = 0;
-    let mut peak = 0.0_f32;
-    let mut energy = 0.0_f64;
-    let mut sum = 0.0_f64;
-    let mut clipped_samples = 0_u32;
     for frame in 0..frame_count {
         while let Some(event) = scene.events.get(event_index)
             && event.frame == frame
@@ -117,19 +158,31 @@ fn render_scene(output_directory: &Path, scene: &Scene) -> io::Result<RenderMetr
                 scene.id
             )));
         }
+        samples.push(sample);
+    }
+    if seconds >= SCENE_SECONDS && event_index != scene.events.len() {
+        return Err(io::Error::other(format!(
+            "scene {} contains events beyond its render window",
+            scene.id
+        )));
+    }
+    Ok(samples)
+}
+
+fn render_scene(output_directory: &Path, scene: &Scene) -> io::Result<RenderMetrics> {
+    let samples = render_scene_samples(scene, SCENE_SECONDS)?;
+    let frame_count = samples.len() as u32;
+    let mut peak = 0.0_f32;
+    let mut energy = 0.0_f64;
+    let mut sum = 0.0_f64;
+    let mut clipped_samples = 0_u32;
+    for sample in samples.iter().copied() {
         peak = peak.max(sample.abs());
         energy += f64::from(sample) * f64::from(sample);
         sum += f64::from(sample);
         if sample.abs() >= 0.999 {
             clipped_samples += 1;
         }
-        samples.push(sample);
-    }
-    if event_index != scene.events.len() {
-        return Err(io::Error::other(format!(
-            "scene {} contains events beyond its render window",
-            scene.id
-        )));
     }
 
     let path = output_directory.join(format!("{}.wav", scene.id));
@@ -685,6 +738,81 @@ mod tests {
             .expect("clock is after epoch")
             .as_nanos();
         std::env::temp_dir().join(format!("rf-5-{label}-{}-{nonce}", std::process::id()))
+    }
+
+    /// Prints the fingerprint table, for when a change to the sound is
+    /// deliberate and the numbers have to move.
+    ///
+    /// ```text
+    /// cargo test --release -p rf-5-audition -- --ignored --nocapture print_fingerprints
+    /// ```
+    #[test]
+    #[ignore = "a generator, not a check"]
+    fn print_fingerprints() {
+        println!("const FINGERPRINTS: &[(&str, u64)] = &[");
+        for scene in scenes() {
+            let samples = render_scene_samples(&scene, 1).expect("la escena rinde");
+            let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+            for sample in samples {
+                hash ^= u64::from(sample.to_bits());
+                hash = hash.wrapping_mul(0x100_0000_01b3);
+            }
+            println!("    (\"{}\", {hash:#018x}),", scene.id);
+        }
+        println!("];");
+    }
+
+    /// What RF-5 sounds like, as one number per scene.
+    ///
+    /// The thirty-four scenes are already the curated record of what this
+    /// instrument does; this folds every sample of each one into a hash and
+    /// holds it there. It exists because nothing else did: `rf-5-profile`
+    /// prints checksums and asserts nothing, so two builds that rendered
+    /// different audio both passed.
+    ///
+    /// A change that moves one of these is not necessarily wrong -- it is a
+    /// question. Say which scene moved and why, listen to it, and then paste
+    /// the new number in deliberately. What must not happen is a number
+    /// moving because nobody was looking.
+    ///
+    /// The window is shorter than the WAV suite's so the guard stays cheap
+    /// enough to run by default; it still covers every scene's attack, its
+    /// events and its program.
+    #[test]
+    fn every_scene_renders_what_it_has_always_rendered() {
+        const FINGERPRINT_SECONDS: u32 = 1;
+        let expected: &[(&str, u64)] = FINGERPRINTS;
+        let rendered = scenes();
+        assert_eq!(
+            rendered.len(),
+            expected.len(),
+            "hay {} escenas y {} huellas: si se agrego una escena, agregale su huella",
+            rendered.len(),
+            expected.len()
+        );
+        let mut moved = Vec::new();
+        for (scene, (id, want)) in rendered.iter().zip(expected) {
+            assert_eq!(&scene.id, id, "el orden de las escenas cambio");
+            let samples =
+                render_scene_samples(scene, FINGERPRINT_SECONDS).expect("la escena rinde");
+            let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+            for sample in samples {
+                hash ^= u64::from(sample.to_bits());
+                hash = hash.wrapping_mul(0x100_0000_01b3);
+            }
+            if hash != *want {
+                moved.push(format!("  {id}: {hash:#018x} donde habia {want:#018x}"));
+            }
+        }
+        assert!(
+            moved.is_empty(),
+            "el sonido se movio en {} de {} escenas:
+{}",
+            moved.len(),
+            expected.len(),
+            moved.join("
+")
+        );
     }
 
     #[test]
