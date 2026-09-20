@@ -1,344 +1,1376 @@
 {
   "schema_version": 2,
   "pages": [
-    { "id": "output", "name": "Output", "order": 0, "header": "RF-5" },
-    { "id": "oscillators", "name": "Oscillators", "order": 1, "header": "RF-5" },
-    { "id": "mixer", "name": "Mixer", "order": 2, "header": "RF-5" },
-    { "id": "modulation", "name": "Modulation", "order": 3, "header": "RF-5" },
-    { "id": "poly-mod", "name": "Poly Mod", "order": 4, "header": "RF-5" },
-    { "id": "filter", "name": "Filter", "order": 5, "header": "RF-5" },
-    { "id": "amplifier", "name": "Amplifier", "order": 6, "header": "RF-5" },
-    { "id": "voice", "name": "Voice", "order": 7, "header": "RF-5" },
-    { "id": "temperament", "name": "Scale Mode", "order": 8, "header": "RF-5" }
+    {
+      "id": "output",
+      "name": "Output",
+      "order": 0,
+      "header": "RF-5"
+    },
+    {
+      "id": "oscillators",
+      "name": "Oscillators",
+      "order": 1,
+      "header": "RF-5"
+    },
+    {
+      "id": "mixer",
+      "name": "Mixer",
+      "order": 2,
+      "header": "RF-5"
+    },
+    {
+      "id": "modulation",
+      "name": "Modulation",
+      "order": 3,
+      "header": "RF-5"
+    },
+    {
+      "id": "poly-mod",
+      "name": "Poly Mod",
+      "order": 4,
+      "header": "RF-5"
+    },
+    {
+      "id": "filter",
+      "name": "Filter",
+      "order": 5,
+      "header": "RF-5"
+    },
+    {
+      "id": "amplifier",
+      "name": "Amplifier",
+      "order": 6,
+      "header": "RF-5"
+    },
+    {
+      "id": "voice",
+      "name": "Voice",
+      "order": 7,
+      "header": "RF-5"
+    },
+    {
+      "id": "temperament",
+      "name": "Scale Mode",
+      "order": 8,
+      "header": "RF-5"
+    }
   ],
   "parameters": [
     {
-      "index": 0, "id": "master-volume", "name": "Master Volume", "page": "output", "order": 0,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.72, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 0,
+      "id": "master-volume",
+      "name": "Master Volume",
+      "page": "output",
+      "order": 0,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.72,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 1, "id": "oscillator-a-level", "name": "Oscillator A Level", "page": "oscillators", "order": 0,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.72, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 1,
+      "id": "oscillator-a-level",
+      "name": "Oscillator A Level",
+      "page": "oscillators",
+      "order": 0,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.72,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": true,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 2, "id": "oscillator-b-detune", "name": "Oscillator B Fine", "page": "oscillators", "order": 1,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.03937007874015748, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 2,
+      "id": "oscillator-b-detune",
+      "name": "Oscillator B Fine",
+      "page": "oscillators",
+      "order": 1,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.03937007874015748,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": true,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 3, "id": "filter-cutoff", "name": "Cutoff", "page": "filter", "order": 0,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.72, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 3,
+      "id": "filter-cutoff",
+      "name": "Cutoff",
+      "page": "filter",
+      "order": 0,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.72,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": true,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 4, "id": "filter-resonance", "name": "Resonance", "page": "filter", "order": 1,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.08, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 4,
+      "id": "filter-resonance",
+      "name": "Resonance",
+      "page": "filter",
+      "order": 1,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.08,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": true,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 5, "id": "amp-attack", "name": "Attack", "page": "amplifier", "order": 0,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.01, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 5,
+      "id": "amp-attack",
+      "name": "Attack",
+      "page": "amplifier",
+      "order": 0,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.01,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": true,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 6, "id": "amp-decay", "name": "Decay", "page": "amplifier", "order": 1,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.2, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 6,
+      "id": "amp-decay",
+      "name": "Decay",
+      "page": "amplifier",
+      "order": 1,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.2,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": true,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 7, "id": "amp-sustain", "name": "Sustain", "page": "amplifier", "order": 2,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.82, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 7,
+      "id": "amp-sustain",
+      "name": "Sustain",
+      "page": "amplifier",
+      "order": 2,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.82,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": true,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 8, "id": "amp-release", "name": "Release", "page": "amplifier", "order": 3,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.28, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 8,
+      "id": "amp-release",
+      "name": "Release",
+      "page": "amplifier",
+      "order": 3,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.28,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": true,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 9, "id": "vintage-spread", "name": "Voice Spread", "page": "voice", "order": 0,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.18, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 9,
+      "id": "vintage-spread",
+      "name": "Voice Spread",
+      "page": "voice",
+      "order": 0,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.18,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 10, "id": "oscillator-b-level", "name": "Oscillator B Level", "page": "oscillators", "order": 2,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.64, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 10,
+      "id": "oscillator-b-level",
+      "name": "Oscillator B Level",
+      "page": "oscillators",
+      "order": 2,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.64,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": true,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 11, "id": "oscillator-a-saw", "name": "Oscillator A Saw", "page": "oscillators", "order": 3,
-      "kind": { "type": "boolean", "default": true },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+      "index": 11,
+      "id": "oscillator-a-saw",
+      "name": "Oscillator A Saw",
+      "page": "oscillators",
+      "order": 3,
+      "kind": {
+        "type": "boolean",
+        "default": true
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "button"
     },
     {
-      "index": 12, "id": "oscillator-a-pulse", "name": "Oscillator A Pulse", "page": "oscillators", "order": 4,
-      "kind": { "type": "boolean", "default": false },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+      "index": 12,
+      "id": "oscillator-a-pulse",
+      "name": "Oscillator A Pulse",
+      "page": "oscillators",
+      "order": 4,
+      "kind": {
+        "type": "boolean",
+        "default": false
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "button"
     },
     {
-      "index": 13, "id": "oscillator-a-pulse-width", "name": "Oscillator A Pulse Width", "page": "oscillators", "order": 5,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 13,
+      "id": "oscillator-a-pulse-width",
+      "name": "Oscillator A Pulse Width",
+      "page": "oscillators",
+      "order": 5,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.5,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": true,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 14, "id": "oscillator-b-saw", "name": "Oscillator B Saw", "page": "oscillators", "order": 6,
-      "kind": { "type": "boolean", "default": true },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+      "index": 14,
+      "id": "oscillator-b-saw",
+      "name": "Oscillator B Saw",
+      "page": "oscillators",
+      "order": 6,
+      "kind": {
+        "type": "boolean",
+        "default": true
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "button"
     },
     {
-      "index": 15, "id": "oscillator-b-triangle", "name": "Oscillator B Triangle", "page": "oscillators", "order": 7,
-      "kind": { "type": "boolean", "default": false },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+      "index": 15,
+      "id": "oscillator-b-triangle",
+      "name": "Oscillator B Triangle",
+      "page": "oscillators",
+      "order": 7,
+      "kind": {
+        "type": "boolean",
+        "default": false
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "button"
     },
     {
-      "index": 16, "id": "oscillator-b-pulse", "name": "Oscillator B Pulse", "page": "oscillators", "order": 8,
-      "kind": { "type": "boolean", "default": false },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+      "index": 16,
+      "id": "oscillator-b-pulse",
+      "name": "Oscillator B Pulse",
+      "page": "oscillators",
+      "order": 8,
+      "kind": {
+        "type": "boolean",
+        "default": false
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "button"
     },
     {
-      "index": 17, "id": "oscillator-b-pulse-width", "name": "Oscillator B Pulse Width", "page": "oscillators", "order": 9,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 17,
+      "id": "oscillator-b-pulse-width",
+      "name": "Oscillator B Pulse Width",
+      "page": "oscillators",
+      "order": 9,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.5,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": true,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 18, "id": "oscillator-sync", "name": "Oscillator Sync", "page": "oscillators", "order": 10,
-      "kind": { "type": "boolean", "default": false },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+      "index": 18,
+      "id": "oscillator-sync",
+      "name": "Oscillator Sync",
+      "page": "oscillators",
+      "order": 10,
+      "kind": {
+        "type": "boolean",
+        "default": false
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "button"
     },
     {
-      "index": 19, "id": "oscillator-a-frequency", "name": "Oscillator A Frequency", "page": "oscillators", "order": 11,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.3779527559055118, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 19,
+      "id": "oscillator-a-frequency",
+      "name": "Oscillator A Frequency",
+      "page": "oscillators",
+      "order": 11,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.3779527559055118,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": true,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 20, "id": "oscillator-b-frequency", "name": "Oscillator B Frequency", "page": "oscillators", "order": 12,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.3779527559055118, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 20,
+      "id": "oscillator-b-frequency",
+      "name": "Oscillator B Frequency",
+      "page": "oscillators",
+      "order": 12,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.3779527559055118,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": true,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 21, "id": "oscillator-b-low-frequency", "name": "Oscillator B Low Frequency", "page": "oscillators", "order": 13,
-      "kind": { "type": "boolean", "default": false },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+      "index": 21,
+      "id": "oscillator-b-low-frequency",
+      "name": "Oscillator B Low Frequency",
+      "page": "oscillators",
+      "order": 13,
+      "kind": {
+        "type": "boolean",
+        "default": false
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "button"
     },
     {
-      "index": 22, "id": "oscillator-b-keyboard", "name": "Oscillator B Keyboard", "page": "oscillators", "order": 14,
-      "kind": { "type": "boolean", "default": true },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+      "index": 22,
+      "id": "oscillator-b-keyboard",
+      "name": "Oscillator B Keyboard",
+      "page": "oscillators",
+      "order": 14,
+      "kind": {
+        "type": "boolean",
+        "default": true
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "button"
     },
     {
-      "index": 23, "id": "lfo-frequency", "name": "LFO Frequency", "page": "modulation", "order": 0,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.35, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 23,
+      "id": "lfo-frequency",
+      "name": "LFO Frequency",
+      "page": "modulation",
+      "order": 0,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.35,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": true,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 24, "id": "lfo-saw", "name": "LFO Saw", "page": "modulation", "order": 1,
-      "kind": { "type": "boolean", "default": false },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+      "index": 24,
+      "id": "lfo-saw",
+      "name": "LFO Saw",
+      "page": "modulation",
+      "order": 1,
+      "kind": {
+        "type": "boolean",
+        "default": false
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "button"
     },
     {
-      "index": 25, "id": "lfo-triangle", "name": "LFO Triangle", "page": "modulation", "order": 2,
-      "kind": { "type": "boolean", "default": true },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+      "index": 25,
+      "id": "lfo-triangle",
+      "name": "LFO Triangle",
+      "page": "modulation",
+      "order": 2,
+      "kind": {
+        "type": "boolean",
+        "default": true
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "button"
     },
     {
-      "index": 26, "id": "lfo-square", "name": "LFO Square", "page": "modulation", "order": 3,
-      "kind": { "type": "boolean", "default": false },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+      "index": 26,
+      "id": "lfo-square",
+      "name": "LFO Square",
+      "page": "modulation",
+      "order": 3,
+      "kind": {
+        "type": "boolean",
+        "default": false
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "button"
     },
     {
-      "index": 27, "id": "wheel-mod-oscillator-a-frequency", "name": "Wheel Mod Osc A Frequency", "page": "modulation", "order": 4,
-      "kind": { "type": "boolean", "default": true },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+      "index": 27,
+      "id": "wheel-mod-oscillator-a-frequency",
+      "name": "Wheel Mod Osc A Frequency",
+      "page": "modulation",
+      "order": 4,
+      "kind": {
+        "type": "boolean",
+        "default": true
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "button"
     },
     {
-      "index": 28, "id": "wheel-mod-oscillator-b-frequency", "name": "Wheel Mod Osc B Frequency", "page": "modulation", "order": 5,
-      "kind": { "type": "boolean", "default": true },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+      "index": 28,
+      "id": "wheel-mod-oscillator-b-frequency",
+      "name": "Wheel Mod Osc B Frequency",
+      "page": "modulation",
+      "order": 5,
+      "kind": {
+        "type": "boolean",
+        "default": true
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "button"
     },
     {
-      "index": 29, "id": "wheel-mod-oscillator-a-pulse-width", "name": "Wheel Mod Osc A Pulse Width", "page": "modulation", "order": 6,
-      "kind": { "type": "boolean", "default": false },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+      "index": 29,
+      "id": "wheel-mod-oscillator-a-pulse-width",
+      "name": "Wheel Mod Osc A Pulse Width",
+      "page": "modulation",
+      "order": 6,
+      "kind": {
+        "type": "boolean",
+        "default": false
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "button"
     },
     {
-      "index": 30, "id": "wheel-mod-oscillator-b-pulse-width", "name": "Wheel Mod Osc B Pulse Width", "page": "modulation", "order": 7,
-      "kind": { "type": "boolean", "default": false },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+      "index": 30,
+      "id": "wheel-mod-oscillator-b-pulse-width",
+      "name": "Wheel Mod Osc B Pulse Width",
+      "page": "modulation",
+      "order": 7,
+      "kind": {
+        "type": "boolean",
+        "default": false
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "button"
     },
     {
-      "index": 31, "id": "wheel-mod-filter", "name": "Wheel Mod Filter", "page": "modulation", "order": 8,
-      "kind": { "type": "boolean", "default": false },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+      "index": 31,
+      "id": "wheel-mod-filter",
+      "name": "Wheel Mod Filter",
+      "page": "modulation",
+      "order": 8,
+      "kind": {
+        "type": "boolean",
+        "default": false
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "button"
     },
     {
-      "index": 32, "id": "noise-level", "name": "Noise", "page": "mixer", "order": 0,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.0, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 32,
+      "id": "noise-level",
+      "name": "Noise",
+      "page": "mixer",
+      "order": 0,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.0,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": true,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 33, "id": "wheel-mod-source-mix", "name": "Wheel Mod Source Mix", "page": "modulation", "order": 9,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.0, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 33,
+      "id": "wheel-mod-source-mix",
+      "name": "Wheel Mod Source Mix",
+      "page": "modulation",
+      "order": 9,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.0,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": true,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 34, "id": "filter-attack", "name": "Filter Attack", "page": "filter", "order": 2,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.01, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 34,
+      "id": "filter-attack",
+      "name": "Filter Attack",
+      "page": "filter",
+      "order": 2,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.01,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": true,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 35, "id": "filter-decay", "name": "Filter Decay", "page": "filter", "order": 3,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.2, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 35,
+      "id": "filter-decay",
+      "name": "Filter Decay",
+      "page": "filter",
+      "order": 3,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.2,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": true,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 36, "id": "filter-sustain", "name": "Filter Sustain", "page": "filter", "order": 4,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.2, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 36,
+      "id": "filter-sustain",
+      "name": "Filter Sustain",
+      "page": "filter",
+      "order": 4,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.2,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": true,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 37, "id": "filter-release", "name": "Filter Release", "page": "filter", "order": 5,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.28, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 37,
+      "id": "filter-release",
+      "name": "Filter Release",
+      "page": "filter",
+      "order": 5,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.28,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": true,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 38, "id": "filter-envelope-amount", "name": "Filter Envelope Amount", "page": "filter", "order": 6,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.35, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 38,
+      "id": "filter-envelope-amount",
+      "name": "Filter Envelope Amount",
+      "page": "filter",
+      "order": 6,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.35,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": true,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 39, "id": "poly-mod-filter-envelope-amount", "name": "Filter Envelope", "page": "poly-mod", "order": 0,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.0, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 39,
+      "id": "poly-mod-filter-envelope-amount",
+      "name": "Filter Envelope",
+      "page": "poly-mod",
+      "order": 0,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.0,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": true,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 40, "id": "poly-mod-oscillator-b-amount", "name": "Oscillator B", "page": "poly-mod", "order": 1,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.0, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": true, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 40,
+      "id": "poly-mod-oscillator-b-amount",
+      "name": "Oscillator B",
+      "page": "poly-mod",
+      "order": 1,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.0,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": true,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 41, "id": "poly-mod-oscillator-a-frequency", "name": "Oscillator A Frequency", "page": "poly-mod", "order": 2,
-      "kind": { "type": "boolean", "default": false },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+      "index": 41,
+      "id": "poly-mod-oscillator-a-frequency",
+      "name": "Oscillator A Frequency",
+      "page": "poly-mod",
+      "order": 2,
+      "kind": {
+        "type": "boolean",
+        "default": false
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "button"
     },
     {
-      "index": 42, "id": "poly-mod-oscillator-a-pulse-width", "name": "Oscillator A Pulse Width", "page": "poly-mod", "order": 3,
-      "kind": { "type": "boolean", "default": false },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+      "index": 42,
+      "id": "poly-mod-oscillator-a-pulse-width",
+      "name": "Oscillator A Pulse Width",
+      "page": "poly-mod",
+      "order": 3,
+      "kind": {
+        "type": "boolean",
+        "default": false
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "button"
     },
     {
-      "index": 43, "id": "poly-mod-filter", "name": "Filter", "page": "poly-mod", "order": 4,
-      "kind": { "type": "boolean", "default": false },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+      "index": 43,
+      "id": "poly-mod-filter",
+      "name": "Filter",
+      "page": "poly-mod",
+      "order": 4,
+      "kind": {
+        "type": "boolean",
+        "default": false
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "button"
     },
     {
-      "index": 44, "id": "filter-keyboard", "name": "Keyboard Tracking", "page": "filter", "order": 7,
-      "kind": { "type": "boolean", "default": false },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+      "index": 44,
+      "id": "filter-keyboard",
+      "name": "Keyboard Tracking",
+      "page": "filter",
+      "order": 7,
+      "kind": {
+        "type": "boolean",
+        "default": false
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "button"
     },
     {
-      "index": 45, "id": "glide", "name": "Glide", "page": "voice", "order": 1,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.0, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 45,
+      "id": "glide",
+      "name": "Glide",
+      "page": "voice",
+      "order": 1,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.0,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 46, "id": "unison", "name": "Unison", "page": "voice", "order": 2,
-      "kind": { "type": "boolean", "default": false },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+      "index": 46,
+      "id": "unison",
+      "name": "Unison",
+      "page": "voice",
+      "order": 2,
+      "kind": {
+        "type": "boolean",
+        "default": false
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "button"
     },
     {
-      "index": 47, "id": "release-enable", "name": "Release", "page": "voice", "order": 3,
-      "kind": { "type": "boolean", "default": true },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+      "index": 47,
+      "id": "release-enable",
+      "name": "Release",
+      "page": "voice",
+      "order": 3,
+      "kind": {
+        "type": "boolean",
+        "default": true
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "button"
     },
     {
-      "index": 48, "id": "scale-c", "name": "C", "page": "temperament", "order": 0,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5039370078740157, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 48,
+      "id": "scale-c",
+      "name": "C",
+      "page": "temperament",
+      "order": 0,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.5039370078740157,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 49, "id": "scale-c-sharp", "name": "C Sharp", "page": "temperament", "order": 1,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5039370078740157, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 49,
+      "id": "scale-c-sharp",
+      "name": "C Sharp",
+      "page": "temperament",
+      "order": 1,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.5039370078740157,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 50, "id": "scale-d", "name": "D", "page": "temperament", "order": 2,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5039370078740157, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 50,
+      "id": "scale-d",
+      "name": "D",
+      "page": "temperament",
+      "order": 2,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.5039370078740157,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 51, "id": "scale-d-sharp", "name": "D Sharp", "page": "temperament", "order": 3,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5039370078740157, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 51,
+      "id": "scale-d-sharp",
+      "name": "D Sharp",
+      "page": "temperament",
+      "order": 3,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.5039370078740157,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 52, "id": "scale-e", "name": "E", "page": "temperament", "order": 4,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5039370078740157, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 52,
+      "id": "scale-e",
+      "name": "E",
+      "page": "temperament",
+      "order": 4,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.5039370078740157,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 53, "id": "scale-f", "name": "F", "page": "temperament", "order": 5,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5039370078740157, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 53,
+      "id": "scale-f",
+      "name": "F",
+      "page": "temperament",
+      "order": 5,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.5039370078740157,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 54, "id": "scale-f-sharp", "name": "F Sharp", "page": "temperament", "order": 6,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5039370078740157, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 54,
+      "id": "scale-f-sharp",
+      "name": "F Sharp",
+      "page": "temperament",
+      "order": 6,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.5039370078740157,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 55, "id": "scale-g", "name": "G", "page": "temperament", "order": 7,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5039370078740157, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 55,
+      "id": "scale-g",
+      "name": "G",
+      "page": "temperament",
+      "order": 7,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.5039370078740157,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 56, "id": "scale-g-sharp", "name": "G Sharp", "page": "temperament", "order": 8,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5039370078740157, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 56,
+      "id": "scale-g-sharp",
+      "name": "G Sharp",
+      "page": "temperament",
+      "order": 8,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.5039370078740157,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 57, "id": "scale-a", "name": "A", "page": "temperament", "order": 9,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5039370078740157, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 57,
+      "id": "scale-a",
+      "name": "A",
+      "page": "temperament",
+      "order": 9,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.5039370078740157,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 58, "id": "scale-a-sharp", "name": "A Sharp", "page": "temperament", "order": 10,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5039370078740157, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 58,
+      "id": "scale-a-sharp",
+      "name": "A Sharp",
+      "page": "temperament",
+      "order": 10,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.5039370078740157,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 59, "id": "scale-b", "name": "B", "page": "temperament", "order": 11,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5039370078740157, "step": 0.007874015748031496 },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 59,
+      "id": "scale-b",
+      "name": "B",
+      "page": "temperament",
+      "order": 11,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.5039370078740157,
+        "step": 0.007874015748031496
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 60, "id": "master-tune", "name": "Master Tune", "page": "output", "order": 1,
-      "kind": { "type": "float", "minimum": 0.0, "maximum": 1.0, "default": 0.5, "step": 0.0001 },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "knob"
+      "index": 60,
+      "id": "master-tune",
+      "name": "Master Tune",
+      "page": "output",
+      "order": 1,
+      "kind": {
+        "type": "float",
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "default": 0.5,
+        "step": 0.0001
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "knob"
     },
     {
-      "index": 61, "id": "a-440", "name": "A-440", "page": "output", "order": 2,
-      "kind": { "type": "boolean", "default": false },
-      "flags": { "automatable": true, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+      "index": 61,
+      "id": "a-440",
+      "name": "A-440",
+      "page": "output",
+      "order": 2,
+      "kind": {
+        "type": "boolean",
+        "default": false
+      },
+      "flags": {
+        "automatable": true,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "button"
     },
     {
-      "index": 62, "id": "tune", "name": "Tune", "page": "output", "order": 3,
-      "kind": { "type": "boolean", "default": false },
-      "flags": { "automatable": false, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+      "index": 62,
+      "id": "tune",
+      "name": "Tune",
+      "page": "output",
+      "order": 3,
+      "kind": {
+        "type": "boolean",
+        "default": false
+      },
+      "flags": {
+        "automatable": false,
+        "modulatable": false,
+        "read_only": false,
+        "advanced": false
+      },
+      "suggested_control": "button"
+    },
+    {
+      "flags": {
+        "advanced": true,
+        "automatable": false,
+        "modulatable": false,
+        "read_only": false
+      },
+      "id": "voice-allocation",
+      "index": 63,
+      "kind": {
+        "default": false,
+        "type": "boolean"
+      },
+      "name": "Voice Allocation",
+      "order": 4,
+      "page": "output",
+      "suggested_control": "button"
     }
   ],
   "semantic_controls": [
-    { "role": "synth.oscillator.pulse_width", "parameter_index": 13 },
-    { "role": "synth.oscillator.noise.level", "parameter_index": 32 },
-    { "role": "synth.filter.cutoff", "parameter_index": 3 },
-    { "role": "synth.filter.resonance", "parameter_index": 4 },
-    { "role": "synth.filter.envelope.amount", "parameter_index": 38 },
-    { "role": "synth.filter.key_tracking", "parameter_index": 44 },
-    { "role": "synth.envelope.amp.attack", "parameter_index": 5 },
-    { "role": "synth.envelope.amp.decay", "parameter_index": 6 },
-    { "role": "synth.envelope.amp.sustain", "parameter_index": 7 },
-    { "role": "synth.envelope.amp.release", "parameter_index": 8 },
-    { "role": "synth.lfo.rate", "parameter_index": 23 }
+    {
+      "role": "synth.oscillator.pulse_width",
+      "parameter_index": 13
+    },
+    {
+      "role": "synth.oscillator.noise.level",
+      "parameter_index": 32
+    },
+    {
+      "role": "synth.filter.cutoff",
+      "parameter_index": 3
+    },
+    {
+      "role": "synth.filter.resonance",
+      "parameter_index": 4
+    },
+    {
+      "role": "synth.filter.envelope.amount",
+      "parameter_index": 38
+    },
+    {
+      "role": "synth.filter.key_tracking",
+      "parameter_index": 44
+    },
+    {
+      "role": "synth.envelope.amp.attack",
+      "parameter_index": 5
+    },
+    {
+      "role": "synth.envelope.amp.decay",
+      "parameter_index": 6
+    },
+    {
+      "role": "synth.envelope.amp.sustain",
+      "parameter_index": 7
+    },
+    {
+      "role": "synth.envelope.amp.release",
+      "parameter_index": 8
+    },
+    {
+      "role": "synth.lfo.rate",
+      "parameter_index": 23
+    }
   ]
 }
