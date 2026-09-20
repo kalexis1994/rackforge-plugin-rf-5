@@ -16,6 +16,17 @@ struct Sound {
 }
 
 #[cfg(any(target_arch = "wasm32", test))]
+/// One line explaining a global setting, since these have no panel legend
+/// and no forty-year-old manual to look them up in.
+fn global_setting_caption(id: &str) -> &'static str {
+    match id {
+        "voice-allocation" => {
+            "OFF is the original assigner: a new note takes the voice used              longest ago, held key or not. ON takes a voice whose key you              already let go first, so a held chord survives a melody over it."
+        }
+        _ => "",
+    }
+}
+
 fn escape_html(value: &str) -> String {
     let mut escaped = String::with_capacity(value.len());
     for character in value.chars() {
@@ -416,6 +427,7 @@ mod browser {
             html.push_str(identity_plaque_svg());
             html.push_str("</div>");
             html.push_str(&self.render_programs());
+            html.push_str(&self.render_global_settings());
             html.push_str("<div class=\"wood-rail wood-rail-bottom\" aria-hidden=\"true\"></div>");
             html.push_str("</div>");
             self.root.set_inner_html(&html);
@@ -483,6 +495,55 @@ mod browser {
             format!(
                 "<main class=\"hardware-panel section-{}\"><div class=\"panel-surface\">{groups}</div>{error}</main>",
                 section.id
+            )
+        }
+
+        /// The settings that are RackForge's rather than Sequential's.
+        ///
+        /// A Prophet-5 has no switch for these, so they are not drawn onto
+        /// the panel: the panel is a reproduction and putting a control
+        /// there that the instrument never had would be a lie told in
+        /// brushed aluminium. They live down here with the program library,
+        /// which is RackForge's chrome too.
+        ///
+        /// Sequential reached the same place from the other side: the Rev
+        /// 4's allocation mode is behind a button combination rather than on
+        /// the face. The difference is that theirs can be reached, which is
+        /// the whole point of a setting.
+        fn render_global_settings(&self) -> String {
+            let Some(snapshot) = self.snapshot.as_ref() else {
+                return String::new();
+            };
+            let mut controls = String::new();
+            for id in panel::GLOBAL_SETTINGS {
+                let Some(parameter) = snapshot
+                    .schema
+                    .parameters
+                    .iter()
+                    .find(|parameter| parameter.id == *id)
+                else {
+                    continue;
+                };
+                let value = self.value(parameter);
+                let active = value >= 0.5;
+                controls.push_str(&format!(
+                    "<div class=\"global-setting\"><div class=\"global-setting-text\"><strong>{}</strong><small>{}</small></div><button type=\"button\" class=\"global-toggle{}\" data-action=\"toggle\" data-index=\"{}\" data-rackforge-parameter-index=\"{}\" aria-label=\"{}\" aria-pressed=\"{}\"><span class=\"global-toggle-track\" aria-hidden=\"true\"><span class=\"global-toggle-knob\"></span></span><output data-output-index=\"{}\">{}</output></button></div>",
+                    escape_html(&parameter.name),
+                    escape_html(global_setting_caption(&parameter.id)),
+                    if active { " active" } else { "" },
+                    parameter.index,
+                    parameter.index,
+                    escape_html(&parameter.name),
+                    active,
+                    parameter.index,
+                    if active { "ON" } else { "OFF" }
+                ));
+            }
+            if controls.is_empty() {
+                return String::new();
+            }
+            format!(
+                "<section class=\"global-settings\"><header><small>RACKFORGE</small><h2>GLOBAL SETTINGS</h2></header>{controls}</section>"
             )
         }
 
