@@ -449,6 +449,11 @@ impl Engine {
     }
 
     fn release_voice(&mut self, unit: usize) {
+        // Every path that puts a voice into its release comes through here
+        // -- a key up, the sustain pedal rising, all-notes-off -- so this is
+        // the one place the assigner has to be told, and the one that was
+        // missing. See `allocation`.
+        self.poly_allocator.mark_released(unit);
         self.voices[unit].release();
         self.push_voice_command(VoiceCommand {
             unit: unit as u8,

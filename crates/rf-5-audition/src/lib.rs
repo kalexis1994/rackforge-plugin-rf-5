@@ -79,6 +79,7 @@ const FINGERPRINTS: &[(&str, u64)] = &[
     ("32_lfo_saw_unipolar", 0xd2be005b7a30836e),
     ("33_lfo_square_unipolar", 0x7b4cae4b41e3bb14),
     ("34_baseline_pad_mod_wheel_sweep", 0x9488856f09bc31b6),
+    ("35_chord_under_a_melody", 0x048563d71cb51421),
 ];
 
 pub fn render_suite(output_directory: &Path) -> io::Result<Vec<RenderMetrics>> {
@@ -576,7 +577,46 @@ fn scenes() -> Vec<Scene> {
             scale_codes: EQUAL_TEMPERAMENT,
             events: baseline_pad_mod_wheel_sweep(),
         },
+        Scene {
+            id: "35_chord_under_a_melody",
+            program: "baseline-pad",
+            description: "A held triad while five notes are played over it and let go, which is where voice assignment is audible",
+            scale_codes: EQUAL_TEMPERAMENT,
+            events: chord_under_a_melody(),
+        },
     ]
+}
+
+/// A triad held for the whole scene while a melody is played over it and
+/// released, note by note.
+///
+/// None of the thirty-four scenes before this one exercises voice
+/// assignment: they hold chords, or play single lines, and never ask a
+/// five-voice instrument for a sixth note while three keys are still down.
+/// That is the one case where which voice the assigner takes is audible, and
+/// it is the case a player meets constantly.
+///
+/// On the assigner as it was, the triad is gone by the second melody note.
+fn chord_under_a_melody() -> Vec<MidiAction> {
+    // The melody is inside the first second on purpose: the fingerprint
+    // window is one second per scene, and a scene whose decisive moment
+    // falls outside it guards nothing. The first version of this scene put
+    // the third melody note at 2.6 s, and removing the assigner's release
+    // notification moved no fingerprint at all.
+    let mut events = chord_sequence(&[(0.05, 5.60, &[48, 55, 60])]);
+    for (index, note) in [72_u8, 74, 76, 77, 79].into_iter().enumerate() {
+        let start = 0.16 + index as f32 * 0.16;
+        events.push(MidiAction {
+            frame: seconds_to_frame(start),
+            data: [0x90, note, 112],
+        });
+        events.push(MidiAction {
+            frame: seconds_to_frame(start + 0.09),
+            data: [0x80, note, 0],
+        });
+    }
+    events.sort_by_key(|event| event.frame);
+    events
 }
 
 fn baseline_pad_mod_wheel_sweep() -> Vec<MidiAction> {
