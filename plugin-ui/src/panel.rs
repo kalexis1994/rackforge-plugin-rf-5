@@ -172,20 +172,6 @@ pub fn section(id: &str) -> &'static PanelSection {
         .unwrap_or(&SECTIONS[0])
 }
 
-/// Parameters the host exposes that are deliberately NOT on the panel.
-///
-/// The Prophet-5's front panel is a reproduction, so a control the original
-/// never had does not get drawn onto it. Sequential reached the same
-/// conclusion with the Rev 4's Round Robin allocation mode: it lives in a
-/// global setting behind a button combination, not on the face of the
-/// instrument.
-///
-/// Anything listed here still appears in `parameters.json`, so a host can
-/// offer it; it simply has no place among the knobs. The coverage test
-/// below holds the two sets disjoint and exhaustive, so a new parameter
-/// cannot be forgotten -- it has to be put on the panel or declared here.
-pub const GLOBAL_SETTINGS: &[&str] = &["voice-allocation"];
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,19 +187,7 @@ mod tests {
                 }
             }
         }
-        for id in GLOBAL_SETTINGS {
-            assert!(
-                !ids.contains(id),
-                "{id} esta en el panel y declarado como ajuste global"
-            );
-        }
-        assert_eq!(
-            ids.len() + GLOBAL_SETTINGS.len(),
-            rf_5_contract::PARAMETER_COUNT,
-            "todo parametro va en el panel o en GLOBAL_SETTINGS, y nada queda sin lugar"
-        );
-        let mut ids = ids;
-        ids.extend(GLOBAL_SETTINGS.iter().copied());
+        assert_eq!(ids.len(), rf_5_contract::PARAMETER_COUNT);
 
         let schema: serde_json::Value = serde_json::from_str(include_str!(
             "../../plugin/package/metadata/parameters.json"

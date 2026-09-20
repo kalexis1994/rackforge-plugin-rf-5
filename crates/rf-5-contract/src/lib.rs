@@ -9,7 +9,7 @@ pub mod hardware;
 
 pub const PATCH_PARAMETER_COUNT: usize = 48;
 pub const SCALE_NOTE_COUNT: usize = 12;
-pub const PARAMETER_COUNT: usize = PATCH_PARAMETER_COUNT + SCALE_NOTE_COUNT + 4;
+pub const PARAMETER_COUNT: usize = PATCH_PARAMETER_COUNT + SCALE_NOTE_COUNT + 3;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]
@@ -77,25 +77,6 @@ pub enum Parameter {
     MasterTune = 60,
     A440 = 61,
     Tune = 62,
-    /// Which voice the assigner takes when every voice is busy.
-    ///
-    /// Global, like `MasterTune` and `A440`: it is not part of a program,
-    /// because the forty programs are projected byte for byte from
-    /// Sequential's original SysEx and nothing that was not in a 1978
-    /// program may be written into one.
-    ///
-    /// Below 0.5 the assigner is the one the Rev 3 service manual
-    /// describes and is the default: a physical five-slot queue where the
-    /// earliest-assigned voice is taken, whether or not its key is still
-    /// down. At or above 0.5 the assigner takes the earliest voice whose
-    /// key has already been let go, and only reaches for a held one when
-    /// every voice is held.
-    ///
-    /// Sequential did the same thing themselves in 2023, adding Round
-    /// Robin to the Rev 4 as an alternative mode rather than a replacement.
-    /// The original is what the instrument is; the alternative is what it
-    /// can be asked to be.
-    VoiceAllocation = 63,
 }
 
 pub const SCALE_PARAMETERS: [Parameter; SCALE_NOTE_COUNT] = [
@@ -181,7 +162,6 @@ impl TryFrom<u32> for Parameter {
             60 => Ok(Self::MasterTune),
             61 => Ok(Self::A440),
             62 => Ok(Self::Tune),
-            63 => Ok(Self::VoiceAllocation),
             _ => Err(()),
         }
     }
@@ -259,8 +239,6 @@ impl Default for Settings {
                 hardware::SCALE_EQUAL_TEMPERAMENT_NORMALIZED,
                 0.5,
                 0.0,
-                0.0,
-                // Voice allocation: the original assigner.
                 0.0,
             ],
         }

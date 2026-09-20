@@ -40,8 +40,6 @@ const PRE_MASTER_TUNE_PARAMETER_COUNT: usize = 60;
 const PRE_MASTER_TUNE_STATE_BYTES: usize = PRE_MASTER_TUNE_PARAMETER_COUNT * 4;
 const PRE_MACHINE_OPERATIONS_PARAMETER_COUNT: usize = 61;
 const PRE_MACHINE_OPERATIONS_STATE_BYTES: usize = PRE_MACHINE_OPERATIONS_PARAMETER_COUNT * 4;
-const PRE_VOICE_ALLOCATION_PARAMETER_COUNT: usize = 63;
-const PRE_VOICE_ALLOCATION_STATE_BYTES: usize = PRE_VOICE_ALLOCATION_PARAMETER_COUNT * 4;
 // MIDI CC1 has only 128 positions, whereas the original wheel is a continuous
 // passive potentiometer. A short reconstruction filter removes controller
 // steps without adding perceptible lag to a physical wheel gesture.
@@ -451,11 +449,6 @@ impl Engine {
     }
 
     fn release_voice(&mut self, unit: usize) {
-        // Every path that puts a voice into its release comes through here
-        // -- a key up, the sustain pedal rising, all-notes-off -- so this is
-        // the one place the assigner has to be told. The original assigner
-        // never reads it; see `allocation::VoiceAllocation`.
-        self.poly_allocator.mark_released(unit);
         self.voices[unit].release();
         self.push_voice_command(VoiceCommand {
             unit: unit as u8,
@@ -560,13 +553,8 @@ impl Engine {
             }
             return;
         }
-        let voice_index = self.poly_allocator.assign(channel, note, self.voice_allocation());
+        let voice_index = self.poly_allocator.assign(channel, note);
         self.start_voice(voice_index, channel, note, velocity);
-    }
-
-    /// Which assigner the global parameter selects.
-    fn voice_allocation(&self) -> allocation::VoiceAllocation {
-        allocation::VoiceAllocation::from_normalized(self.settings.get(Parameter::VoiceAllocation))
     }
 
     pub fn note_off(&mut self, channel: u8, note: u8) {
@@ -988,25 +976,6 @@ impl Engine {
             self.install_loaded_settings(settings);
             return true;
         }
-        if state.len() == PRE_VOICE_ALLOCATION_STATE_BYTES {
-            let mut old = [0.0_f32; PRE_VOICE_ALLOCATION_PARAMETER_COUNT];
-            let (chunks, remainder) = state.as_chunks::<4>();
-            if !remainder.is_empty() {
-                return false;
-            }
-            for (value, chunk) in old.iter_mut().zip(chunks) {
-                *value = f32::from_le_bytes(*chunk);
-            }
-            // A session saved before the mode existed is a session that was
-            // played on the original assigner, so it loads as one.
-            let mut values = Settings::default().as_array();
-            values[..PRE_VOICE_ALLOCATION_PARAMETER_COUNT].copy_from_slice(&old);
-            let Some(settings) = Settings::from_array(values) else {
-                return false;
-            };
-            self.install_loaded_settings(settings);
-            return true;
-        }
         if state.len() != STATE_BYTES {
             return false;
         }
@@ -1103,7 +1072,7 @@ impl Engine {
     }
 
     fn note_on_without_tracking(&mut self, channel: u8, note: u8, velocity: u8) {
-        let voice_index = self.poly_allocator.assign(channel, note, self.voice_allocation());
+        let voice_index = self.poly_allocator.assign(channel, note);
         self.start_voice(voice_index, channel, note, velocity);
     }
 
@@ -1412,52 +1381,6 @@ mod tests {
         assert!(engine.voices[2].matches(0, 62));
         engine.note_on(0, 66, 100);
         assert!(engine.voices[1].matches(0, 66));
-    }
-
-    /// The chord a player holds, and what each assigner does to it.
-    ///
-    /// This is the whole feature end to end rather than the allocator on its
-    /// own: it is the wiring that is easy to get wrong. `release_voice` has
-    /// to tell the assigner that a key came up, and nothing else in the
-    /// engine does -- forget that call and the alternative mode compiles,
-    /// passes every allocator unit test, and behaves exactly like the
-    /// original.
-    #[test]
-    fn the_allocation_mode_decides_whether_a_held_chord_survives() {
-        const CHORD: [u8; 3] = [60, 64, 67];
-        const OVER_THE_TOP: [u8; 3] = [72, 74, 76];
-
-        // What the original does: the chord goes.
-        let mut engine = Engine::default();
-        for note in CHORD {
-            engine.note_on(0, note, 100);
-        }
-        for note in OVER_THE_TOP {
-            engine.note_on(0, note, 100);
-            engine.note_off(0, note);
-        }
-        assert!(
-            !engine.voices.iter().any(|voice| voice.matches(0, CHORD[0])),
-            "el asignador original deberia haberse llevado la nota mas vieja del acorde"
-        );
-
-        // What the alternative does: the chord stays, and the notes over the
-        // top recycle the voices that are already decaying.
-        let mut engine = Engine::default();
-        assert!(engine.set_parameter(Parameter::VoiceAllocation as u32, 1.0));
-        for note in CHORD {
-            engine.note_on(0, note, 100);
-        }
-        for note in OVER_THE_TOP {
-            engine.note_on(0, note, 100);
-            engine.note_off(0, note);
-        }
-        for note in CHORD {
-            assert!(
-                engine.voices.iter().any(|voice| voice.matches(0, note)),
-                "la nota {note} del acorde fue robada con el modo alternativo"
-            );
-        }
     }
 
     #[test]
