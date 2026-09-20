@@ -780,6 +780,39 @@ mod tests {
         std::env::temp_dir().join(format!("rf-5-{label}-{}-{nonce}", std::process::id()))
     }
 
+    /// Where a scene's biggest sample-to-sample jump is.
+    ///
+    /// A voice taken over while it is still sounding can leave a step in the
+    /// output, and a step is a click. This is how to look.
+    ///
+    /// ```text
+    /// cargo test --release -p rf-5-audition -- --ignored --nocapture print_scene_steps
+    /// ```
+    #[test]
+    #[ignore = "a measurement, not a check"]
+    fn print_scene_steps() {
+        for scene in scenes() {
+            let samples = render_scene_samples(&scene, SCENE_SECONDS).expect("la escena rinde");
+            let mut worst = 0.0_f32;
+            let mut at = 0_usize;
+            let mut peak = 0.0_f32;
+            for (index, pair) in samples.windows(2).enumerate() {
+                let step = (pair[1] - pair[0]).abs();
+                peak = peak.max(pair[1].abs());
+                if step > worst {
+                    worst = step;
+                    at = index;
+                }
+            }
+            println!(
+                "{:<34} salto {worst:.6} a los {:.3} s   pico {peak:.6}   salto/pico {:.3}",
+                scene.id,
+                at as f32 / SAMPLE_RATE as f32,
+                worst / peak.max(1e-9)
+            );
+        }
+    }
+
     /// Prints the fingerprint table, for when a change to the sound is
     /// deliberate and the numbers have to move.
     ///
