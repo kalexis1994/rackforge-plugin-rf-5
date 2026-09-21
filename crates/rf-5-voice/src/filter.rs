@@ -1161,16 +1161,165 @@ mod tests {
         assert!(compared > 10_000, "el barrido apenas ejercito el solver: {compared}");
     }
 
+    /// The reference root, over every value the knees can hand it.
+    ///
+    /// Seven scattered values used to stand for this. They are the wrong
+    /// shape of evidence: the knee feeds `1 + x^16` for `|x|` up to the
+    /// clamp of 64, a continuum spanning twenty-eight decades, and a
+    /// function can be exact at seven points and wrong between them. This
+    /// walks the argument the caller actually produces, in sixty-four
+    /// thousand steps, and states one bound over the lot.
     #[test]
     fn power_of_two_roots_track_the_generic_reference() {
-        for square_roots in [4, 5] {
-            let exponent = 1.0 / (1_u32 << square_roots) as f32;
-            for value in [1.0, 1.000_1, 1.25, 2.0, 16.0, 65_537.0, 1.0e20] {
-                let specialized = reciprocal_power_of_two_root(value, square_roots);
-                let reference = 1.0 / libm::powf(value, exponent);
-                let relative_error = (specialized - reference).abs() / reference;
-                assert!(relative_error <= 3.0e-7, "{value} -> {relative_error}");
+        let mut worst = 0.0_f32;
+        for step in 0..=64_000_u32 {
+            let normalized = step as f32 / 1_000.0;
+            let value = 1.0 + libm::powf(normalized, 16.0);
+            let specialized = reciprocal_power_of_two_root(value, 4);
+            let reference = 1.0 / libm::powf(value, 1.0 / 16.0);
+            worst = worst.max((specialized - reference).abs() / reference);
+        }
+        assert!(worst <= 3.0e-7, "orden 16: {worst}");
+
+        // The thirty-second-order knee is only ever asked for arguments that
+        // stay finite. Where that stops being true, and why it has never
+        // mattered, is the next test.
+        let mut worst = 0.0_f32;
+        for step in 0..16_000_u32 {
+            let normalized = step as f32 / 1_000.0;
+            let value = 1.0 + libm::powf(normalized, 32.0);
+            let specialized = reciprocal_power_of_two_root(value, 5);
+            let reference = 1.0 / libm::powf(value, 1.0 / 32.0);
+            worst = worst.max((specialized - reference).abs() / reference);
+        }
+        assert!(worst <= 3.0e-7, "orden 32: {worst}");
+    }
+
+    /// Where the reference knee stops being a curve, and how far that is
+    /// from anywhere the instrument goes.
+    ///
+    /// `1 + x^32` leaves f32 at `x = 16`, and past there the reference
+    /// branch returns zero where it should return the clipping swing. The
+    /// cheap branch, which is what ships, does not: it evaluates the
+    /// reciprocal on the far side and stays on the curve. So this is a
+    /// latent fault in the PRECISE build -- the one
+    /// `compare-portable-reference` treats as ground truth -- and the only
+    /// reason it has never shown is the distance proved below.
+    ///
+    /// That distance is an argument, not a sweep. The fourth cell's output
+    /// is clamped to the cell ceiling, and a one-pole lowpass of a signal
+    /// bounded by C is itself bounded by C, so the buffer is driven by at
+    /// most `2C * gain`. Every input is covered, not a sample of them.
+    #[test]
+    fn the_reference_knee_overflows_far_above_anything_the_filter_reaches() {
+        assert!(!(1.0_f32 + libm::powf(16.0, 32.0)).is_finite());
+        assert_eq!(reciprocal_power_of_two_root(f32::INFINITY, 5), 0.0);
+
+        for profile in FILTER_PROFILES {
+            let reachable = 2.0 * output_ceiling(profile) * output_buffer_gain()
+                / profile.output_buffer_swing_volts;
+            assert!(
+                reachable < 8.0,
+                "el buffer puede llegar a {reachable}, y la referencia degenera en 16"
+            );
+        }
+    }
+
+    /// The cheap knee and the reference knee are the same curve.
+    ///
+    /// Nothing tested this, in either direction. The two are not even the
+    /// same formula: the reference evaluates `x * (1 + x^16)^(-1/16)`
+    /// head-on, while the cheap one splits at `|x| = 1` and works with the
+    /// reciprocal beyond it to keep the powers small. Each is sound on its
+    /// own terms. That they agree is a separate claim, and this is it.
+    ///
+    /// Only the fast build has both curves to compare; the precise build
+    /// does not compile the cheap one at all.
+    #[cfg(feature = "fast-math")]
+    #[test]
+    fn the_fast_knee_matches_the_reference_knee_across_the_clamp() {
+        let mut worst_value = 0.0_f32;
+        let mut worst_with_slope = 0.0_f32;
+        for step in -64_000..=64_000_i32 {
+            let normalized = step as f32 / 1_000.0;
+            let squared = normalized * normalized;
+            let fourth = squared * squared;
+            let eighth = fourth * fourth;
+            let sixteenth = eighth * eighth;
+            let reference = normalized * reciprocal_power_of_two_root(1.0 + sixteenth, 4);
+            worst_value =
+                worst_value.max((soft_knee_sixteenth_value(normalized) - reference).abs());
+            worst_with_slope =
+                worst_with_slope.max((soft_knee_sixteenth(normalized).0 - reference).abs());
+        }
+        assert!(worst_value <= 1.0e-6, "valor: {worst_value}");
+        assert!(worst_with_slope <= 1.0e-6, "con pendiente: {worst_with_slope}");
+
+        let mut worst = 0.0_f32;
+        for step in -15_000..=15_000_i32 {
+            let normalized = step as f32 / 1_000.0;
+            let squared = normalized * normalized;
+            let fourth = squared * squared;
+            let eighth = fourth * fourth;
+            let sixteenth = eighth * eighth;
+            let thirty_second = sixteenth * sixteenth;
+            let reference = normalized * reciprocal_power_of_two_root(1.0 + thirty_second, 5);
+            worst = worst.max((soft_knee_thirty_second_value(normalized) - reference).abs());
+        }
+        assert!(worst <= 1.0e-6, "orden 32: {worst}");
+    }
+
+    /// The slope the solver steps with is the slope of the curve it solves.
+    ///
+    /// `cell_output_with_slope` hands back a derivative alongside its value,
+    /// and `solve_feedback` multiplies those derivatives into the Newton
+    /// step. Nothing checked the two against each other. It matters more
+    /// here than it would elsewhere: a Newton solve run to convergence
+    /// lands on the same root whatever Jacobian it used, but this one stops
+    /// after a single iteration through most of the range, and a one-step
+    /// correction is only as good as the slope it was scaled by.
+    ///
+    /// The bounds are deliberately loose, and they differ by build. Away
+    /// from the clamp corners the cheap curve's slope disagrees by at most
+    /// four percent and the precise curve's by ten -- the reference branch
+    /// carries the worse Jacobian of the two, which is the second place
+    /// this file's "precise" build turns out not to be the more accurate
+    /// one. Pinning each at a little above what it measures says what is
+    /// true today without going red on a last-bit change. Points where the
+    /// central difference straddles a corner are skipped: the curve has no
+    /// derivative there and the comparison means nothing.
+    #[test]
+    fn the_slope_the_solver_steps_with_is_the_slope_of_the_curve() {
+        #[cfg(feature = "fast-math")]
+        let limit = 6.0e-2_f32;
+        #[cfg(not(feature = "fast-math"))]
+        let limit = 1.2e-1_f32;
+
+        for profile in FILTER_PROFILES {
+            let ceiling = output_ceiling(profile);
+            let mut worst = 0.0_f32;
+            let mut worst_at = 0.0_f32;
+            for step in -40_000..=40_000_i32 {
+                let value = step as f32 / 10_000.0 * ceiling * 4.0;
+                let window = (value.abs() * 1.0e-3).max(1.0e-4);
+                let (centre, slope) = cell_output_with_slope(value, profile);
+                let left = cell_output_with_slope(value - window, profile).0;
+                let right = cell_output_with_slope(value + window, profile).0;
+                let rising = (centre - left) / window;
+                let falling = (right - centre) / window;
+                if (rising - falling).abs()
+                    > 0.05 * rising.abs().max(falling.abs()).max(1.0e-3)
+                {
+                    continue;
+                }
+                let numeric = (right - left) / (2.0 * window);
+                let error = (slope - numeric).abs() / numeric.abs().max(1.0e-3);
+                if error > worst {
+                    worst = error;
+                    worst_at = value;
+                }
             }
+            assert!(worst <= limit, "peor desacuerdo {worst} en {worst_at}");
         }
     }
 
