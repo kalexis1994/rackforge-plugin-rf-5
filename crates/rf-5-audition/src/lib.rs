@@ -45,48 +45,47 @@ pub struct RenderMetrics {
 /// Every scene's render, folded into one number. See
 /// `every_scene_renders_what_it_has_always_rendered`.
 const FINGERPRINTS: &[(&str, u64)] = &[
-    ("01_baseline_warm_chords", 0x07a8b2605364c5fa),
-    ("02_filter_drive", 0x8c77d48782a6c572),
-    ("03_filter_resonance", 0x882b9f997f4d91e3),
-    ("04_wheel_vibrato", 0xd03fadb516d7b959),
-    ("05_wheel_pwm", 0xdafc8f9ed29105bd),
-    ("06_wheel_filter", 0x1a3d73de749563fd),
-    ("07_envelope_punch", 0x003cf58f4d62ef89),
-    ("08_envelope_slow", 0x87d0f3b81a67055f),
-    ("09_ca3280_drive", 0xd5e529feb91270ec),
+    ("01_baseline_warm_chords", 0x43ab464ea987673f),
+    ("02_filter_drive", 0x8a5c862696e146d1),
+    ("03_filter_resonance", 0xf4d1603ce875ab60),
+    ("04_wheel_vibrato", 0xb4c71c01c8143c5b),
+    ("05_wheel_pwm", 0xda8f6460f7fda105),
+    ("06_wheel_filter", 0xd9ff3f525c12d66e),
+    ("07_envelope_punch", 0x2b434345fe85d1c7),
+    ("08_envelope_slow", 0x8f9cc825a98e2422),
+    ("09_ca3280_drive", 0x4a269002b43f919c),
     ("10_common_noise_vca", 0x4bc622ef02e84b59),
-    ("11_poly_mod_oscillator_b", 0xf8e16d2727162c63),
-    // Moved when `solve_feedback_bracketed` landed. This scene drives the
-    // filter envelope into Poly-Mod hard enough to pin the cutoff at its
-    // clamp with the resonance up, which is precisely where Newton alone
-    // was leaving the loop unsolved, so it is the one scene whose sound
-    // the repair was expected to change -- and it changed completely,
-    // which is the evidence that it was not being solved before. All forty
-    // factory programs are bit-identical across the same change.
-    ("12_poly_mod_filter_envelope", 0x46fba075031ea86f),
-    ("13_wheel_noise_filter", 0x6a0171d02469f13d),
-    ("14_cem3340_hard_sync", 0x4c00f60a426a0032),
-    ("15_voice_assignment", 0xd66edf88a6c00686),
-    ("16_unison_low_note_legato", 0x50b85a3571f7a1d3),
-    ("17_lfo_slow_range", 0xfefc2dda0faeb215),
-    ("18_lfo_fast_range", 0xcc9a0bac11846818),
-    ("19_unison_glide_circuit", 0x5052e12b56daf9c2),
-    ("20_scale_mode_just_c", 0x9251b54dbd0df438),
-    ("21_release_switch_off", 0xbd9167cb969f9375),
-    ("22_pitch_wheel_deadband", 0x7c7373b50ce97ad4),
-    ("23_oscillator_b_fine_zero", 0xb67c8c7a23bb9997),
-    ("24_oscillator_b_fine_semitone", 0xc68fe863aeccea11),
-    ("25_pulse_width_one_percent", 0x6402a79c03c2ea5a),
-    ("26_pulse_width_fifty_percent", 0xfbc7f88db71a2680),
-    ("27_pulse_width_ninety_nine_percent", 0x6ecc55fb7cc2f282),
-    ("28_cem3340_triangle", 0x16ce144dc82fe336),
-    ("29_audio_rate_pwm", 0xfd06448080884c33),
-    ("30_filter_slew_transient", 0xd6975535a6834e4d),
-    ("31_envelope_phase_steps", 0x153f61d3effed13b),
-    ("32_lfo_saw_unipolar", 0xd2be005b7a30836e),
-    ("33_lfo_square_unipolar", 0x7b4cae4b41e3bb14),
-    ("34_baseline_pad_mod_wheel_sweep", 0x9488856f09bc31b6),
-    ("35_chord_under_a_melody", 0x048563d71cb51421),
+    ("11_poly_mod_oscillator_b", 0x7ef5aca6d11aa5c2),
+    // This scene moved once on its own account: `solve_feedback_bracketed`
+    // changed it completely while leaving all forty factory programs
+    // untouched. It drives the filter envelope into Poly-Mod hard enough to
+    // pin the cutoff at its clamp with the resonance up, which is where
+    // Newton alone had been leaving the loop unsolved, so it is the one
+    // scene that repair was expected to reach.
+    ("12_poly_mod_filter_envelope", 0x581e1a7b5442f1c2),
+    ("13_wheel_noise_filter", 0x4112878a25cc1d74),
+    ("14_cem3340_hard_sync", 0x2be559f7f0d37d18),
+    ("15_voice_assignment", 0x0ad217f76a66dc8e),
+    ("16_unison_low_note_legato", 0x72a1db97cdb64f0a),
+    ("17_lfo_slow_range", 0xd185e8292decf735),
+    ("18_lfo_fast_range", 0xbd6fb7d203d305d3),
+    ("19_unison_glide_circuit", 0xa9c559c13c8bf779),
+    ("20_scale_mode_just_c", 0xa6335911dffd07f5),
+    ("21_release_switch_off", 0x37d12adc0ba3309b),
+    ("22_pitch_wheel_deadband", 0x1e6e6775ef32248b),
+    ("23_oscillator_b_fine_zero", 0x36e392c48114c544),
+    ("24_oscillator_b_fine_semitone", 0x99df68080bbfee3e),
+    ("25_pulse_width_one_percent", 0x561422ae3e677df5),
+    ("26_pulse_width_fifty_percent", 0x429653adaa0bbf15),
+    ("27_pulse_width_ninety_nine_percent", 0xe5450eea3ba60b6e),
+    ("28_cem3340_triangle", 0x650764f52ba6e693),
+    ("29_audio_rate_pwm", 0xdf8c3944340e5c51),
+    ("30_filter_slew_transient", 0xd09432eebd35382b),
+    ("31_envelope_phase_steps", 0xbca1e5b08b2e6c70),
+    ("32_lfo_saw_unipolar", 0x116d71e7cfb39957),
+    ("33_lfo_square_unipolar", 0xbbe9d8dd429c1fff),
+    ("34_baseline_pad_mod_wheel_sweep", 0x78b0e1b13733e57f),
+    ("35_chord_under_a_melody", 0x0fe8193b8a220489),
 ];
 
 pub fn render_suite(output_directory: &Path) -> io::Result<Vec<RenderMetrics>> {

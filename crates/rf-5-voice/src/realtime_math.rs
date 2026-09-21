@@ -6,6 +6,11 @@
 //! audio callback comfortably bounded.
 
 const LN_2: f32 = core::f32::consts::LN_2;
+/// Where `tanh` stops using its series and reaches for the exponential.
+///
+/// Chosen from what the OTA actually asks for, not from where the series
+/// runs out: see `tanh`.
+const SERIES_LIMIT: f32 = 0.5;
 
 #[inline(always)]
 pub(crate) fn exp2(value: f32) -> f32 {
@@ -98,9 +103,22 @@ pub(crate) fn tanh(value: f32) -> f32 {
     if magnitude >= 10.0 {
         return value.signum();
     }
-    if magnitude <= 0.25 {
+    if magnitude <= SERIES_LIMIT {
         // Avoid cancellation in exp(2x)-1 around the OTA's small-signal
         // region, where conductance-loading tests depend on relative gain.
+        //
+        // The limit is where the OTA lives rather than where the series
+        // stops converging. Counted across the forty programs, five voices
+        // each: 63 % of what the mixer hands this function is under 0.25,
+        // another 35 % is between 0.25 and 0.5, and above 1 there is
+        // essentially nothing. The old limit of 0.25 sent that middle third
+        // through `exp` -- a polynomial, a decomposition and a division --
+        // to answer a question two more multiply-adds settle.
+        //
+        // Two more terms is what the wider interval costs. Through x^13 the
+        // series is within 4e-8 of libm across it, which is not a
+        // concession: the exponential path it replaces is good to 5e-7, so
+        // the samples that move here move toward the reference, not away.
         let squared = value * value;
         return value
             * (1.0
@@ -108,7 +126,13 @@ pub(crate) fn tanh(value: f32) -> f32 {
                     * (-1.0 / 3.0
                         + squared
                             * (2.0 / 15.0
-                                + squared * (-17.0 / 315.0 + squared * 62.0 / 2_835.0))));
+                                + squared
+                                    * (-17.0 / 315.0
+                                        + squared
+                                            * (62.0 / 2_835.0
+                                                + squared
+                                                    * (-1_382.0 / 155_925.0
+                                                        + squared * 21_844.0 / 6_081_075.0))))));
     }
     let exponential = exp(2.0 * magnitude);
     value.signum() * (exponential - 1.0) / (exponential + 1.0)
