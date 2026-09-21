@@ -1676,8 +1676,158 @@ mod tests {
         }
     }
 
+    /// The solve, over states the filter can actually be in.
+    ///
+    /// This used to be four cutoffs by four resonances by five inputs --
+    /// eighty points, one rate, one state, and `solve_feedback` called
+    /// directly with a state left over from an unrelated configuration.
+    /// That last part matters more than the count. A dense grid over
+    /// PARAMETERS is not a dense grid over reachable STATES: asked for
+    /// coefficients the state could never have produced, the solver leaves
+    /// residuals at operating points the instrument cannot reach, and one
+    /// spends the afternoon chasing them. This steps the filter instead,
+    /// and measures the residual of the solve it really performs, sample
+    /// after sample, with whatever state the previous sample left.
+    ///
+    /// Over twelve million such solves it separates into three regions.
+    ///
+    /// The single-iteration path -- the `delayed-low-resonance` shortcut,
+    /// below both the self-oscillation window and a coefficient of 0.35 --
+    /// leaves up to 4.4e-2. That is the shortcut working as designed: one
+    /// Newton step from the previous output, not a solve.
+    ///
+    /// The three-iteration path closes the loop to under a microvolt while
+    /// the coefficient stays under about 0.6.
+    ///
+    /// Above that it stops closing. The residual reaches 0.94 V by a
+    /// coefficient of 0.61 with resonance from 0.3, and 7.9 V once the
+    /// cutoff clamp pins the coefficient at 0.863. It is not slow
+    /// convergence: a hundred and twenty-eight iterations leave the same
+    /// residual as three, and a root does exist between the rails. It is
+    /// the step overshooting. `slope.max(0.0)` and `derivative.max(1.0)`
+    /// floor a Jacobian that is genuinely around fifty there, so the
+    /// correction comes out some fifty times too large and the estimate
+    /// walks between the clamps.
+    ///
+    /// A coefficient of 0.61 is 30 kHz at the shipping filter's 96, which
+    /// the panel alone does not reach -- but keyboard tracking and the
+    /// filter envelope do. So this is reachable, and it is left as found:
+    /// closing it would change the sound of every bright resonant patch,
+    /// and that is not a test's decision to make. What the test does is
+    /// hold the boundary still.
     #[test]
     fn nonlinear_feedback_solver_closes_the_instantaneous_loop() {
+        /// Where the three-iteration solve stops closing the loop.
+        const CONVERGENT_COEFFICIENT: f32 = 0.6;
+        let mut worst_one_step = 0.0_f32;
+        let mut worst_convergent = 0.0_f32;
+        let mut worst_beyond = 0.0_f32;
+        let mut solves = 0_u32;
+
+        for profile_index in 0..FILTER_PROFILES.len() {
+            for &sample_rate in &[96_000.0_f32, 192_000.0] {
+                for cutoff_step in 0..12 {
+                    let cutoff_log2_hz = 4.0 + cutoff_step as f32 * 1.4;
+                    for resonance_step in 0..=10 {
+                        let resonance = resonance_step as f32 / 10.0;
+                        for &drive in &[0.5_f32, 12.0] {
+                            let mut filter = Cem3320Filter::default();
+                            filter.profile_index = profile_index;
+                            let profile = FILTER_PROFILES[profile_index];
+                            for index in 0..900 {
+                                let input = libm::sinf(index as f32 * 0.0713) * drive;
+                                let coefficient = filter.coefficient_cache.stage_coefficient(
+                                    cutoff_log2_hz,
+                                    sample_rate,
+                                    0.5,
+                                    filter.warmup_position,
+                                    filter.profile_index,
+                                    profile,
+                                );
+                                let resonance_drive = filter.coefficient_cache.resonance_drive(
+                                    resonance,
+                                    filter.profile_index,
+                                    profile,
+                                );
+                                let coefficients = filter.coefficient_cache.resonance_return(
+                                    sample_rate,
+                                    filter.profile_index,
+                                    profile,
+                                );
+                                if index > 300 && resonance_drive > 0.0 {
+                                    let solved = filter.solve_feedback(
+                                        input,
+                                        coefficient,
+                                        resonance_drive,
+                                        sample_rate,
+                                        profile,
+                                        coefficients,
+                                    );
+                                    let (voltage, _) = filter.resonance_return.predict(
+                                        solved,
+                                        sample_rate,
+                                        profile,
+                                        coefficients,
+                                    );
+                                    let (predicted, _) = filter.predict_path(
+                                        input - voltage * resonance_drive,
+                                        coefficient,
+                                        profile,
+                                    );
+                                    let residual = (solved - predicted).abs();
+                                    solves += 1;
+                                    // Wherever the loop lands it stays
+                                    // inside the rails, which is why a
+                                    // solve that does not close is a colour
+                                    // and not a failure.
+                                    assert!(
+                                        solved.is_finite()
+                                            && solved.abs() <= output_ceiling(profile) * 1.001,
+                                        "fuera de los rieles: {solved}"
+                                    );
+                                    if resonance_drive < resonance_drive_gain(0.65, profile)
+                                        && coefficient < 0.35
+                                    {
+                                        worst_one_step = worst_one_step.max(residual);
+                                    } else if coefficient < CONVERGENT_COEFFICIENT {
+                                        worst_convergent = worst_convergent.max(residual);
+                                    } else {
+                                        worst_beyond = worst_beyond.max(residual);
+                                    }
+                                }
+                                let _ = filter.next_with_character_log2(
+                                    input,
+                                    cutoff_log2_hz,
+                                    resonance,
+                                    sample_rate,
+                                    0.5,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        assert!(solves > 1_000_000, "el barrido apenas ejercito el solver: {solves}");
+        assert!(
+            worst_one_step <= 5.0e-2,
+            "el atajo de una iteracion: {worst_one_step}"
+        );
+        assert!(
+            worst_convergent <= 1.0e-5,
+            "por debajo del coeficiente {CONVERGENT_COEFFICIENT}: {worst_convergent}"
+        );
+        // Named, not sanded off. If this ever closes, the region above was
+        // fixed on purpose and this line is the one to delete.
+        assert!(
+            worst_beyond > 1.0e-2,
+            "el rincon abierto se cerro solo: {worst_beyond}"
+        );
+    }
+
+    #[test]
+    fn legacy_feedback_solver_spot_checks() {
         let mut filter = Cem3320Filter::default();
         for index in 0..4_096 {
             let input = libm::sinf(index as f32 * 0.071) * 4.0;
