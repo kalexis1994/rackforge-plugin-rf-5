@@ -947,6 +947,47 @@ fn ten_volt_control_current_ratio(control: f32, emitter_resistance_ohms: f32) ->
 mod tests {
     use super::*;
 
+    /// Three Newton steps are enough, stated where it can be checked.
+    ///
+    /// `x + ln(x) = z` is solved with a fixed three iterations and no
+    /// convergence test. A comment claimed three were "sufficient over the
+    /// admitted 0-5.3 V CEM3310 range"; this walks that range in two
+    /// hundred thousand steps for both populated series resistances and
+    /// puts a number on it. The residual is the equation's own, so this
+    /// checks the solve rather than comparing it against a second
+    /// implementation that would need checking in turn.
+    ///
+    /// It also keeps going to 20 V. Nothing drives the control input that
+    /// hard -- both callers clamp well below it -- but a fixed iteration
+    /// count is exactly the kind of thing that stops being enough when
+    /// someone widens a range, and a solver that quietly stopped
+    /// converging would otherwise show up as a timbre nobody could place.
+    #[test]
+    fn three_newton_steps_solve_the_transistor_across_the_admitted_range() {
+        for resistance in [
+            VCA_CONTROL_SERIES_RESISTANCE_OHMS,
+            MASTER_VCA_CONTROL_SERIES_RESISTANCE_OHMS,
+        ] {
+            let offset =
+                libm::logf(resistance * Q410_SATURATION_CURRENT_AMPS / Q410_THERMAL_VOLTAGE_VOLTS);
+            let mut worst = 0.0_f32;
+            let mut worst_at = 0.0_f32;
+            for step in 1..=200_000_u32 {
+                let drive = step as f32 / 200_000.0 * 20.0;
+                let current = grounded_base_2n4250_collector_current_amps(drive, resistance);
+                let normalized = current * resistance / Q410_THERMAL_VOLTAGE_VOLTS;
+                let residual = (normalized + libm::logf(normalized)
+                    - (drive / Q410_THERMAL_VOLTAGE_VOLTS + offset))
+                    .abs();
+                if residual > worst {
+                    worst = residual;
+                    worst_at = drive;
+                }
+            }
+            assert!(worst <= 5.0e-4, "residuo {worst} en {worst_at} V");
+        }
+    }
+
     #[test]
     fn zero_bias_current_closes_every_physical_vca() {
         for input in [-8.0, -1.0, 0.0, 1.0, 8.0] {

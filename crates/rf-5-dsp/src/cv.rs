@@ -245,7 +245,17 @@ impl CvDistributor {
         }
     }
 
-    pub fn apply_common(self, input: Settings) -> Settings {
+    /// Reads its cells; it does not need a copy of them.
+    ///
+    /// `CvDistributor` is thirty-eight sample-and-hold cells of three
+    /// numbers each, which is over a kilobyte, and it is `Copy`. Taking
+    /// `self` by value made every one of these calls copy the whole bank.
+    /// The compiler elides that on a native build and does not in wasm,
+    /// where an aggregate argument is written to linear memory -- which is
+    /// why this cost eleven times more on the appliance than the same code
+    /// costs here. Measured on the appliance: `begin_block` fell from 830 us
+    /// a block to 580 us, all of it on the serial path.
+    pub fn apply_common(&self, input: Settings) -> Settings {
         let mut output = input;
         for index in 0..COMMON_AND_PATCH_SAMPLE_HOLD_COUNT {
             let destination = ControlVoltageDestination::try_from(index as u8)
@@ -260,7 +270,7 @@ impl CvDistributor {
         output
     }
 
-    pub fn oscillator_semitones(self, voice: usize, oscillator_b: bool) -> f32 {
+    pub fn oscillator_semitones(&self, voice: usize, oscillator_b: bool) -> f32 {
         ControlVoltageDestination::oscillator(voice, oscillator_b)
             .map(|destination| {
                 self.cells[destination as usize].volts() * SEMITONES_PER_CONTROL_VOLT
@@ -268,13 +278,13 @@ impl CvDistributor {
             .unwrap_or(0.0)
     }
 
-    pub fn filter_keyboard_octaves(self, voice: usize) -> f32 {
+    pub fn filter_keyboard_octaves(&self, voice: usize) -> f32 {
         ControlVoltageDestination::filter(voice)
             .map(|destination| self.cells[destination as usize].volts())
             .unwrap_or(0.0)
     }
 
-    pub fn unison_keyboard_semitones(self) -> f32 {
+    pub fn unison_keyboard_semitones(&self) -> f32 {
         self.cells[ControlVoltageDestination::UnisonKeyboard as usize].volts()
             * SEMITONES_PER_CONTROL_VOLT
     }

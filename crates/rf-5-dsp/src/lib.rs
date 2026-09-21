@@ -449,6 +449,11 @@ impl Engine {
     }
 
     fn release_voice(&mut self, unit: usize) {
+        // Every path that puts a voice into its release comes through here
+        // -- a key up, the sustain pedal rising, all-notes-off -- so this is
+        // the one place the assigner has to be told, and the one that was
+        // missing. See `allocation`.
+        self.poly_allocator.mark_released(unit);
         self.voices[unit].release();
         self.push_voice_command(VoiceCommand {
             unit: unit as u8,
@@ -1381,6 +1386,44 @@ mod tests {
         assert!(engine.voices[2].matches(0, 62));
         engine.note_on(0, 66, 100);
         assert!(engine.voices[1].matches(0, 66));
+    }
+
+    /// What makes one program cost twice what another does.
+    ///
+    /// On the appliance a voice of "1-4 Percussive e Piano" costs 2367 us a
+    /// block and one of "2-8 Bass in Fifths" costs 1333. Same engine, same
+    /// five voices: the difference is entirely in the patch, and until it is
+    /// named it cannot be attacked.
+    ///
+    /// ```text
+    /// cargo test --release -p rf-5-dsp -- --ignored --nocapture print_program_difference
+    /// ```
+    #[test]
+    #[ignore = "a measurement, not a check"]
+    fn print_program_difference() {
+        let read = |id: &str| {
+            let mut engine = Engine::default();
+            assert!(engine.prepare(48_000.0));
+            assert!(engine.load_program(id), "no se pudo cargar {id}");
+            engine.settings
+        };
+        let costly = read("original-14-percussive-e-piano");
+        let cheap = read("original-28-bass-in-fifths");
+        std::println!(
+            "{:<40} {:>10} {:>10}",
+            "parametro",
+            "1-4 caro",
+            "2-8 barato"
+        );
+        for index in 0..PARAMETER_COUNT as u32 {
+            let Ok(parameter) = Parameter::try_from(index) else {
+                continue;
+            };
+            let (a, b) = (costly.get(parameter), cheap.get(parameter));
+            if (a - b).abs() > 1e-6 {
+                std::println!("{:<40} {a:>10.3} {b:>10.3}", std::format!("{parameter:?}"));
+            }
+        }
     }
 
     #[test]

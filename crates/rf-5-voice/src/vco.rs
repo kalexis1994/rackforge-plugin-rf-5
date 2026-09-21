@@ -698,6 +698,87 @@ fn poly_blep(phase: f32, increment: f32) -> f32 {
 mod tests {
     use super::*;
 
+    /// What linear interpolation between table entries actually costs.
+    ///
+    /// The lookup reads two neighbours out of four thousand and ninety-six
+    /// and walks the line between them. A comment said the error was "far
+    /// below the admitted oscillator/model uncertainty" and nothing
+    /// measured it. It is worth measuring because the answer is not one
+    /// number: the peak error is eight percent of full scale at the
+    /// thousand-harmonic table, which sounds alarming until you see where
+    /// it sits.
+    ///
+    /// It sits on the discontinuity. A band-limited saw overshoots there,
+    /// and that overshoot is the one part of the cycle whose curvature a
+    /// straight line cannot follow. Away from it -- the middle eighty
+    /// percent, where a saw is a ramp -- the same table is good to 2.6e-4,
+    /// and the error over the whole cycle is 1.8e-3 rms. So the peak is a
+    /// timing error at an edge, not a level error across a waveform, and
+    /// the three numbers together say that where the first would mislead.
+    ///
+    /// The coarse tables are also the ones nothing plays through. A level
+    /// is chosen by `FRACTION * oscillator_rate / harmonics`, and because
+    /// the fraction is the oversampling divided into 0.45 while the rate is
+    /// the oversampling times the host's, the oversampling cancels: the
+    /// thousand-harmonic table is reached below 21 Hz whatever the build.
+    /// That is oscillator B in its low-frequency mode, or a key that is not
+    /// a pitch. Everything playable is two levels finer or better.
+    #[test]
+    fn the_table_interpolation_error_is_bounded_at_every_harmonic_level() {
+        fn exact(phase: f64, harmonics: usize) -> f64 {
+            let mut saw = 0.0;
+            for harmonic in 1..=harmonics {
+                saw -= 2.0 * libm::sin(2.0 * core::f64::consts::PI * harmonic as f64 * phase)
+                    / (core::f64::consts::PI * harmonic as f64);
+            }
+            saw
+        }
+
+        const STEPS: u32 = 20_000;
+        // level, peak, peak away from the jump, rms -- each a little above
+        // what it measures today.
+        for &(level, peak_limit, clear_limit, rms_limit) in &[
+            (40_usize, 3.0e-4_f64, 3.0e-5_f64, 4.0e-5_f64),
+            (63, 2.0e-3, 6.0e-5, 1.2e-4),
+            (95, 3.0e-2, 2.5e-4, 9.0e-4),
+            (PULSE_HARMONIC_LEVELS - 1, 1.0e-1, 4.0e-4, 2.5e-3),
+        ] {
+            let harmonics = PULSE_HARMONIC_COUNTS[level] as usize;
+            let mut peak = 0.0_f64;
+            let mut clear = 0.0_f64;
+            let mut energy = 0.0_f64;
+            for step in 0..STEPS {
+                // Half-way between entries, which is where a straight line
+                // is furthest from the curve it replaces.
+                let phase = (step as f64 + 0.5) / f64::from(STEPS);
+                let error = (f64::from(band_limited_saw_lookup(phase as f32, level))
+                    - exact(phase, harmonics))
+                .abs();
+                peak = peak.max(error);
+                if (0.1..0.9).contains(&phase) {
+                    clear = clear.max(error);
+                }
+                energy += error * error;
+            }
+            let rms = libm::sqrt(energy / f64::from(STEPS));
+            assert!(peak <= peak_limit, "{harmonics} armonicos: pico {peak:e}");
+            assert!(
+                clear <= clear_limit,
+                "{harmonics} armonicos: lejos del salto {clear:e}"
+            );
+            assert!(rms <= rms_limit, "{harmonics} armonicos: rms {rms:e}");
+        }
+
+        // The oversampling cancels out of the level schedule, so this holds
+        // in every build: nothing playable reaches the coarsest table.
+        let coarsest = f64::from(PULSE_HARMONIC_COUNTS[PULSE_HARMONIC_LEVELS - 1]);
+        let reached_at_hz = 0.45 * 48_000.0 / coarsest;
+        assert!(
+            reached_at_hz < 25.0,
+            "la tabla mas gruesa entra en {reached_at_hz} Hz"
+        );
+    }
+
     const SAW: WaveSelection = WaveSelection {
         saw: true,
         triangle: false,

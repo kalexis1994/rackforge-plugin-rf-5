@@ -6,6 +6,11 @@
 //! audio callback comfortably bounded.
 
 const LN_2: f32 = core::f32::consts::LN_2;
+/// Where `tanh` stops using its series and reaches for the exponential.
+///
+/// Chosen from what the OTA actually asks for, not from where the series
+/// runs out: see `tanh`.
+const SERIES_LIMIT: f32 = 0.5;
 
 #[inline(always)]
 pub(crate) fn exp2(value: f32) -> f32 {
@@ -98,9 +103,22 @@ pub(crate) fn tanh(value: f32) -> f32 {
     if magnitude >= 10.0 {
         return value.signum();
     }
-    if magnitude <= 0.25 {
+    if magnitude <= SERIES_LIMIT {
         // Avoid cancellation in exp(2x)-1 around the OTA's small-signal
         // region, where conductance-loading tests depend on relative gain.
+        //
+        // The limit is where the OTA lives rather than where the series
+        // stops converging. Counted across the forty programs, five voices
+        // each: 63 % of what the mixer hands this function is under 0.25,
+        // another 35 % is between 0.25 and 0.5, and above 1 there is
+        // essentially nothing. The old limit of 0.25 sent that middle third
+        // through `exp` -- a polynomial, a decomposition and a division --
+        // to answer a question two more multiply-adds settle.
+        //
+        // Two more terms is what the wider interval costs. Through x^13 the
+        // series is within 4e-8 of libm across it, which is not a
+        // concession: the exponential path it replaces is good to 5e-7, so
+        // the samples that move here move toward the reference, not away.
         let squared = value * value;
         return value
             * (1.0
@@ -108,7 +126,13 @@ pub(crate) fn tanh(value: f32) -> f32 {
                     * (-1.0 / 3.0
                         + squared
                             * (2.0 / 15.0
-                                + squared * (-17.0 / 315.0 + squared * 62.0 / 2_835.0))));
+                                + squared
+                                    * (-17.0 / 315.0
+                                        + squared
+                                            * (62.0 / 2_835.0
+                                                + squared
+                                                    * (-1_382.0 / 155_925.0
+                                                        + squared * 21_844.0 / 6_081_075.0))))));
     }
     let exponential = exp(2.0 * magnitude);
     value.signum() * (exponential - 1.0) / (exponential + 1.0)
@@ -162,16 +186,25 @@ pub(crate) fn inverse_thirty_second_root_one_plus(excess: f32) -> f32 {
 mod tests {
     use super::*;
 
+    /// Every exponent this does not hand back to libm.
+    ///
+    /// It used to walk twelve octaves either side of zero, which covered
+    /// the pitch ratios and little else: `exp` divides by ln 2 before
+    /// calling in, so the transistor solver arrives here at -26 and `tanh`
+    /// at +29. Rather than argue about which callers reach where, this
+    /// walks the entire interval the function claims -- everything outside
+    /// it is libm's answer, not ours -- so no reachability argument is
+    /// needed for any caller present or future.
     #[test]
     fn exp2_tracks_libm_across_every_filter_and_pitch_octave() {
         let mut maximum_relative_error = 0.0_f32;
-        for step in -24_000..=24_000 {
-            let value = step as f32 / 2_000.0;
+        for step in -126_000..=127_000 {
+            let value = step as f32 / 1_000.0;
             let reference = libm::exp2f(value);
             let relative_error = (exp2(value) - reference).abs() / reference;
             maximum_relative_error = maximum_relative_error.max(relative_error);
         }
-        assert!(maximum_relative_error <= 4.0e-7, "{maximum_relative_error}");
+        assert!(maximum_relative_error <= 3.0e-7, "{maximum_relative_error}");
     }
 
     #[test]
@@ -186,25 +219,66 @@ mod tests {
         assert!(maximum_error <= 3.0e-7, "{maximum_error}");
     }
 
+    /// Every positive value this does not hand back to libm.
+    ///
+    /// The old sweep ran from 1e-6 to 1e6 and the solver goes below it in
+    /// two places: the constant `R * Is / Vt` is 1.1e-8, and the first
+    /// estimate for a small drive is `exp(z)` with z as low as -18, which
+    /// is 1.4e-8. Neither was covered. Rather than widen to wherever
+    /// today's callers happen to reach, this walks the whole positive f32
+    /// range log-uniformly, down to the smallest normal.
+    ///
+    /// Two bounds, because the error is not uniform: reducing the argument
+    /// leaves `exponent as f32 * LN_2`, and at the far end that term is 87,
+    /// where an f32 ulp is already 7.6e-6. Across the solver's own region
+    /// the error stays at 2e-6, and the looser bound applies only to the
+    /// denormal edge, which nothing reaches.
     #[test]
     fn logarithm_tracks_libm_across_the_transistor_solver_domain() {
-        let mut maximum_absolute_error = 0.0_f32;
-        for step in -20_000..=20_000 {
-            let value = exp2(step as f32 / 1_000.0);
-            maximum_absolute_error =
-                maximum_absolute_error.max((ln(value) - libm::logf(value)).abs());
+        let mut worst = 0.0_f32;
+        let mut worst_in_range = 0.0_f32;
+        for step in -126_000..=127_000 {
+            let value = libm::exp2f(step as f32 / 1_000.0);
+            if !value.is_finite() || value < f32::MIN_POSITIVE {
+                continue;
+            }
+            let error = (ln(value) - libm::logf(value)).abs();
+            worst = worst.max(error);
+            if (1.0e-9..1.0e3).contains(&value) {
+                worst_in_range = worst_in_range.max(error);
+            }
         }
-        assert!(maximum_absolute_error <= 1.0e-6, "{maximum_absolute_error}");
+        assert!(
+            worst_in_range <= 2.5e-6,
+            "region del solver: {worst_in_range}"
+        );
+        assert!(worst <= 1.0e-5, "rango completo: {worst}");
     }
 
+    /// The whole curve, and then the proof that the rest is a constant.
+    ///
+    /// The OTA hands this roughly twenty times its differential input in
+    /// volts, so a few volts of drive arrive here as a hundred, far past
+    /// the twenty the old sweep ran to. Widening the sweep would be the
+    /// wrong repair: past ten the function stops computing and returns the
+    /// sign, and the thing to establish is that doing so is exact rather
+    /// than that some wider interval happens to be covered. tanh 10 is
+    /// 0.999999996, and one f32 ulp at one is 6e-8, so the shortcut is not
+    /// an approximation at all -- it is the correctly rounded answer, for
+    /// ten and for everything above it.
     #[test]
     fn tanh_tracks_libm_across_the_ota_input_domain() {
         let mut maximum_error = 0.0_f32;
-        for step in -20_000..=20_000 {
-            let value = step as f32 / 1_000.0;
+        for step in -100_000..=100_000 {
+            let value = step as f32 / 10_000.0;
             maximum_error = maximum_error.max((tanh(value) - libm::tanhf(value)).abs());
         }
         assert!(maximum_error <= 5.0e-7, "{maximum_error}");
+
+        for value in [10.0_f32, 12.5, 97.5, 1.0e3, 1.0e6, f32::MAX] {
+            assert_eq!(tanh(value), libm::tanhf(value), "+{value}");
+            assert_eq!(tanh(-value), libm::tanhf(-value), "-{value}");
+        }
     }
 
     #[test]

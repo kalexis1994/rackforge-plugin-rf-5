@@ -42,6 +42,54 @@ pub struct RenderMetrics {
     pub path: PathBuf,
 }
 
+/// Every scene's render, folded into one number. See
+/// `every_scene_renders_what_it_has_always_rendered`, which is the only
+/// thing that reads it.
+#[cfg(test)]
+const FINGERPRINTS: &[(&str, u64)] = &[
+    ("01_baseline_warm_chords", 0x43ab464ea987673f),
+    ("02_filter_drive", 0x8a5c862696e146d1),
+    ("03_filter_resonance", 0xf4d1603ce875ab60),
+    ("04_wheel_vibrato", 0xb4c71c01c8143c5b),
+    ("05_wheel_pwm", 0xda8f6460f7fda105),
+    ("06_wheel_filter", 0xd9ff3f525c12d66e),
+    ("07_envelope_punch", 0x2b434345fe85d1c7),
+    ("08_envelope_slow", 0x8f9cc825a98e2422),
+    ("09_ca3280_drive", 0x4a269002b43f919c),
+    ("10_common_noise_vca", 0x4bc622ef02e84b59),
+    ("11_poly_mod_oscillator_b", 0x7ef5aca6d11aa5c2),
+    // This scene moved once on its own account: `solve_feedback_bracketed`
+    // changed it completely while leaving all forty factory programs
+    // untouched. It drives the filter envelope into Poly-Mod hard enough to
+    // pin the cutoff at its clamp with the resonance up, which is where
+    // Newton alone had been leaving the loop unsolved, so it is the one
+    // scene that repair was expected to reach.
+    ("12_poly_mod_filter_envelope", 0x581e1a7b5442f1c2),
+    ("13_wheel_noise_filter", 0x4112878a25cc1d74),
+    ("14_cem3340_hard_sync", 0x2be559f7f0d37d18),
+    ("15_voice_assignment", 0x0ad217f76a66dc8e),
+    ("16_unison_low_note_legato", 0x72a1db97cdb64f0a),
+    ("17_lfo_slow_range", 0xd185e8292decf735),
+    ("18_lfo_fast_range", 0xbd6fb7d203d305d3),
+    ("19_unison_glide_circuit", 0xa9c559c13c8bf779),
+    ("20_scale_mode_just_c", 0xa6335911dffd07f5),
+    ("21_release_switch_off", 0x37d12adc0ba3309b),
+    ("22_pitch_wheel_deadband", 0x1e6e6775ef32248b),
+    ("23_oscillator_b_fine_zero", 0x36e392c48114c544),
+    ("24_oscillator_b_fine_semitone", 0x99df68080bbfee3e),
+    ("25_pulse_width_one_percent", 0x561422ae3e677df5),
+    ("26_pulse_width_fifty_percent", 0x429653adaa0bbf15),
+    ("27_pulse_width_ninety_nine_percent", 0xe5450eea3ba60b6e),
+    ("28_cem3340_triangle", 0x650764f52ba6e693),
+    ("29_audio_rate_pwm", 0xdf8c3944340e5c51),
+    ("30_filter_slew_transient", 0xd09432eebd35382b),
+    ("31_envelope_phase_steps", 0xbca1e5b08b2e6c70),
+    ("32_lfo_saw_unipolar", 0x116d71e7cfb39957),
+    ("33_lfo_square_unipolar", 0xbbe9d8dd429c1fff),
+    ("34_baseline_pad_mod_wheel_sweep", 0x78b0e1b13733e57f),
+    ("35_chord_under_a_melody", 0x0fe8193b8a220489),
+];
+
 pub fn render_suite(output_directory: &Path) -> io::Result<Vec<RenderMetrics>> {
     fs::create_dir_all(output_directory)?;
     let scenes = scenes();
@@ -77,7 +125,13 @@ fn validate_metrics(metrics: &RenderMetrics) -> io::Result<()> {
     Ok(())
 }
 
-fn render_scene(output_directory: &Path, scene: &Scene) -> io::Result<RenderMetrics> {
+/// One scene's samples: the engine prepared, its program loaded, its scale
+/// applied, and its events delivered on the frames they belong to.
+///
+/// Lifted out of `render_scene` so that the fingerprint below and the WAV
+/// suite drive the SAME code. A guard that reimplements what it guards
+/// agrees with whatever that thing gets wrong.
+fn render_scene_samples(scene: &Scene, seconds: u32) -> io::Result<Vec<f32>> {
     let mut engine = Engine::default();
     if !engine.prepare(f64::from(SAMPLE_RATE)) || !engine.load_diagnostic_program(scene.program) {
         return Err(io::Error::other(format!(
@@ -96,13 +150,9 @@ fn render_scene(output_directory: &Path, scene: &Scene) -> io::Result<RenderMetr
         }
     }
 
-    let frame_count = SAMPLE_RATE * SCENE_SECONDS;
+    let frame_count = SAMPLE_RATE * seconds;
     let mut samples = Vec::with_capacity(frame_count as usize);
     let mut event_index = 0;
-    let mut peak = 0.0_f32;
-    let mut energy = 0.0_f64;
-    let mut sum = 0.0_f64;
-    let mut clipped_samples = 0_u32;
     for frame in 0..frame_count {
         while let Some(event) = scene.events.get(event_index)
             && event.frame == frame
@@ -117,19 +167,31 @@ fn render_scene(output_directory: &Path, scene: &Scene) -> io::Result<RenderMetr
                 scene.id
             )));
         }
+        samples.push(sample);
+    }
+    if seconds >= SCENE_SECONDS && event_index != scene.events.len() {
+        return Err(io::Error::other(format!(
+            "scene {} contains events beyond its render window",
+            scene.id
+        )));
+    }
+    Ok(samples)
+}
+
+fn render_scene(output_directory: &Path, scene: &Scene) -> io::Result<RenderMetrics> {
+    let samples = render_scene_samples(scene, SCENE_SECONDS)?;
+    let frame_count = samples.len() as u32;
+    let mut peak = 0.0_f32;
+    let mut energy = 0.0_f64;
+    let mut sum = 0.0_f64;
+    let mut clipped_samples = 0_u32;
+    for sample in samples.iter().copied() {
         peak = peak.max(sample.abs());
         energy += f64::from(sample) * f64::from(sample);
         sum += f64::from(sample);
         if sample.abs() >= 0.999 {
             clipped_samples += 1;
         }
-        samples.push(sample);
-    }
-    if event_index != scene.events.len() {
-        return Err(io::Error::other(format!(
-            "scene {} contains events beyond its render window",
-            scene.id
-        )));
     }
 
     let path = output_directory.join(format!("{}.wav", scene.id));
@@ -523,7 +585,46 @@ fn scenes() -> Vec<Scene> {
             scale_codes: EQUAL_TEMPERAMENT,
             events: baseline_pad_mod_wheel_sweep(),
         },
+        Scene {
+            id: "35_chord_under_a_melody",
+            program: "baseline-pad",
+            description: "A held triad while five notes are played over it and let go, which is where voice assignment is audible",
+            scale_codes: EQUAL_TEMPERAMENT,
+            events: chord_under_a_melody(),
+        },
     ]
+}
+
+/// A triad held for the whole scene while a melody is played over it and
+/// released, note by note.
+///
+/// None of the thirty-four scenes before this one exercises voice
+/// assignment: they hold chords, or play single lines, and never ask a
+/// five-voice instrument for a sixth note while three keys are still down.
+/// That is the one case where which voice the assigner takes is audible, and
+/// it is the case a player meets constantly.
+///
+/// On the assigner as it was, the triad is gone by the second melody note.
+fn chord_under_a_melody() -> Vec<MidiAction> {
+    // The melody is inside the first second on purpose: the fingerprint
+    // window is one second per scene, and a scene whose decisive moment
+    // falls outside it guards nothing. The first version of this scene put
+    // the third melody note at 2.6 s, and removing the assigner's release
+    // notification moved no fingerprint at all.
+    let mut events = chord_sequence(&[(0.05, 5.60, &[48, 55, 60])]);
+    for (index, note) in [72_u8, 74, 76, 77, 79].into_iter().enumerate() {
+        let start = 0.16 + index as f32 * 0.16;
+        events.push(MidiAction {
+            frame: seconds_to_frame(start),
+            data: [0x90, note, 112],
+        });
+        events.push(MidiAction {
+            frame: seconds_to_frame(start + 0.09),
+            data: [0x80, note, 0],
+        });
+    }
+    events.sort_by_key(|event| event.frame);
+    events
 }
 
 fn baseline_pad_mod_wheel_sweep() -> Vec<MidiAction> {
@@ -685,6 +786,116 @@ mod tests {
             .expect("clock is after epoch")
             .as_nanos();
         std::env::temp_dir().join(format!("rf-5-{label}-{}-{nonce}", std::process::id()))
+    }
+
+    /// Where a scene's biggest sample-to-sample jump is.
+    ///
+    /// A voice taken over while it is still sounding can leave a step in the
+    /// output, and a step is a click. This is how to look.
+    ///
+    /// ```text
+    /// cargo test --release -p rf-5-audition -- --ignored --nocapture print_scene_steps
+    /// ```
+    #[test]
+    #[ignore = "a measurement, not a check"]
+    fn print_scene_steps() {
+        for scene in scenes() {
+            let samples = render_scene_samples(&scene, SCENE_SECONDS).expect("la escena rinde");
+            let mut worst = 0.0_f32;
+            let mut at = 0_usize;
+            let mut peak = 0.0_f32;
+            for (index, pair) in samples.windows(2).enumerate() {
+                let step = (pair[1] - pair[0]).abs();
+                peak = peak.max(pair[1].abs());
+                if step > worst {
+                    worst = step;
+                    at = index;
+                }
+            }
+            println!(
+                "{:<34} salto {worst:.6} a los {:.3} s   pico {peak:.6}   salto/pico {:.3}",
+                scene.id,
+                at as f32 / SAMPLE_RATE as f32,
+                worst / peak.max(1e-9)
+            );
+        }
+    }
+
+    /// Prints the fingerprint table, for when a change to the sound is
+    /// deliberate and the numbers have to move.
+    ///
+    /// ```text
+    /// cargo test --release -p rf-5-audition -- --ignored --nocapture print_fingerprints
+    /// ```
+    #[test]
+    #[ignore = "a generator, not a check"]
+    fn print_fingerprints() {
+        println!("const FINGERPRINTS: &[(&str, u64)] = &[");
+        for scene in scenes() {
+            let samples = render_scene_samples(&scene, 1).expect("la escena rinde");
+            let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+            for sample in samples {
+                hash ^= u64::from(sample.to_bits());
+                hash = hash.wrapping_mul(0x100_0000_01b3);
+            }
+            println!("    (\"{}\", {hash:#018x}),", scene.id);
+        }
+        println!("];");
+    }
+
+    /// What RF-5 sounds like, as one number per scene.
+    ///
+    /// The thirty-four scenes are already the curated record of what this
+    /// instrument does; this folds every sample of each one into a hash and
+    /// holds it there. It exists because nothing else did: `rf-5-profile`
+    /// prints checksums and asserts nothing, so two builds that rendered
+    /// different audio both passed.
+    ///
+    /// A change that moves one of these is not necessarily wrong -- it is a
+    /// question. Say which scene moved and why, listen to it, and then paste
+    /// the new number in deliberately. What must not happen is a number
+    /// moving because nobody was looking.
+    ///
+    /// The window is shorter than the WAV suite's so the guard stays cheap
+    /// enough to run by default; it still covers every scene's attack, its
+    /// events and its program.
+    #[test]
+    fn every_scene_renders_what_it_has_always_rendered() {
+        const FINGERPRINT_SECONDS: u32 = 1;
+        let expected: &[(&str, u64)] = FINGERPRINTS;
+        let rendered = scenes();
+        assert_eq!(
+            rendered.len(),
+            expected.len(),
+            "hay {} escenas y {} huellas: si se agrego una escena, agregale su huella",
+            rendered.len(),
+            expected.len()
+        );
+        let mut moved = Vec::new();
+        for (scene, (id, want)) in rendered.iter().zip(expected) {
+            assert_eq!(&scene.id, id, "el orden de las escenas cambio");
+            let samples =
+                render_scene_samples(scene, FINGERPRINT_SECONDS).expect("la escena rinde");
+            let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+            for sample in samples {
+                hash ^= u64::from(sample.to_bits());
+                hash = hash.wrapping_mul(0x100_0000_01b3);
+            }
+            if hash != *want {
+                moved.push(format!("  {id}: {hash:#018x} donde habia {want:#018x}"));
+            }
+        }
+        assert!(
+            moved.is_empty(),
+            "el sonido se movio en {} de {} escenas:
+{}",
+            moved.len(),
+            expected.len(),
+            moved.join(
+                "
+"
+            )
+        );
     }
 
     #[test]
