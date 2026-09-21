@@ -658,7 +658,18 @@ impl Cem3320Filter {
             let residual = estimate - predicted;
             let derivative = 1.0 + resonance_drive * resonance_slope.max(0.0) * path_slope.max(0.0);
             let correction = residual / derivative.max(1.0);
-            estimate = (estimate - correction).clamp(-ceiling, ceiling);
+            let next = (estimate - correction).clamp(-ceiling, ceiling);
+            // Each iteration is a pure function of the estimate: the filter's
+            // state is read, never written, until the solve is over. So once
+            // an iteration hands back the very bits it was given, every
+            // iteration after it would hand back the same bits, and there
+            // is nothing left to compute. At the strongest resonance, where
+            // three iterations are asked for, the estimate has settled after
+            // one on four samples in ten and after two on three more.
+            if next.to_bits() == estimate.to_bits() {
+                break;
+            }
+            estimate = next;
         }
         estimate
     }
@@ -1080,6 +1091,75 @@ fn reciprocal_power_of_two_root(value: f32, square_roots: usize) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The solver may stop early only where continuing would change nothing.
+    ///
+    /// This runs the loop the long way, every iteration unconditionally, and
+    /// compares bits with the shipped solver across a self-oscillating sweep
+    /// of cutoffs, resonances and drive levels.
+    #[test]
+    fn stopping_at_a_settled_estimate_returns_the_full_solve_bit_for_bit() {
+        let mut filter = Cem3320Filter::default();
+        let sample_rate = 96_000.0;
+        let profile = FILTER_PROFILES[filter.profile_index];
+        let mut compared = 0_u64;
+        for step in 0..20_000_u32 {
+            let cutoff_log2_hz = 6.0 + (step % 997) as f32 / 997.0 * 8.0;
+            let resonance = 0.7 + (step % 331) as f32 / 331.0 * 0.3;
+            let input = libm::sinf(step as f32 * 0.0731) * (1.0 + (step % 17) as f32);
+            let coefficient = filter.coefficient_cache.stage_coefficient(
+                cutoff_log2_hz,
+                sample_rate,
+                0.5,
+                filter.warmup_position,
+                filter.profile_index,
+                profile,
+            );
+            let resonance_drive =
+                filter
+                    .coefficient_cache
+                    .resonance_drive(resonance, filter.profile_index, profile);
+            let resonance_coefficients =
+                filter
+                    .coefficient_cache
+                    .resonance_return(sample_rate, filter.profile_index, profile);
+            if resonance_drive > 0.0 {
+                let ceiling = output_ceiling(profile);
+                let mut reference = filter.last_output.clamp(-ceiling, ceiling);
+                for _ in 0..FEEDBACK_SOLVER_ITERATIONS {
+                    let (resonance_voltage, resonance_slope) = filter.resonance_return.predict(
+                        reference,
+                        sample_rate,
+                        profile,
+                        resonance_coefficients,
+                    );
+                    let (predicted, path_slope) = filter.predict_path(
+                        input - resonance_voltage * resonance_drive,
+                        coefficient,
+                        profile,
+                    );
+                    let residual = reference - predicted;
+                    let derivative =
+                        1.0 + resonance_drive * resonance_slope.max(0.0) * path_slope.max(0.0);
+                    let correction = residual / derivative.max(1.0);
+                    reference = (reference - correction).clamp(-ceiling, ceiling);
+                }
+                let shipped = filter.solve_feedback_iterations(
+                    input,
+                    coefficient,
+                    resonance_drive,
+                    sample_rate,
+                    profile,
+                    resonance_coefficients,
+                    FEEDBACK_SOLVER_ITERATIONS,
+                );
+                assert_eq!(shipped.to_bits(), reference.to_bits(), "paso {step}");
+                compared += 1;
+            }
+            let _ = filter.next_with_character_log2(input, cutoff_log2_hz, resonance, sample_rate, 0.5);
+        }
+        assert!(compared > 10_000, "el barrido apenas ejercito el solver: {compared}");
+    }
 
     #[test]
     fn power_of_two_roots_track_the_generic_reference() {
