@@ -56,7 +56,14 @@ const FINGERPRINTS: &[(&str, u64)] = &[
     ("09_ca3280_drive", 0xd5e529feb91270ec),
     ("10_common_noise_vca", 0x4bc622ef02e84b59),
     ("11_poly_mod_oscillator_b", 0xf8e16d2727162c63),
-    ("12_poly_mod_filter_envelope", 0x6741b51bd3667541),
+    // Moved when `solve_feedback_bracketed` landed. This scene drives the
+    // filter envelope into Poly-Mod hard enough to pin the cutoff at its
+    // clamp with the resonance up, which is precisely where Newton alone
+    // was leaving the loop unsolved, so it is the one scene whose sound
+    // the repair was expected to change -- and it changed completely,
+    // which is the evidence that it was not being solved before. All forty
+    // factory programs are bit-identical across the same change.
+    ("12_poly_mod_filter_envelope", 0x46fba075031ea86f),
     ("13_wheel_noise_filter", 0x6a0171d02469f13d),
     ("14_cem3340_hard_sync", 0x4c00f60a426a0032),
     ("15_voice_assignment", 0xd66edf88a6c00686),

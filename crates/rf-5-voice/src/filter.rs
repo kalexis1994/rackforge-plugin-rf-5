@@ -43,6 +43,23 @@ const RESONANCE_GM_HALF_SATURATION_AMPS: f32 =
 #[cfg(test)]
 const FOUR_POLE_OSCILLATION_FEEDBACK: f32 = 4.0;
 const FEEDBACK_SOLVER_ITERATIONS: usize = 3;
+/// How much of the loop may be left unsolved before the bracketed solver
+/// takes over.
+///
+/// Where Newton closes the loop it closes it to well under a microvolt, and
+/// where it does not it leaves volts, so anything between the two picks the
+/// same samples. A millivolt is three orders of magnitude clear of the
+/// converging side, which keeps every sample Newton already solves on
+/// exactly the bits it had.
+const UNCLOSED_LOOP_VOLTS: f32 = 1.0e-3;
+/// Enough safeguarded steps to bring the rails together on an f32 root.
+///
+/// The loop leaves as soon as the bracket is down to the last f32 steps,
+/// so this is a ceiling rather than a cost: high enough that a bisection of
+/// the whole rail-to-rail span would still arrive, while Newton's steps,
+/// taken whenever they land inside the bracket, normally arrive well before
+/// it.
+const BRACKETED_SOLVER_ITERATIONS: usize = 48;
 
 // SD431 does not connect OUT D directly to Q IN. C4164 AC-couples the final
 // pole into a 68 kohm load, U474 applies a non-inverting gain of 3.4, and
@@ -539,6 +556,7 @@ impl Cem3320Filter {
                             resonance_coefficients,
                             1,
                         )
+                        .0
                     } else {
                         self.solve_feedback(
                             open_input,
@@ -619,7 +637,7 @@ impl Cem3320Filter {
             } else {
                 FEEDBACK_SOLVER_ITERATIONS
             };
-        self.solve_feedback_iterations(
+        let (estimate, residual) = self.solve_feedback_iterations(
             input,
             coefficient,
             resonance_drive,
@@ -627,6 +645,21 @@ impl Cem3320Filter {
             profile,
             resonance_coefficients,
             iterations,
+        );
+        // The single-iteration path is a deliberate approximation -- one
+        // Newton step from the previous output, not a solve -- so it is
+        // left exactly as it is. Only the full solve, which claims to close
+        // the loop, is held to closing it.
+        if iterations == 1 || residual.abs() <= UNCLOSED_LOOP_VOLTS {
+            return estimate;
+        }
+        self.solve_feedback_bracketed(
+            input,
+            coefficient,
+            resonance_drive,
+            sample_rate,
+            profile,
+            resonance_coefficients,
         )
     }
 
@@ -640,9 +673,10 @@ impl Cem3320Filter {
         profile: FilterProfile,
         resonance_coefficients: ResonanceReturnCoefficients,
         iterations: usize,
-    ) -> f32 {
+    ) -> (f32, f32) {
         let ceiling = output_ceiling(profile);
         let mut estimate = self.last_output.clamp(-ceiling, ceiling);
+        let mut last_residual = 0.0_f32;
         for _ in 0..iterations {
             let (resonance_voltage, resonance_slope) = self.resonance_return.predict(
                 estimate,
@@ -656,6 +690,7 @@ impl Cem3320Filter {
                 profile,
             );
             let residual = estimate - predicted;
+            last_residual = residual;
             let derivative = 1.0 + resonance_drive * resonance_slope.max(0.0) * path_slope.max(0.0);
             let correction = residual / derivative.max(1.0);
             let next = (estimate - correction).clamp(-ceiling, ceiling);
@@ -670,6 +705,127 @@ impl Cem3320Filter {
                 break;
             }
             estimate = next;
+        }
+        (estimate, last_residual)
+    }
+
+    /// The solve for the samples Newton will not close.
+    ///
+    /// Newton is a local method and the loop it is pointed at is not
+    /// locally well behaved once the cutoff clamp opens the filter and the
+    /// resonance approaches self-oscillation. A first step from a saturated
+    /// cell arrives with a path slope of 1e-13, so the derivative is 1, so
+    /// the step is the whole residual, and the estimate lands on the far
+    /// side of the root. Sometimes the following steps shrink and it
+    /// converges after four or five; for about a quarter of the samples in
+    /// that region they do not shrink, and the estimate settles into a
+    /// cycle no number of iterations escapes -- sixty-four leave the
+    /// residual three did.
+    ///
+    /// What is true in that region, at every sample of it, is that the
+    /// cells clamp to the rails and the loop is continuous between them, so
+    /// the root is bracketed by the rails themselves. That is the property
+    /// this uses. Newton's step is kept where it lands inside the bracket
+    /// and falls back to a bisection where it does not, which is the
+    /// standard safeguard: Newton's speed where Newton is right, and the
+    /// bracket's guarantee everywhere else.
+    ///
+    /// It runs only after the plain solve has failed to close, so the
+    /// samples Newton already solves reach this not at all and keep their
+    /// bits exactly.
+    #[allow(clippy::too_many_arguments)]
+    fn solve_feedback_bracketed(
+        &self,
+        input: f32,
+        coefficient: f32,
+        resonance_drive: f32,
+        sample_rate: f32,
+        profile: FilterProfile,
+        resonance_coefficients: ResonanceReturnCoefficients,
+    ) -> f32 {
+        let ceiling = output_ceiling(profile);
+        // `g(x) = x - path(input - return(x) * drive)`, whose root is the
+        // output the loop settles at, together with the slope Newton wants.
+        let loop_error = |estimate: f32| -> (f32, f32) {
+            let (resonance_voltage, resonance_slope) = self.resonance_return.predict(
+                estimate,
+                sample_rate,
+                profile,
+                resonance_coefficients,
+            );
+            let (predicted, path_slope) = self.predict_path(
+                input - resonance_voltage * resonance_drive,
+                coefficient,
+                profile,
+            );
+            // At least one by construction, both slopes being clamped
+            // at zero, so dividing by it never needs a guard.
+            (
+                estimate - predicted,
+                1.0 + resonance_drive * resonance_slope.max(0.0) * path_slope.max(0.0),
+            )
+        };
+
+        // Orient the bracket so `low` is the end whose error is negative.
+        let low_error = loop_error(-ceiling).0;
+        let high_error = loop_error(ceiling).0;
+        if low_error == 0.0 {
+            return -ceiling;
+        }
+        if high_error == 0.0 {
+            return ceiling;
+        }
+        if low_error.is_sign_negative() == high_error.is_sign_negative() {
+            // No sign change between the rails, so there is nothing to
+            // bracket. Nothing observed reaches this; the rail closer to
+            // closing the loop is the honest answer if anything does.
+            return if low_error.abs() <= high_error.abs() {
+                -ceiling
+            } else {
+                ceiling
+            };
+        }
+        let (mut low, mut high) = if low_error.is_sign_negative() {
+            (-ceiling, ceiling)
+        } else {
+            (ceiling, -ceiling)
+        };
+
+        // Newton where it behaves, a bisection where it does not, and the
+        // step required to at least halve or the bisection takes over. That
+        // last clause is what makes this terminate: without it Newton keeps
+        // landing inside the bracket while barely moving either end, which
+        // is exactly the cycle it falls into here.
+        let mut estimate = 0.0;
+        let mut span = (high - low).abs();
+        let mut previous_span = span;
+        let (mut error, mut derivative) = loop_error(estimate);
+        for _ in 0..BRACKETED_SOLVER_ITERATIONS {
+            let newton_leaves_bracket = ((estimate - high) * derivative - error)
+                * ((estimate - low) * derivative - error)
+                > 0.0;
+            let newton_is_too_slow = (2.0 * error).abs() > (previous_span * derivative).abs();
+            previous_span = span;
+            if newton_leaves_bracket || newton_is_too_slow {
+                span = 0.5 * (high - low);
+                estimate = low + span;
+            } else {
+                span = error / derivative;
+                estimate -= span;
+            }
+            // The bracket is down to the last f32 steps, so nothing further
+            // can move the answer.
+            if span.abs() <= ceiling * f32::EPSILON {
+                break;
+            }
+            let next = loop_error(estimate);
+            error = next.0;
+            derivative = next.1;
+            if error.is_sign_negative() {
+                low = estimate;
+            } else {
+                high = estimate;
+            }
         }
         estimate
     }
@@ -1144,15 +1300,17 @@ mod tests {
                     let correction = residual / derivative.max(1.0);
                     reference = (reference - correction).clamp(-ceiling, ceiling);
                 }
-                let shipped = filter.solve_feedback_iterations(
-                    input,
-                    coefficient,
-                    resonance_drive,
-                    sample_rate,
-                    profile,
-                    resonance_coefficients,
-                    FEEDBACK_SOLVER_ITERATIONS,
-                );
+                let shipped = filter
+                    .solve_feedback_iterations(
+                        input,
+                        coefficient,
+                        resonance_drive,
+                        sample_rate,
+                        profile,
+                        resonance_coefficients,
+                        FEEDBACK_SOLVER_ITERATIONS,
+                    )
+                    .0;
                 assert_eq!(shipped.to_bits(), reference.to_bits(), "paso {step}");
                 compared += 1;
             }
@@ -1699,22 +1857,27 @@ mod tests {
     /// The three-iteration path closes the loop to under a microvolt while
     /// the coefficient stays under about 0.6.
     ///
-    /// Above that it stops closing. The residual reaches 0.94 V by a
-    /// coefficient of 0.61 with resonance from 0.3, and 7.9 V once the
-    /// cutoff clamp pins the coefficient at 0.863. It is not slow
-    /// convergence: a hundred and twenty-eight iterations leave the same
-    /// residual as three, and a root does exist between the rails. It is
-    /// the step overshooting. `slope.max(0.0)` and `derivative.max(1.0)`
-    /// floor a Jacobian that is genuinely around fifty there, so the
-    /// correction comes out some fifty times too large and the estimate
-    /// walks between the clamps.
+    /// Above that Newton stops closing it on its own, and
+    /// `solve_feedback_bracketed` takes over. The region begins around a
+    /// coefficient of 0.61 with resonance from 0.3 -- 30 kHz at the
+    /// shipping filter's 96, which the panel alone does not reach but
+    /// keyboard tracking and the filter envelope do -- and it is worst once
+    /// the cutoff clamp pins the coefficient at 0.863.
     ///
-    /// A coefficient of 0.61 is 30 kHz at the shipping filter's 96, which
-    /// the panel alone does not reach -- but keyboard tracking and the
-    /// filter envelope do. So this is reachable, and it is left as found:
-    /// closing it would change the sound of every bright resonant patch,
-    /// and that is not a test's decision to make. What the test does is
-    /// hold the boundary still.
+    /// The mechanism is not the one it looks like, which is why it is
+    /// written down. The estimate never leaves the rails, and the loop is
+    /// continuous between them: swept at eighty thousand points it has one
+    /// sign change and no jump larger than 6e-4. What happens is that the
+    /// first step starts from a saturated cell, where the path slope is
+    /// 1e-13 and the derivative is therefore 1, so the correction is the
+    /// whole residual and the estimate lands on the far side of the root.
+    /// Sometimes the steps after it shrink and it converges by the fourth;
+    /// for about a quarter of the samples they do not, and the estimate
+    /// settles into a cycle no iteration count escapes -- sixty-four leave
+    /// the residual three did, and the worst stayed at 7.9 V.
+    ///
+    /// With the bracketed fallback the same region closes to under a tenth
+    /// of a millivolt.
     #[test]
     fn nonlinear_feedback_solver_closes_the_instantaneous_loop() {
         /// Where the three-iteration solve stops closing the loop.
@@ -1818,11 +1981,9 @@ mod tests {
             worst_convergent <= 1.0e-5,
             "por debajo del coeficiente {CONVERGENT_COEFFICIENT}: {worst_convergent}"
         );
-        // Named, not sanded off. If this ever closes, the region above was
-        // fixed on purpose and this line is the one to delete.
         assert!(
-            worst_beyond > 1.0e-2,
-            "el rincon abierto se cerro solo: {worst_beyond}"
+            worst_beyond <= 1.0e-4,
+            "el rincon del clamp quedo sin cerrar: {worst_beyond}"
         );
     }
 
