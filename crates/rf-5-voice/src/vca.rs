@@ -968,19 +968,17 @@ mod tests {
             VCA_CONTROL_SERIES_RESISTANCE_OHMS,
             MASTER_VCA_CONTROL_SERIES_RESISTANCE_OHMS,
         ] {
-            let offset = libm::logf(
-                resistance * Q410_SATURATION_CURRENT_AMPS / Q410_THERMAL_VOLTAGE_VOLTS,
-            );
+            let offset =
+                libm::logf(resistance * Q410_SATURATION_CURRENT_AMPS / Q410_THERMAL_VOLTAGE_VOLTS);
             let mut worst = 0.0_f32;
             let mut worst_at = 0.0_f32;
             for step in 1..=200_000_u32 {
                 let drive = step as f32 / 200_000.0 * 20.0;
                 let current = grounded_base_2n4250_collector_current_amps(drive, resistance);
                 let normalized = current * resistance / Q410_THERMAL_VOLTAGE_VOLTS;
-                let residual =
-                    (normalized + libm::logf(normalized)
-                        - (drive / Q410_THERMAL_VOLTAGE_VOLTS + offset))
-                        .abs();
+                let residual = (normalized + libm::logf(normalized)
+                    - (drive / Q410_THERMAL_VOLTAGE_VOLTS + offset))
+                    .abs();
                 if residual > worst {
                     worst = residual;
                     worst_at = drive;

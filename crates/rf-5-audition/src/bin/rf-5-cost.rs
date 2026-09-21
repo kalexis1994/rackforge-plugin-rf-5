@@ -24,13 +24,20 @@ fn main() {
         .next()
         .unwrap_or_else(|| "original-14-percussive-e-piano".to_owned());
     let notes: Vec<u8> = arguments.map(|n| n.parse().expect("nota MIDI")).collect();
-    let notes = if notes.is_empty() { vec![48, 55, 60, 64, 67] } else { notes };
+    let notes = if notes.is_empty() {
+        vec![48, 55, 60, 64, 67]
+    } else {
+        notes
+    };
 
     let mut best = f64::MAX;
     for _ in 0..ROUNDS {
         let mut engine = Engine::default();
         assert!(engine.prepare(SAMPLE_RATE));
-        assert!(engine.load_program(&program), "programa desconocido: {program}");
+        assert!(
+            engine.load_program(&program),
+            "programa desconocido: {program}"
+        );
         for &note in &notes {
             engine.note_on(0, note, 100);
         }
@@ -50,17 +57,4 @@ fn main() {
         notes.len(),
         best * BLOCK_FRAMES as f64 / 1000.0
     );
-    #[cfg(feature = "solver-census")]
-    {
-        let census = rf_5_dsp::solver_census();
-        let total: u64 = census.iter().sum::<u64>().max(1);
-        for asked in 0..4 {
-            for settled in 0..4 {
-                let n = census[asked * 4 + settled];
-                if n > 0 {
-                    println!("  Newton: pedidas {asked}, quieta tras {settled}: {:5.1} %", n as f64 * 100.0 / total as f64);
-                }
-            }
-        }
-    }
 }

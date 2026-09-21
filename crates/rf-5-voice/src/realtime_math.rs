@@ -248,7 +248,10 @@ mod tests {
                 worst_in_range = worst_in_range.max(error);
             }
         }
-        assert!(worst_in_range <= 2.5e-6, "region del solver: {worst_in_range}");
+        assert!(
+            worst_in_range <= 2.5e-6,
+            "region del solver: {worst_in_range}"
+        );
         assert!(worst <= 1.0e-5, "rango completo: {worst}");
     }
 

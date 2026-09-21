@@ -1275,10 +1275,11 @@ mod tests {
                 filter
                     .coefficient_cache
                     .resonance_drive(resonance, filter.profile_index, profile);
-            let resonance_coefficients =
-                filter
-                    .coefficient_cache
-                    .resonance_return(sample_rate, filter.profile_index, profile);
+            let resonance_coefficients = filter.coefficient_cache.resonance_return(
+                sample_rate,
+                filter.profile_index,
+                profile,
+            );
             if resonance_drive > 0.0 {
                 let ceiling = output_ceiling(profile);
                 let mut reference = filter.last_output.clamp(-ceiling, ceiling);
@@ -1314,9 +1315,13 @@ mod tests {
                 assert_eq!(shipped.to_bits(), reference.to_bits(), "paso {step}");
                 compared += 1;
             }
-            let _ = filter.next_with_character_log2(input, cutoff_log2_hz, resonance, sample_rate, 0.5);
+            let _ =
+                filter.next_with_character_log2(input, cutoff_log2_hz, resonance, sample_rate, 0.5);
         }
-        assert!(compared > 10_000, "el barrido apenas ejercito el solver: {compared}");
+        assert!(
+            compared > 10_000,
+            "el barrido apenas ejercito el solver: {compared}"
+        );
     }
 
     /// The reference root, over every value the knees can hand it.
@@ -1411,7 +1416,10 @@ mod tests {
                 worst_with_slope.max((soft_knee_sixteenth(normalized).0 - reference).abs());
         }
         assert!(worst_value <= 1.0e-6, "valor: {worst_value}");
-        assert!(worst_with_slope <= 1.0e-6, "con pendiente: {worst_with_slope}");
+        assert!(
+            worst_with_slope <= 1.0e-6,
+            "con pendiente: {worst_with_slope}"
+        );
 
         let mut worst = 0.0_f32;
         for step in -15_000..=15_000_i32 {
@@ -1465,9 +1473,7 @@ mod tests {
                 let right = cell_output_with_slope(value + window, profile).0;
                 let rising = (centre - left) / window;
                 let falling = (right - centre) / window;
-                if (rising - falling).abs()
-                    > 0.05 * rising.abs().max(falling.abs()).max(1.0e-3)
-                {
+                if (rising - falling).abs() > 0.05 * rising.abs().max(falling.abs()).max(1.0e-3) {
                     continue;
                 }
                 let numeric = (right - left) / (2.0 * window);
@@ -1887,16 +1893,17 @@ mod tests {
         let mut worst_beyond = 0.0_f32;
         let mut solves = 0_u32;
 
-        for profile_index in 0..FILTER_PROFILES.len() {
+        for (profile_index, profile) in FILTER_PROFILES.into_iter().enumerate() {
             for &sample_rate in &[96_000.0_f32, 192_000.0] {
                 for cutoff_step in 0..12 {
                     let cutoff_log2_hz = 4.0 + cutoff_step as f32 * 1.4;
                     for resonance_step in 0..=10 {
                         let resonance = resonance_step as f32 / 10.0;
                         for &drive in &[0.5_f32, 12.0] {
-                            let mut filter = Cem3320Filter::default();
-                            filter.profile_index = profile_index;
-                            let profile = FILTER_PROFILES[profile_index];
+                            let mut filter = Cem3320Filter {
+                                profile_index,
+                                ..Cem3320Filter::default()
+                            };
                             for index in 0..900 {
                                 let input = libm::sinf(index as f32 * 0.0713) * drive;
                                 let coefficient = filter.coefficient_cache.stage_coefficient(
@@ -1972,7 +1979,10 @@ mod tests {
             }
         }
 
-        assert!(solves > 1_000_000, "el barrido apenas ejercito el solver: {solves}");
+        assert!(
+            solves > 1_000_000,
+            "el barrido apenas ejercito el solver: {solves}"
+        );
         assert!(
             worst_one_step <= 5.0e-2,
             "el atajo de una iteracion: {worst_one_step}"

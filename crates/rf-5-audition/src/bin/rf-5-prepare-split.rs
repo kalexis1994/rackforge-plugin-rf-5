@@ -76,7 +76,10 @@ fn main() {
     println!("=== lo que viaja ===");
     println!("  CommonVoiceFrame     {common:5} bytes por frame");
     println!("  VoiceCalibration     {calibration:5} bytes por frame y voz");
-    println!("  PreparedSample       {:5} bytes", core::mem::size_of::<PreparedSample>());
+    println!(
+        "  PreparedSample       {:5} bytes",
+        core::mem::size_of::<PreparedSample>()
+    );
     println!(
         "  el payload compartido de un bloque de {BLOCK_FRAMES}: {} KiB, 
            que el host copia a cada una de las 5 unidades: {} KiB por bloque",

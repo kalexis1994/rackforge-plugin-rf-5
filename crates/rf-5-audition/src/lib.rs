@@ -43,7 +43,9 @@ pub struct RenderMetrics {
 }
 
 /// Every scene's render, folded into one number. See
-/// `every_scene_renders_what_it_has_always_rendered`.
+/// `every_scene_renders_what_it_has_always_rendered`, which is the only
+/// thing that reads it.
+#[cfg(test)]
 const FINGERPRINTS: &[(&str, u64)] = &[
     ("01_baseline_warm_chords", 0x43ab464ea987673f),
     ("02_filter_drive", 0x8a5c862696e146d1),
@@ -889,8 +891,10 @@ mod tests {
 {}",
             moved.len(),
             expected.len(),
-            moved.join("
-")
+            moved.join(
+                "
+"
+            )
         );
     }
 

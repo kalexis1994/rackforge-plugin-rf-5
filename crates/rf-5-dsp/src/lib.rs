@@ -1409,7 +1409,12 @@ mod tests {
         };
         let costly = read("original-14-percussive-e-piano");
         let cheap = read("original-28-bass-in-fifths");
-        std::println!("{:<40} {:>10} {:>10}", "parametro", "1-4 caro", "2-8 barato");
+        std::println!(
+            "{:<40} {:>10} {:>10}",
+            "parametro",
+            "1-4 caro",
+            "2-8 barato"
+        );
         for index in 0..PARAMETER_COUNT as u32 {
             let Ok(parameter) = Parameter::try_from(index) else {
                 continue;
