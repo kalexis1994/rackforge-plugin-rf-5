@@ -134,8 +134,10 @@ tools/                 Reproducible package builders
 
 ## Build and test
 
-A RackForge checkout is expected next to this repository. For local development,
-copy `.cargo/config.toml.example` to `.cargo/config.toml` to use that checkout.
+A RackForge checkout is expected next to this repository. To build against
+that checkout, copy `.cargo/config.toml.example` to `.cargo/config.toml` in the directory
+that holds both checkouts -- not into this repository, whose own
+`.cargo/config.toml` carries the SIMD build flag every checkout needs.
 
 ```bash
 cargo fmt --all -- --check
