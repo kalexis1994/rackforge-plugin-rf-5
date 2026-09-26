@@ -4,14 +4,17 @@
 
 The RF-5 graphical panel is a Rust WebAssembly client of RackForge's
 `rackforge.plugin.web@1` bridge. `play.html` only loads the generated module;
-rendering, state, program selection and interaction logic remain in Rust.
+rendering, state and interaction logic remain in Rust. Programs are listed,
+searched and chosen with RackForge's `<rf-program-select>`, which the host
+injects into every plugin frame: the panel makes the element once, puts it in
+the program memory bar after each render, and follows the host's selection.
 
 The first surface deliberately reuses RF-106's proven host boundary rather
 than its instrument-specific layout:
 
 - strict parent-window origin and protocol validation;
 - request IDs, response matching and bounded request timeouts;
-- context-driven program catalogs and explicit `plugin.select_sound` calls;
+- context-driven program catalogs;
 - complete parameter snapshots followed by targeted `parameter_changed`
   updates;
 - `data-rackforge-parameter-index` anchors for host-owned context menus and
@@ -69,8 +72,10 @@ The UI changes layout instead of scaling the complete panel bitmap:
 - laptop widths preserve each connected group and stack the groups;
 - phones use two or three touchable controls per row;
 - Scale Mode reduces from twelve to six, four and then three columns;
-- the full program catalog remains below the active hardware section at every
-  width.
+- the head — the RF-5 nameplate on its walnut rail, then RACKFORGE INSTRUMENTS
+  and the program selector, whose red LED name carries the bank and number —
+  stays above the panel at every width; on a phone the maker takes a line of
+  its own. Under the panel only a thin strip of the case shows.
 
 Knobs expose a native range input for keyboard accessibility but pointer
 movement belongs to the surrounding hardware surface. This avoids Chromium's
