@@ -554,6 +554,7 @@ mod browser {
             "master-volume" => "VOLUME",
             "vintage-spread" => "VOICE SPREAD",
             "release-enable" => "RELEASE",
+            "program-change-mutes-tails" => "CUT TAILS",
             _ if id.ends_with("-saw") => "SAW",
             _ if id.ends_with("-triangle") => "TRIANGLE",
             _ if id.ends_with("-square") => "SQUARE",

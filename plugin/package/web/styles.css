@@ -601,6 +601,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .group-output .parameter-release-enable { grid-column: 1; grid-row: 2; }
 .group-output .parameter-master-volume { grid-column: 3; grid-row: 2; }
 .group-output .parameter-tune { grid-column: 5; grid-row: 2; }
+.group-output .parameter-program-change-mutes-tails { grid-column: 4; grid-row: 2; }
 
 .group-scale .control-grid {
   grid-template-columns: repeat(12, minmax(72px, 1fr));
