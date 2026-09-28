@@ -815,6 +815,28 @@ mod tests {
         }
     }
 
+    /// RackForge refuses a package whose runtime descriptor and manifest
+    /// disagree, so a version or state-format bump must move both.
+    #[test]
+    fn runtime_descriptor_matches_the_manifest() {
+        let runtime: serde_json::Value =
+            serde_json::from_str(include_str!("../package/metadata/runtime.json")).unwrap();
+        let manifest = include_str!("../package/rackforge-plugin.toml");
+        let field = |name: &str| {
+            manifest
+                .lines()
+                .find_map(|line| line.strip_prefix(&format!("{name} = ")))
+                .map(|value| value.trim().trim_matches('"').to_owned())
+                .unwrap_or_else(|| panic!("manifest has no {name}"))
+        };
+        assert_eq!(runtime["id"].as_str().unwrap(), field("id"));
+        assert_eq!(runtime["version"].as_str().unwrap(), field("version"));
+        assert_eq!(
+            runtime["state_version"].as_u64().unwrap().to_string(),
+            field("state_version")
+        );
+    }
+
     #[test]
     fn every_packaged_preset_is_loadable_by_the_engine() {
         let catalog: serde_json::Value =
