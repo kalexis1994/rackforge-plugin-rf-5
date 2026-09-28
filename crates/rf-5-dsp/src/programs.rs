@@ -717,9 +717,12 @@ pub(crate) fn find_diagnostic(id: &str) -> Option<Program> {
         "audition-lfo-square-unipolar" => Program::lfo_unipolar_waveform(true),
         "audition-oscillator-b-fine-zero" => Program::oscillator_b_fine(0.0),
         "audition-oscillator-b-fine-semitone" => Program::oscillator_b_fine(1.0),
-        "audition-pulse-width-minimum" => Program::oscillator_a_pulse_width(0.0),
-        "audition-pulse-width-square" => Program::oscillator_a_pulse_width(64.0 / 127.0),
-        "audition-pulse-width-maximum" => Program::oscillator_a_pulse_width(1.0),
+        // U432 feeds CEM3340 pin 5 with 0.523 x (code / 12 V): code 1 is
+        // about 1%, code 57 the square and code 113 about 99%. Codes 0 and
+        // 115 upwards are the DC endpoints the owner's manual describes.
+        "audition-pulse-width-minimum" => Program::oscillator_a_pulse_width(1.0 / 127.0),
+        "audition-pulse-width-square" => Program::oscillator_a_pulse_width(57.0 / 127.0),
+        "audition-pulse-width-maximum" => Program::oscillator_a_pulse_width(113.0 / 127.0),
         "audition-oscillator-b-triangle" => Program::oscillator_b_triangle(),
         _ => return None,
     })
@@ -849,17 +852,15 @@ mod tests {
     }
 
     #[test]
-    fn pulse_width_auditions_reach_both_panel_limits_and_nearest_square_code() {
+    fn pulse_width_auditions_sit_inside_the_dc_endpoints_and_on_the_square() {
+        use rf_5_contract::hardware::analog_pot_code;
         let minimum = find_diagnostic("audition-pulse-width-minimum").unwrap();
         let square = find_diagnostic("audition-pulse-width-square").unwrap();
         let maximum = find_diagnostic("audition-pulse-width-maximum").unwrap();
         let index = Parameter::OscillatorAPulseWidth as usize;
-        assert_eq!(minimum.values[index], 0.0);
-        assert_eq!(
-            rf_5_contract::hardware::analog_pot_code(square.values[index]),
-            64
-        );
-        assert_eq!(maximum.values[index], 1.0);
+        assert_eq!(analog_pot_code(minimum.values[index]), 1);
+        assert_eq!(analog_pot_code(square.values[index]), 57);
+        assert_eq!(analog_pot_code(maximum.values[index]), 113);
     }
 
     #[test]

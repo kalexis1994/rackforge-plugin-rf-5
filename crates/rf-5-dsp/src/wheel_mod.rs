@@ -4,8 +4,21 @@
 //! switches route it through three populated resistor networks. U378 and its
 //! 10 kohm load now deliver circuit volts directly, so this module contains no
 //! normalized-source calibration multiplier.
+//!
+//! R2 is a 100 kohm linear pot (BOM R-207, Allen-Bradley JA1G040S104UA, taper
+//! U) with W-MOD SOURCE at one end and ground at the other, and its wiper
+//! drives the U374 follower, so the wiper fraction scales W-MOD exactly. The
+//! wheel does not sweep the whole track. R1 and R2 are the same pot on the
+//! same wheel (M-200) and bracket (M-204) parts. The PITCH wheel's documented
+//! "about a 5th" from its centre detent, across a +/-15 V track, fixes that
+//! assembly at 4.83% of the track per half-travel. The MOD wheel runs from its
+//! grounded end-stop through both halves of the same travel.
 
 const OCTAVE_SEMITONES: f32 = 12.0;
+const MOD_WHEEL_TRACK_FRACTION: f32 = 2.0 * crate::pitch_wheel::MECHANICAL_HALF_TRAVEL;
+// Each destination switch is a CD4016 section in series with its input
+// resistor, as for the LFO shape switches.
+const CD4016_TYPICAL_ON_RESISTANCE_OHMS: f32 = 300.0;
 
 // SD334 oscillator-frequency route: R3103/R3104 into U368, followed by the
 // unity-gain A/B master summer. The complete oscillator path is 1 V/octave.
@@ -38,15 +51,18 @@ pub fn destinations(source_volts: f32, wheel_amount: f32) -> WheelModDestination
         return WheelModDestinations::default();
     }
 
-    let wheel_amount = wheel_amount.clamp(0.0, 1.0);
-    let source_volts = source_volts * wheel_amount;
+    let wiper_fraction = wheel_amount.clamp(0.0, 1.0) * MOD_WHEEL_TRACK_FRACTION;
+    let source_volts = source_volts * wiper_fraction;
 
-    let oscillator_octaves = source_volts * OSCILLATOR_FEEDBACK_OHMS / OSCILLATOR_INPUT_OHMS;
-    let pulse_width = source_volts * PULSE_WIDTH_FIRST_FEEDBACK_OHMS / PULSE_WIDTH_INPUT_OHMS
+    let oscillator_octaves = source_volts * OSCILLATOR_FEEDBACK_OHMS
+        / (OSCILLATOR_INPUT_OHMS + CD4016_TYPICAL_ON_RESISTANCE_OHMS);
+    let pulse_width = source_volts * PULSE_WIDTH_FIRST_FEEDBACK_OHMS
+        / (PULSE_WIDTH_INPUT_OHMS + CD4016_TYPICAL_ON_RESISTANCE_OHMS)
         * PULSE_WIDTH_SUM_FEEDBACK_OHMS
         / PULSE_WIDTH_SUM_INPUT_OHMS
         / CEM3340_PULSE_WIDTH_RANGE_VOLTS;
-    let filter_octaves = source_volts * FILTER_FEEDBACK_OHMS / FILTER_INPUT_OHMS;
+    let filter_octaves = source_volts * FILTER_FEEDBACK_OHMS
+        / (FILTER_INPUT_OHMS + CD4016_TYPICAL_ON_RESISTANCE_OHMS);
 
     WheelModDestinations {
         oscillator_semitones: oscillator_octaves * OCTAVE_SEMITONES,
@@ -60,24 +76,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn one_source_volt_drives_every_destination() {
-        let routed = destinations(1.0, 1.0);
-        assert!((routed.oscillator_semitones - 6.593_406_7).abs() < 1.0e-5);
-        assert!((routed.pulse_width - 0.697_333_34).abs() < 1.0e-5);
-        assert!((routed.filter_octaves - 7.518_797).abs() < 1.0e-5);
+    fn one_wiper_volt_drives_every_destination() {
+        // A full wheel places 9.67% of W-MOD SOURCE on the U374 follower.
+        let routed = destinations(1.0 / MOD_WHEEL_TRACK_FRACTION, 1.0);
+        assert!((routed.oscillator_semitones - 6.582_556).abs() < 1.0e-4);
+        assert!((routed.pulse_width - 0.683_660_1).abs() < 1.0e-5);
+        assert!((routed.filter_octaves - 7.352_941).abs() < 1.0e-5);
+    }
+
+    #[test]
+    fn full_wheel_sweeps_the_shared_wheel_assembly_travel() {
+        assert!((MOD_WHEEL_TRACK_FRACTION - 0.096_671_72).abs() < 1.0e-7);
+        let full = destinations(2.0, 1.0);
+        let third = destinations(2.0, 1.0 / 3.0);
+        assert!((full.oscillator_semitones - 2.0 * 0.096_671_72 * 6.582_556).abs() < 1.0e-4);
+        assert!((third.filter_octaves * 3.0 - full.filter_octaves).abs() < 1.0e-5);
     }
 
     #[test]
     fn destination_ratios_follow_the_populated_resistors() {
         let routed = destinations(0.37, 0.62);
         let oscillator_octaves = routed.oscillator_semitones / OCTAVE_SEMITONES;
-        let expected_filter_ratio = (FILTER_FEEDBACK_OHMS / FILTER_INPUT_OHMS)
-            / (OSCILLATOR_FEEDBACK_OHMS / OSCILLATOR_INPUT_OHMS);
-        let expected_pulse_ratio = (PULSE_WIDTH_FIRST_FEEDBACK_OHMS / PULSE_WIDTH_INPUT_OHMS
+        let switched = |ohms: f32| ohms + CD4016_TYPICAL_ON_RESISTANCE_OHMS;
+        let oscillator_gain = OSCILLATOR_FEEDBACK_OHMS / switched(OSCILLATOR_INPUT_OHMS);
+        let expected_filter_ratio =
+            (FILTER_FEEDBACK_OHMS / switched(FILTER_INPUT_OHMS)) / oscillator_gain;
+        let expected_pulse_ratio = (PULSE_WIDTH_FIRST_FEEDBACK_OHMS
+            / switched(PULSE_WIDTH_INPUT_OHMS)
             * PULSE_WIDTH_SUM_FEEDBACK_OHMS
             / PULSE_WIDTH_SUM_INPUT_OHMS
             / CEM3340_PULSE_WIDTH_RANGE_VOLTS)
-            / (OSCILLATOR_FEEDBACK_OHMS / OSCILLATOR_INPUT_OHMS);
+            / oscillator_gain;
 
         assert!(
             (routed.filter_octaves / oscillator_octaves - expected_filter_ratio).abs() < 1.0e-5

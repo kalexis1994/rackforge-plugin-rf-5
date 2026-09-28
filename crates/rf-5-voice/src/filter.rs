@@ -33,7 +33,6 @@ const INTERSTAGE_COUPLING_OHMS: f32 = 91_000.0;
 // by a saturating rational law fixed by its 1 mmho-at-100 uA typical point and
 // 2.2 mmho maximum-Gm line. Unlike the former exponential, that law also stays
 // within the read uncertainty of Figure 6's modified-linear trace.
-const FILTER_RESONANCE_CV_SPAN_VOLTS: f32 = 10.0;
 const RESONANCE_CONTROL_RESISTOR_OHMS: f32 = 200_000.0;
 const RESONANCE_GM_REFERENCE_AMPS: f32 = 100.0e-6;
 const RESONANCE_GM_AT_REFERENCE_MHOS: f32 = 1.0e-3;
@@ -91,6 +90,57 @@ const RESONANCE_INPUT_MINIMUM_OHMS: f32 = 2_700.0;
 #[cfg(test)]
 const RESONANCE_INPUT_MAXIMUM_OHMS: f32 = 4_500.0;
 
+// Each cell's summing input sits one diode (0.65 V) above ground and its
+// buffer rests where the input currents equal the chip's internal I_REF
+// (45-85 uA, 63 uA typical). The signal swing window, Vcc - 3 V wide, is
+// centred at the data sheet's 0.46 Vcc. SD431 feeds IN A through R4367 100k
+// from the noise buffer (0 V DC) besides its 100k feedback; IN B-D each add
+// their 91k coupling resistor from the previous output and a 240k bias
+// resistor to -15 V (R4412, R4408, R4454). Their quiescent outputs therefore
+// alternate around the window centre and every cell clips asymmetrically.
+const CELL_INPUT_DIODE_VOLTS: f32 = 0.65;
+const CELL_WINDOW_CENTRE_VOLTS: f32 = 0.46 * 15.0;
+const CELL_BIAS_RAIL_VOLTS: f32 = -15.0;
+const CELL_BIAS_OHMS: f32 = 240_000.0;
+const FIRST_CELL_NOISE_INPUT_OHMS: f32 = 100_000.0;
+
+#[derive(Clone, Copy, Debug, Default)]
+struct CellOperatingPoint {
+    offset_volts: f32,
+    rest_output_volts: f32,
+    // Signal-independent parts of `cell_output_at`, fixed per chip.
+    knee_offset: f32,
+    even_rest_term: f32,
+    linear_offset: bool,
+}
+
+fn cell_operating_points(profile: FilterProfile) -> [CellOperatingPoint; STAGE_COUNT] {
+    let mut points = [CellOperatingPoint::default(); STAGE_COUNT];
+    let mut previous_output = 0.0;
+    for (index, point) in points.iter_mut().enumerate() {
+        // I_REF = I_feedback + I_coupling + I_bias (currents into the input).
+        let external_amps = if index == 0 {
+            (0.0 - CELL_INPUT_DIODE_VOLTS) / FIRST_CELL_NOISE_INPUT_OHMS
+        } else {
+            (previous_output - CELL_INPUT_DIODE_VOLTS) / INTERSTAGE_COUPLING_OHMS
+                + (CELL_BIAS_RAIL_VOLTS - CELL_INPUT_DIODE_VOLTS) / CELL_BIAS_OHMS
+        };
+        let output = CELL_INPUT_DIODE_VOLTS
+            + (profile.reference_current_amps - external_amps) * CELL_FEEDBACK_OHMS;
+        point.offset_volts = output - CELL_WINDOW_CENTRE_VOLTS;
+        point.rest_output_volts = cell_output(point.offset_volts, profile);
+        let normalized_offset = point.offset_volts / output_ceiling(profile);
+        point.knee_offset = sixteenth_power(normalized_offset);
+        point.even_rest_term = 2.0
+            * cell_even_coefficient(profile)
+            * point.offset_volts
+            * sixteenth_knee_root(point.knee_offset);
+        point.linear_offset = normalized_offset.abs() < 0.5;
+        previous_output = output;
+    }
+    points
+}
+
 // Audio entering, crossing and leaving the four cells is expressed in circuit
 // volts. The published 10-14 Vpp output population therefore bounds the
 // nonlinear cells directly, without a hidden normalized-unit conversion.
@@ -106,6 +156,7 @@ struct FilterProfile {
     output_buffer_slew_volts_per_second: f32,
     output_clip_vpp: f32,
     passband_second_harmonic: f32,
+    reference_current_amps: f32,
 }
 
 // Deterministic validation population. Every entry stays within the CEM3320
@@ -122,6 +173,7 @@ const FILTER_PROFILES: [FilterProfile; 5] = [
         output_buffer_slew_volts_per_second: 8.4e6,
         output_clip_vpp: 11.0,
         passband_second_harmonic: 0.0014,
+        reference_current_amps: 55.0e-6,
     },
     FilterProfile {
         pole_sensitivity_mv_per_decade: 59.1,
@@ -131,6 +183,7 @@ const FILTER_PROFILES: [FilterProfile; 5] = [
         output_buffer_slew_volts_per_second: 10.1e6,
         output_clip_vpp: 12.6,
         passband_second_harmonic: 0.0021,
+        reference_current_amps: 70.0e-6,
     },
     FilterProfile {
         pole_sensitivity_mv_per_decade: 60.0,
@@ -140,6 +193,7 @@ const FILTER_PROFILES: [FilterProfile; 5] = [
         output_buffer_slew_volts_per_second: 11.2e6,
         output_clip_vpp: 12.0,
         passband_second_harmonic: 0.0018,
+        reference_current_amps: 60.0e-6,
     },
     FilterProfile {
         pole_sensitivity_mv_per_decade: 61.2,
@@ -149,6 +203,7 @@ const FILTER_PROFILES: [FilterProfile; 5] = [
         output_buffer_slew_volts_per_second: 12.9e6,
         output_clip_vpp: 13.4,
         passband_second_harmonic: 0.0028,
+        reference_current_amps: 74.0e-6,
     },
     FilterProfile {
         pole_sensitivity_mv_per_decade: 62.2,
@@ -158,6 +213,7 @@ const FILTER_PROFILES: [FilterProfile; 5] = [
         output_buffer_slew_volts_per_second: 9.3e6,
         output_clip_vpp: 10.5,
         passband_second_harmonic: 0.0011,
+        reference_current_amps: 66.0e-6,
     },
 ];
 
@@ -167,17 +223,32 @@ struct TptStage {
 }
 
 impl TptStage {
-    fn next(&mut self, input: f32, coefficient: f32, profile: FilterProfile) -> f32 {
+    fn next(
+        &mut self,
+        input: f32,
+        coefficient: f32,
+        profile: FilterProfile,
+        point: CellOperatingPoint,
+    ) -> f32 {
         let delta = (input - self.state) * coefficient;
         let output = delta + self.state;
         self.state = output + delta;
-        cell_output(output, profile)
+        cell_output_at(output, profile, point)
     }
 
-    fn predict(self, input: f32, coefficient: f32, profile: FilterProfile) -> (f32, f32) {
+    fn predict(
+        self,
+        input: f32,
+        coefficient: f32,
+        profile: FilterProfile,
+        point: CellOperatingPoint,
+    ) -> (f32, f32) {
         let output = (input - self.state) * coefficient + self.state;
-        let (shaped, shaping_slope) = cell_output_with_slope(output, profile);
-        (shaped, coefficient * shaping_slope)
+        let shaping_slope = cell_output_with_slope(output + point.offset_volts, profile).1;
+        (
+            cell_output_at(output, profile, point),
+            coefficient * shaping_slope,
+        )
     }
 }
 
@@ -447,6 +518,7 @@ pub struct Cem3320Filter {
     resonance_return: ResonanceReturn,
     noise_state: u32,
     profile_index: usize,
+    operating_points: [CellOperatingPoint; STAGE_COUNT],
     warmup_position: f32,
     warmup_sample_phase: f64,
     last_output: f32,
@@ -460,6 +532,7 @@ impl Default for Cem3320Filter {
             resonance_return: ResonanceReturn::default(),
             noise_state: 0x51f1_5e5d,
             profile_index: 2,
+            operating_points: cell_operating_points(FILTER_PROFILES[2]),
             warmup_position: 0.0,
             warmup_sample_phase: 0.0,
             last_output: 0.0,
@@ -472,9 +545,22 @@ impl Cem3320Filter {
     pub fn with_profile(profile_index: usize) -> Self {
         Self {
             profile_index: profile_index % FILTER_PROFILES.len(),
+            operating_points: cell_operating_points(
+                FILTER_PROFILES[profile_index % FILTER_PROFILES.len()],
+            ),
             noise_state: 0x51f1_5e5d ^ (profile_index as u32).wrapping_mul(0x9e37_79b9),
             ..Self::default()
         }
+    }
+
+    /// Return the four cells and the resonance return to rest while keeping
+    /// the device profile, warm-up position and noise sequence. Used when a
+    /// dormant card resumes: its oscillators kept running but its filter was
+    /// not advanced, so the held state no longer matches their phase.
+    pub fn clear_signal_state(&mut self) {
+        self.stages = [TptStage::default(); STAGE_COUNT];
+        self.resonance_return = ResonanceReturn::default();
+        self.last_output = 0.0;
     }
 
     pub fn next(&mut self, input: f32, cutoff_hz: f32, resonance: f32, sample_rate: f32) -> f32 {
@@ -600,7 +686,7 @@ impl Cem3320Filter {
             if index > 0 {
                 signal *= interstage_passband_gain();
             }
-            signal = stage.next(signal, coefficient, profile);
+            signal = stage.next(signal, coefficient, profile, self.operating_points[index]);
         }
         if signal.is_finite() {
             let (buffered_output, _) =
@@ -674,8 +760,8 @@ impl Cem3320Filter {
         resonance_coefficients: ResonanceReturnCoefficients,
         iterations: usize,
     ) -> (f32, f32) {
-        let ceiling = output_ceiling(profile);
-        let mut estimate = self.last_output.clamp(-ceiling, ceiling);
+        let (floor, ceiling) = self.last_cell_output_range(profile);
+        let mut estimate = self.last_output.clamp(floor, ceiling);
         let mut last_residual = 0.0_f32;
         for _ in 0..iterations {
             let (resonance_voltage, resonance_slope) = self.resonance_return.predict(
@@ -693,7 +779,7 @@ impl Cem3320Filter {
             last_residual = residual;
             let derivative = 1.0 + resonance_drive * resonance_slope.max(0.0) * path_slope.max(0.0);
             let correction = residual / derivative.max(1.0);
-            let next = (estimate - correction).clamp(-ceiling, ceiling);
+            let next = (estimate - correction).clamp(floor, ceiling);
             // Each iteration is a pure function of the estimate: the filter's
             // state is read, never written, until the solve is over. So once
             // an iteration hands back the very bits it was given, every
@@ -743,7 +829,7 @@ impl Cem3320Filter {
         profile: FilterProfile,
         resonance_coefficients: ResonanceReturnCoefficients,
     ) -> f32 {
-        let ceiling = output_ceiling(profile);
+        let (floor, ceiling) = self.last_cell_output_range(profile);
         // `g(x) = x - path(input - return(x) * drive)`, whose root is the
         // output the loop settles at, together with the slope Newton wants.
         let loop_error = |estimate: f32| -> (f32, f32) {
@@ -767,10 +853,10 @@ impl Cem3320Filter {
         };
 
         // Orient the bracket so `low` is the end whose error is negative.
-        let low_error = loop_error(-ceiling).0;
+        let low_error = loop_error(floor).0;
         let high_error = loop_error(ceiling).0;
         if low_error == 0.0 {
-            return -ceiling;
+            return floor;
         }
         if high_error == 0.0 {
             return ceiling;
@@ -780,15 +866,15 @@ impl Cem3320Filter {
             // bracket. Nothing observed reaches this; the rail closer to
             // closing the loop is the honest answer if anything does.
             return if low_error.abs() <= high_error.abs() {
-                -ceiling
+                floor
             } else {
                 ceiling
             };
         }
         let (mut low, mut high) = if low_error.is_sign_negative() {
-            (-ceiling, ceiling)
+            (floor, ceiling)
         } else {
-            (ceiling, -ceiling)
+            (ceiling, floor)
         };
 
         // Newton where it behaves, a bisection where it does not, and the
@@ -815,7 +901,7 @@ impl Cem3320Filter {
             }
             // The bracket is down to the last f32 steps, so nothing further
             // can move the answer.
-            if span.abs() <= ceiling * f32::EPSILON {
+            if span.abs() <= (ceiling - floor) * 0.5 * f32::EPSILON {
                 break;
             }
             let next = loop_error(estimate);
@@ -830,6 +916,13 @@ impl Cem3320Filter {
         estimate
     }
 
+    /// Output rails of the fourth cell about its own rest point.
+    fn last_cell_output_range(&self, profile: FilterProfile) -> (f32, f32) {
+        let ceiling = output_ceiling(profile);
+        let rest = self.operating_points[STAGE_COUNT - 1].rest_output_volts;
+        (-ceiling - rest, ceiling - rest)
+    }
+
     fn predict_path(&self, input: f32, coefficient: f32, profile: FilterProfile) -> (f32, f32) {
         let mut signal = input;
         let mut slope = 1.0;
@@ -838,7 +931,8 @@ impl Cem3320Filter {
                 signal *= interstage_passband_gain();
                 slope *= interstage_passband_gain();
             }
-            let (output, stage_slope) = stage.predict(signal, coefficient, profile);
+            let (output, stage_slope) =
+                stage.predict(signal, coefficient, profile, self.operating_points[index]);
             signal = output;
             slope *= stage_slope;
         }
@@ -903,7 +997,8 @@ fn resonance_gm_from_current(current: f32) -> f32 {
 }
 
 fn resonance_control_current_amps(value: f32) -> f32 {
-    value.clamp(0.0, 1.0) * FILTER_RESONANCE_CV_SPAN_VOLTS / RESONANCE_CONTROL_RESISTOR_OHMS
+    // 1/12 V per stored code: 10.000 V at the panel's code-120 ceiling.
+    rf_5_contract::hardware::normalized_control_volts(value) / RESONANCE_CONTROL_RESISTOR_OHMS
 }
 
 fn one_pole_coefficient(frequency_hz: f32, sample_rate: f32) -> f32 {
@@ -1081,6 +1176,53 @@ fn cell_output(value: f32, profile: FilterProfile) -> f32 {
         2.0 * profile.passband_second_harmonic * CELL_SECOND_HARMONIC_SHARE / reference_amplitude;
     let curved = symmetric + even_coefficient * symmetric * symmetric;
     curved.clamp(-ceiling, ceiling)
+}
+
+/// Cell output about its rest point, `g(offset + x) - g(offset)`.
+///
+/// Inside the knee's linear half the difference is formed analytically:
+/// signals far below one f32 step of the rest voltage (thermal noise seeding
+/// self-oscillation at high rates) would otherwise vanish in the subtraction.
+/// Where the knee bends the signal is volts and the direct form is exact.
+fn cell_output_at(value: f32, profile: FilterProfile, point: CellOperatingPoint) -> f32 {
+    let ceiling = output_ceiling(profile);
+    let offset = point.offset_volts;
+    let driven = value + offset;
+    let normalized = driven / ceiling;
+    if !point.linear_offset || normalized.abs() >= 0.5 {
+        return cell_output(driven, profile) - point.rest_output_volts;
+    }
+    let knee_driven = sixteenth_power(normalized);
+    let driven_root = sixteenth_knee_root(knee_driven);
+    // s(v) = v r(v) with r = (1 + u)^(-1/16); r1 - r2 = -(u1 - u2) / 16 to
+    // far below f32 resolution while u stays under 2^-16.
+    let symmetric_difference =
+        value * driven_root - offset * (knee_driven - point.knee_offset) * (1.0 / 16.0);
+    symmetric_difference
+        * (1.0 + point.even_rest_term + cell_even_coefficient(profile) * symmetric_difference)
+}
+
+fn sixteenth_power(normalized: f32) -> f32 {
+    let squared = normalized * normalized;
+    let fourth = squared * squared;
+    let eighth = fourth * fourth;
+    eighth * eighth
+}
+
+fn sixteenth_knee_root(excess: f32) -> f32 {
+    #[cfg(feature = "fast-math")]
+    {
+        crate::realtime_math::inverse_sixteenth_root_one_plus(excess)
+    }
+    #[cfg(not(feature = "fast-math"))]
+    {
+        reciprocal_power_of_two_root(1.0 + excess, 4)
+    }
+}
+
+fn cell_even_coefficient(profile: FilterProfile) -> f32 {
+    let reference_amplitude = output_ceiling(profile) * SPECIFIED_SIGNAL_FRACTION_OF_CLIP;
+    2.0 * profile.passband_second_harmonic * CELL_SECOND_HARMONIC_SHARE / reference_amplitude
 }
 
 fn output_ceiling(profile: FilterProfile) -> f32 {
@@ -1568,9 +1710,13 @@ mod tests {
             if index > 0 {
                 four_cells *= interstage_passband_gain();
             }
-            four_cells = cell_output(four_cells, profile);
+            four_cells = cell_output_at(four_cells, profile, filter.operating_points[index]);
         }
-        let five_cells = cell_output(four_cells * interstage_passband_gain(), profile);
+        let five_cells = cell_output_at(
+            four_cells * interstage_passband_gain(),
+            profile,
+            filter.operating_points[STAGE_COUNT - 1],
+        );
 
         assert!((predicted - four_cells).abs() < 1.0e-6);
         assert!((predicted - five_cells).abs() > 1.0e-4);
@@ -1579,7 +1725,43 @@ mod tests {
     #[test]
     fn populated_resonance_control_reaches_fifty_microamps() {
         assert_eq!(resonance_control_current_amps(0.0), 0.0);
-        assert!((resonance_control_current_amps(1.0) - 50.0e-6).abs() < 1.0e-10);
+        // Code 120 is the 10.000 V panel ceiling through R4414's 200 kohm.
+        assert!((resonance_control_current_amps(120.0 / 127.0) - 50.0e-6).abs() < 1.0e-9);
+    }
+
+    #[test]
+    fn cell_operating_points_follow_the_sd431_bias_network() {
+        // Typical I_REF (63 uA) on the published network: IN A rests high,
+        // then the 91k/240k cells alternate about the 6.9 V window centre.
+        let typical = FilterProfile {
+            reference_current_amps: 63.0e-6,
+            ..FILTER_PROFILES[2]
+        };
+        let offsets = cell_operating_points(typical).map(|point| point.offset_volts);
+        assert!((0.6..0.8).contains(&offsets[0]), "{offsets:?}");
+        assert!((-1.2..-0.9).contains(&offsets[1]), "{offsets:?}");
+        assert!((0.7..1.0).contains(&offsets[2]), "{offsets:?}");
+        assert!((-1.4..-1.1).contains(&offsets[3]), "{offsets:?}");
+        for profile in FILTER_PROFILES {
+            assert!((45.0e-6..=85.0e-6).contains(&profile.reference_current_amps));
+            for point in cell_operating_points(profile) {
+                // Every rest point stays inside its own swing window.
+                assert!(point.offset_volts.abs() < output_ceiling(profile) * 0.5);
+            }
+        }
+    }
+
+    #[test]
+    fn offset_cells_are_silent_at_rest_and_clip_asymmetrically() {
+        let profile = FILTER_PROFILES[2];
+        let point = cell_operating_points(profile)[3];
+        let mut stage = TptStage::default();
+        assert_eq!(stage.next(0.0, 0.5, profile, point), 0.0);
+        let ceiling = output_ceiling(profile);
+        let up = cell_output(100.0 + point.offset_volts, profile) - point.rest_output_volts;
+        let down = cell_output(-100.0 + point.offset_volts, profile) - point.rest_output_volts;
+        assert!((up + down).abs() > 0.5 * point.offset_volts.abs());
+        assert!(up <= ceiling - point.offset_volts + 0.1);
     }
 
     #[test]
@@ -1900,10 +2082,7 @@ mod tests {
                     for resonance_step in 0..=10 {
                         let resonance = resonance_step as f32 / 10.0;
                         for &drive in &[0.5_f32, 12.0] {
-                            let mut filter = Cem3320Filter {
-                                profile_index,
-                                ..Cem3320Filter::default()
-                            };
+                            let mut filter = Cem3320Filter::with_profile(profile_index);
                             for index in 0..900 {
                                 let input = libm::sinf(index as f32 * 0.0713) * drive;
                                 let coefficient = filter.coefficient_cache.stage_coefficient(
@@ -2128,13 +2307,13 @@ mod tests {
             let mut filter = Cem3320Filter::default();
             let settle_samples = sample_rate as usize;
             for _ in 0..settle_samples {
-                let _ = filter.next(0.0, CUTOFF_HZ, 1.0, sample_rate);
+                let _ = filter.next(0.0, CUTOFF_HZ, 120.0 / 127.0, sample_rate);
             }
 
-            let mut previous = filter.next(0.0, CUTOFF_HZ, 1.0, sample_rate);
+            let mut previous = filter.next(0.0, CUTOFF_HZ, 120.0 / 127.0, sample_rate);
             let mut rising_crossings = 0;
             for _ in 0..settle_samples {
-                let output = filter.next(0.0, CUTOFF_HZ, 1.0, sample_rate);
+                let output = filter.next(0.0, CUTOFF_HZ, 120.0 / 127.0, sample_rate);
                 rising_crossings += usize::from(previous <= 0.0 && output > 0.0);
                 previous = output;
             }

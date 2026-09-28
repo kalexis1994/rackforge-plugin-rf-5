@@ -7,15 +7,16 @@ platform. Every voice evaluates both CEM3340 candidates, hard sync, audio-rate
 Poly Mod and the dual CA3280 mixer at four times the host rate. Consecutive
 mixer and cutoff samples are averaged into each nonlinear four-pole CEM3320
 and final-CA3280 evaluation at twice the host rate; the intervening output is
-linearly reconstructed before the four-to-one voice decimator. The common five-input
-summer, master VCA and physical output coupling run at host rate. Reduced-range
+linearly reconstructed before the four-to-one voice decimator. The common
+voice/A-440 summing node, master VCA and physical output coupling run at host
+rate. Reduced-range
 elementary-function approximations keep this identical component portable;
 there is no architecture-specific DSP implementation or native fallback.
 
 Saw uses a short PolyBLEP reset at the four-times oscillator rate. Static pulse
 uses profile-scaled mipmapped Fourier reconstruction; moving pulse edges retain
-a two-host-sample PolyBLEP correction so the 1%/99%
-pulse-width endpoints remain controlled. Oscillator B's continuous asymmetric
+a two-host-sample PolyBLEP correction so 1%/99% and
+narrower pulse widths remain controlled. Oscillator B's continuous asymmetric
 triangle uses a local PolyBLAMP at each slope transition. For audio-rate PWM,
 the pulse-threshold correction width follows the relative velocity between the
 oscillator ramp and the moving comparator threshold; it is not frozen to
@@ -31,7 +32,7 @@ plugin, a platform selection or a user-facing quality mode.
 
 Saw uses the same short internal-rate PolyBLEP reset. Static pulse uses
 profile-scaled mipmapped Fourier reconstruction. Moving pulse edges retain a two-host-sample PolyBLEP
-correction so the 1%/99% endpoints remain controlled when both edges occupy
+correction so 1%/99% and narrower widths remain controlled when both edges occupy
 one short window. Oscillator B's continuous asymmetric triangle instead uses a periodic
 PolyBLAMP over one internal sample at each slope transition. The correction
 changes only the corner neighborhoods and precedes both its audio and Poly Mod
@@ -68,7 +69,7 @@ Numerical regressions verify:
 
 An in-crate radix-2 spectral harness additionally evaluates complete
 oscillator-plus-decimator renders at 44.1, 48, 96 and 192 kHz. Four pitch
-regions cover saw, square, triangle and the 1%/99% pulse endpoints; periodic
+regions cover saw, square, triangle and 1%/99% narrow pulses; periodic
 fractional hard sync is covered at three pitch regions. Energy outside the
 mathematically valid harmonic bins must remain below -40 dB relative to total
 AC energy.

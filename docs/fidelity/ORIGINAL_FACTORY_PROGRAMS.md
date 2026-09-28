@@ -86,9 +86,22 @@ about 0.1 dB during the first isolated attack; the earlier RF-5 transfer left
 the octave about 30 dB below the fundamental.
 
 RF-5 keeps the exact record and corrects the shared direct-envelope U422/U433
-device boundary instead of adding a program-specific EQ or changing the
-stored amount. The corrected factory render places the same bands within
-about 1.2 dB, and a spectral regression test protects that documented attack.
+circuit instead of adding a program-specific EQ, a fitted gain or changing the
+stored amount. R452 had been read as 475 kohm rather than its compactly
+printed 47.5 kohm, and the CA3280 linearization did not follow the data
+sheet's Figure 3A; with both corrected, amount 34 moves cutoff by
+approximately 1.5-1.6 octaves.
+
+This program is an open discrepancy. With the ROM-confirmed filter anchor,
+U451's doubled triangle and the CEM3340 pulse-width law, RF-5 places the attack
+octave about 33 dB below the fundamental, and still only about 19 dB below it
+with the filter fully open (amount or cutoff at maximum). The remaining gap is
+therefore in the synced oscillator A, its Poly Mod drive or the mixer balance
+against oscillator B's pulse and triangle, not in the filter. The earlier pass
+of the spectral test relied on the former 1-99% pulse-width law (46.5% at PW A
+code 59 instead of about 51%) and a half-level triangle, both now corrected
+from the schematic; the test is kept but ignored until the oscillator-section
+cause is identified.
 
 The short articulation in the reference performance is a separate front-panel
 choice. The patch sheet recommends switching RELEASE off and using the
@@ -135,12 +148,10 @@ Sequential's patch sheet explicitly identifies that detuning as part of the
 sound and recommends detached playing. The Synthmania hardware performance
 lets most isolated notes decay under the held-key trajectory before key-up,
 so it is not a direct measurement of the programmed Release time. RF-5 keeps
-the exact stored values instead of shortening this one program. The shared
-CEM3310 charge and discharge laws are calibrated globally from the documented
-positions 5, 6 and 10. Interpreting the service manual's audible one-second
-Release test as a discharge observation rather than an attack threshold moves
-the Toy Piano -50 dB point under a 50 ms diagnostic gate from about 4.34 to
-1.89 seconds without removing its detuned resonant motion.
+the exact stored values instead of shortening this one program. Its stored codes
+reach the CEM3310 through the SD430 time network, so Release 89 and Decay 75
+follow the same exponential code law as every other program rather than a
+per-program or panel-landmark calibration.
 
 ## Program 1-7 electrical cross-check
 
@@ -159,13 +170,15 @@ upper-harmonic whistle. SD333 instead shows one Q304 collector bus connected to
 the five parallel voice-card IABC inputs. The same fanout is present for Q301,
 Q303, Q302 and Q306. Dividing each total current at that physical boundary
 removes the plateau without changing the official 24-byte program or adding a
-Sync-I-specific preset override. The remaining typical-equation sweep was
-still longer and brighter than the independently recorded hardware. Because
-the CA3280 sheet does not specify the exact populated U422 transconductance,
-RF-5 applies a documented 0.84 reference gain at that physical device
-boundary rather than rewriting the official amount byte. A regression test
-holds the program's 86/127 amount below U431's 12 V boundary on every
-deterministic voice profile.
+Sync-I-specific preset override. The remaining sweep was still longer and
+brighter than the independently recorded hardware because the former U422
+transfer multiplied transconductance by the diode impedance and programmed ID
+across the full 30 V. The CA3280 data sheet's Figure 3A law,
+`Iout = 0.776 Is IABC / ID`, and the ID pin's 28.8 V span replace that
+product and the 0.84 reference gain once applied here, so no fitted gain
+remains and the official amount byte is unchanged. A regression test holds the
+program's code-86 peak Poly Mod bus at 4.3-4.9 V, well below U431's 12 V
+boundary, on every deterministic voice profile.
 
 The same audit corrected a separate topology error: U446 receives oscillator
 B's saw output on SD431, just as the CEM3340 Figure 5 circuit requires. Sync is

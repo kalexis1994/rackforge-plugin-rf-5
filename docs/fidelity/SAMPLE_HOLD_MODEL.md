@@ -100,10 +100,10 @@ below the documented 0.5 mV service ceiling. Accumulation uses double
 precision so sub-float increments are not silently lost at high held voltages.
 
 These rates and polarities are a conservative component population for
-testing, not measurements from an original unit. Unanchored common normalized
-controls provisionally use a 5 V span. Filter Cutoff, Filter Resonance and the
-three amount cells use the admitted 10 V operating limit; the three audio-level
-cells share that limit. The amount cells subsequently cross Q301/Q303/Q304,
+testing, not measurements from an original unit. Every common cell holds the
+one DAC scale of exactly 1/12 V per stored code: 10.000 V at the trimmed
+code-120 panel ceiling and 127/12 V (10.58 V) at code 127, so no destination
+keeps a separate provisional span. The amount cells subsequently cross Q301/Q303/Q304,
 while oscillator A, oscillator B and noise levels cross SD333 Q306/Q302/Q305
 and their distinct grounded-base 2N4250 emitter networks.
 `ControlVoltageDestination` remains the stable 38-cell vocabulary, while

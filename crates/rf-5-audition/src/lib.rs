@@ -45,49 +45,58 @@ pub struct RenderMetrics {
 /// Every scene's render, folded into one number. See
 /// `every_scene_renders_what_it_has_always_rendered`, which is the only
 /// thing that reads it.
+///
+/// All scenes moved together with the Rev 3 schematic audit: the 1/12 V DAC
+/// step on every seven-bit CV, the SD430 envelope-time law, U451's triangle
+/// shift, the Figure 3A envelope-amount OTA law with R452 = 47.5k, the SD334
+/// LFO, wheel, glide and summer networks, the output coupling corner, the
+/// ID-referred final/master CA3280 laws, the loaded voice summing node with
+/// its A-440 branch, the CEM3320 cell operating points, the V8.1
+/// ROM-confirmed filter anchor, the measured-unit LFO chip constants and the
+/// MOD wheel's shared wheel-assembly travel.
 #[cfg(test)]
 const FINGERPRINTS: &[(&str, u64)] = &[
-    ("01_baseline_warm_chords", 0x43ab464ea987673f),
-    ("02_filter_drive", 0x8a5c862696e146d1),
-    ("03_filter_resonance", 0xf4d1603ce875ab60),
-    ("04_wheel_vibrato", 0xb4c71c01c8143c5b),
-    ("05_wheel_pwm", 0xda8f6460f7fda105),
-    ("06_wheel_filter", 0xd9ff3f525c12d66e),
-    ("07_envelope_punch", 0x2b434345fe85d1c7),
-    ("08_envelope_slow", 0x8f9cc825a98e2422),
-    ("09_ca3280_drive", 0x4a269002b43f919c),
-    ("10_common_noise_vca", 0x4bc622ef02e84b59),
-    ("11_poly_mod_oscillator_b", 0x7ef5aca6d11aa5c2),
+    ("01_baseline_warm_chords", 0x8c20d80f6a813867),
+    ("02_filter_drive", 0x51f0cc1902ce450e),
+    ("03_filter_resonance", 0x9fd9cd4532ce12da),
+    ("04_wheel_vibrato", 0x43afcdcdde5d58f0),
+    ("05_wheel_pwm", 0x529e8c431170860c),
+    ("06_wheel_filter", 0xb0d84bf693b00d0c),
+    ("07_envelope_punch", 0xc6a9825c928fc449),
+    ("08_envelope_slow", 0xefd95b2195517ab2),
+    ("09_ca3280_drive", 0xbc5c826c5c467d90),
+    ("10_common_noise_vca", 0xd2d39aae369167f5),
+    ("11_poly_mod_oscillator_b", 0x3f66dd25adafc312),
     // This scene moved once on its own account: `solve_feedback_bracketed`
     // changed it completely while leaving all forty factory programs
     // untouched. It drives the filter envelope into Poly-Mod hard enough to
     // pin the cutoff at its clamp with the resonance up, which is where
     // Newton alone had been leaving the loop unsolved, so it is the one
     // scene that repair was expected to reach.
-    ("12_poly_mod_filter_envelope", 0x581e1a7b5442f1c2),
-    ("13_wheel_noise_filter", 0x4112878a25cc1d74),
-    ("14_cem3340_hard_sync", 0x2be559f7f0d37d18),
-    ("15_voice_assignment", 0x0ad217f76a66dc8e),
-    ("16_unison_low_note_legato", 0x72a1db97cdb64f0a),
-    ("17_lfo_slow_range", 0xd185e8292decf735),
-    ("18_lfo_fast_range", 0xbd6fb7d203d305d3),
-    ("19_unison_glide_circuit", 0xa9c559c13c8bf779),
-    ("20_scale_mode_just_c", 0xa6335911dffd07f5),
-    ("21_release_switch_off", 0x37d12adc0ba3309b),
-    ("22_pitch_wheel_deadband", 0x1e6e6775ef32248b),
-    ("23_oscillator_b_fine_zero", 0x36e392c48114c544),
-    ("24_oscillator_b_fine_semitone", 0x99df68080bbfee3e),
-    ("25_pulse_width_one_percent", 0x561422ae3e677df5),
-    ("26_pulse_width_fifty_percent", 0x429653adaa0bbf15),
-    ("27_pulse_width_ninety_nine_percent", 0xe5450eea3ba60b6e),
-    ("28_cem3340_triangle", 0x650764f52ba6e693),
-    ("29_audio_rate_pwm", 0xdf8c3944340e5c51),
-    ("30_filter_slew_transient", 0xd09432eebd35382b),
-    ("31_envelope_phase_steps", 0xbca1e5b08b2e6c70),
-    ("32_lfo_saw_unipolar", 0x116d71e7cfb39957),
-    ("33_lfo_square_unipolar", 0xbbe9d8dd429c1fff),
-    ("34_baseline_pad_mod_wheel_sweep", 0x78b0e1b13733e57f),
-    ("35_chord_under_a_melody", 0x0fe8193b8a220489),
+    ("12_poly_mod_filter_envelope", 0xd60f14df9e182e75),
+    ("13_wheel_noise_filter", 0x576c8eb0bbcdabf4),
+    ("14_cem3340_hard_sync", 0x4807d0d162d89d22),
+    ("15_voice_assignment", 0x641fc388a369efb8),
+    ("16_unison_low_note_legato", 0x8ea1f0fea93b67ae),
+    ("17_lfo_slow_range", 0xe4b7fed14ffc4de2),
+    ("18_lfo_fast_range", 0x0e97a436c502d4ed),
+    ("19_unison_glide_circuit", 0x7fbc344ca36855d9),
+    ("20_scale_mode_just_c", 0x8fffed9a4642a2b1),
+    ("21_release_switch_off", 0x6c159a7e4a078b49),
+    ("22_pitch_wheel_deadband", 0x66be5b82f0f90f4a),
+    ("23_oscillator_b_fine_zero", 0x12e9e1a43f96478f),
+    ("24_oscillator_b_fine_semitone", 0x526f0323111e0bb5),
+    ("25_pulse_width_one_percent", 0x921d25f0185e0f25),
+    ("26_pulse_width_fifty_percent", 0xc4892452746bbea8),
+    ("27_pulse_width_ninety_nine_percent", 0x99a3d6ecea7bc3eb),
+    ("28_cem3340_triangle", 0xfd5581a9dad75993),
+    ("29_audio_rate_pwm", 0x51dbcc1d354f2c90),
+    ("30_filter_slew_transient", 0x7b5b5a5caab2d360),
+    ("31_envelope_phase_steps", 0xdbf82b4d922b4bb3),
+    ("32_lfo_saw_unipolar", 0x5a4d8480d079e293),
+    ("33_lfo_square_unipolar", 0x87ce764d2362f21d),
+    ("34_baseline_pad_mod_wheel_sweep", 0x71c0f954c63a6db9),
+    ("35_chord_under_a_melody", 0x3e81c694f3b31cfe),
 ];
 
 pub fn render_suite(output_directory: &Path) -> io::Result<Vec<RenderMetrics>> {
@@ -112,8 +121,8 @@ fn validate_metrics(metrics: &RenderMetrics) -> io::Result<()> {
     }
     if metrics.peak >= 0.999 || metrics.clipped_samples != 0 {
         return Err(io::Error::other(format!(
-            "scene {} exhausted host headroom",
-            metrics.id
+            "scene {} exhausted host headroom (peak {}, clipped {})",
+            metrics.id, metrics.peak, metrics.clipped_samples
         )));
     }
     if metrics.dc.abs() >= 0.02 {
@@ -491,7 +500,7 @@ fn scenes() -> Vec<Scene> {
         Scene {
             id: "25_pulse_width_one_percent",
             program: "audition-pulse-width-minimum",
-            description: "Oscillator A pulse at the documented one-percent panel endpoint",
+            description: "Oscillator A pulse at code 1, about one percent before the DC endpoint",
             scale_codes: EQUAL_TEMPERAMENT,
             events: chord_sequence(&[(0.20, 5.20, &[45, 52, 57])]),
         },
@@ -505,7 +514,7 @@ fn scenes() -> Vec<Scene> {
         Scene {
             id: "27_pulse_width_ninety_nine_percent",
             program: "audition-pulse-width-maximum",
-            description: "Oscillator A pulse at the documented ninety-nine-percent panel endpoint",
+            description: "Oscillator A pulse at code 113, about ninety-nine percent before the DC endpoint",
             scale_codes: EQUAL_TEMPERAMENT,
             events: chord_sequence(&[(0.20, 5.20, &[45, 52, 57])]),
         },

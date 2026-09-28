@@ -32,7 +32,12 @@ pub const CONTROL_DAC_PHYSICAL_BITS: u8 = 16;
 pub const CONTROL_DAC_WRITABLE_BITS: u8 = 14;
 pub const GENERAL_CONTROL_VOLTAGE_BITS: u8 = 7;
 pub const OSCILLATOR_CONTROL_VOLTAGE_BITS: u8 = 14;
-pub const DAC_FULL_SCALE_VOLTS: f32 = 10.67;
+/// SD332's DAC71 steps seven-bit CVs by 83.33 mV (TM1000D.2 p. 2-8: code
+/// 3C(H) is 5.000 V; trim 4-14 sets 60 codes to exactly 5.000 V), so the full
+/// 128-code scale is 32/3 V. Trim 4-14 also sets the pot ADC so a fully
+/// clockwise knob reads 10.000 V, i.e. code 120.
+pub const DAC_FULL_SCALE_VOLTS: f32 = 32.0 / 3.0;
+pub const PANEL_FULL_SCALE_POT_CODE: u8 = 120;
 pub const SOFTWARE_CONTROL_VOLTAGE_LIMIT_VOLTS: f32 = 10.0;
 
 /// V8.1 complements the six programmed envelope time pots around 0x7a before
@@ -279,6 +284,27 @@ pub fn quantize_analog_pot(value: f32) -> f32 {
 /// Convert a normalized host value to the seven-bit code compared by V8.1.
 pub fn analog_pot_code(value: f32) -> u8 {
     (quantize_analog_pot(value) * (ANALOG_POT_STEPS - 1) as f32) as u8
+}
+
+/// Held S/H voltage produced by writing a stored seven-bit pot code through
+/// the common DAC: exactly 1/12 V per code, 10.000 V at the panel's code 120.
+pub fn general_control_volts(value: f32) -> f32 {
+    f32::from(analog_pot_code(value)) * general_control_volts_per_code()
+}
+
+/// Continuous form of [`general_control_volts`] for values that are already
+/// held or slewing on an S/H cell: normalized 1.0 is stored code 127.
+pub fn normalized_control_volts(value: f32) -> f32 {
+    let value = if value.is_finite() {
+        value.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    value * (ANALOG_POT_STEPS - 1) as f32 * general_control_volts_per_code()
+}
+
+pub fn general_control_volts_per_code() -> f32 {
+    DAC_FULL_SCALE_VOLTS / (1_u32 << GENERAL_CONTROL_VOLTAGE_BITS) as f32
 }
 
 /// Hardware multiplexer order used when the CPU scans the 24 analog controls.
@@ -749,8 +775,9 @@ mod tests {
 
     #[test]
     fn one_pot_code_exceeds_the_documented_comparator_window() {
+        // Trim 4-14 places the fully clockwise 5 V pot at code 120.
         let millivolts_per_code =
-            PANEL_POT_FULL_SCALE_VOLTS * 1_000.0 / (ANALOG_POT_STEPS - 1) as f32;
+            PANEL_POT_FULL_SCALE_VOLTS * 1_000.0 / f32::from(PANEL_FULL_SCALE_POT_CODE);
         assert!(millivolts_per_code > ADC_WINDOW_HYSTERESIS_MILLIVOLTS);
         assert_eq!(PANEL_POT_CONFIRMING_STEPS, 2);
         for code in 0..ANALOG_POT_STEPS as u8 {

@@ -2,8 +2,10 @@
 //!
 //! The centred R1 wiper is trimmed to 0 V at P301-7. Anti-parallel 1N914
 //! diodes D315/D316 couple that node to the tune summer with a soft silicon
-//! knee. The 100 kohm R3100 shunt, R1's position-dependent source resistance
-//! and downstream 1 Mohm / 100 kohm path all load that junction.
+//! knee (SD334 labels the pair "PW DEADBAND"). The 100 kohm R3100 shunt, R1's
+//! position-dependent source resistance and the downstream R3102 100 kohm /
+//! R378 100 kohm unity tune-summer path all load that junction. The 1 Mohm
+//! R377 belongs to MASTER TUNE, not to the wheel.
 
 pub const RANGE_SEMITONES: f32 = 7.0;
 
@@ -11,9 +13,12 @@ const SUPPLY_VOLTS: f32 = 15.0;
 const WHEEL_POT_OHMS: f32 = 100_000.0;
 const POSITIVE_RAIL_SERIES_OHMS: f32 = 4_700.0;
 const WIPER_SHUNT_OHMS: f32 = 100_000.0;
-const MASTER_TUNE_INPUT_OHMS: f32 = 1_000_000.0;
-const MASTER_TUNE_FEEDBACK_OHMS: f32 = 100_000.0;
+const WHEEL_SUMMER_INPUT_OHMS: f32 = 100_000.0;
+#[cfg(test)]
+const TUNE_SUMMER_FEEDBACK_OHMS: f32 = 100_000.0;
+#[cfg(test)]
 const VOLTS_PER_OCTAVE: f32 = 1.0;
+#[cfg(test)]
 const SEMITONES_PER_OCTAVE: f32 = 12.0;
 #[cfg(test)]
 const SERVICE_CENTER_TOLERANCE_VOLTS: f32 = 0.05;
@@ -33,18 +38,25 @@ const TRACK_HALF_SPAN_VOLTS: f32 =
 
 // The owner's-manual approximately-one-fifth span fixes mechanical travel,
 // not an invented electronic gain. Solving the complete nominal network for
-// seven semitones places each wheel endpoint 26.978% of the track from centre.
-const MECHANICAL_HALF_TRAVEL: f32 = 0.269_783_7;
+// seven semitones places each wheel endpoint 4.834% of the track from centre.
+// Through the unity 100k summer the diode drop is a large part of the wiper
+// voltage, which is the designed deadband around the wheel's centre. The MOD
+// wheel is the same R-207 pot on the same wheel and bracket parts, so it
+// shares this travel.
+pub(crate) const MECHANICAL_HALF_TRAVEL: f32 = 0.048_335_86;
+#[cfg(test)]
 const FULL_SCALE_SUMMER_CURRENT_AMPS: f32 =
-    RANGE_SEMITONES / SEMITONES_PER_OCTAVE * VOLTS_PER_OCTAVE / MASTER_TUNE_FEEDBACK_OHMS;
+    RANGE_SEMITONES / SEMITONES_PER_OCTAVE * VOLTS_PER_OCTAVE / TUNE_SUMMER_FEEDBACK_OHMS;
 
 pub fn normalized_output(value: u16) -> f32 {
     let input = midi_normalized(value);
     if input == 0.0 {
         0.0
     } else {
+        // Normalizing against the same solved network keeps both mechanical
+        // endpoints exactly at the documented span.
         let current = wheel_current_amps(input.abs());
-        let normalized = (current / FULL_SCALE_SUMMER_CURRENT_AMPS).clamp(0.0, 1.0);
+        let normalized = (current / wheel_current_amps(1.0)).clamp(0.0, 1.0);
         input.signum() * normalized
     }
 }
@@ -55,11 +67,11 @@ fn wheel_current_amps(normalized_magnitude: f32) -> f32 {
     let source_resistance_ohms = position * (1.0 - position) * WHEEL_POT_OHMS;
 
     let mut low = 0.0;
-    let mut high = source_volts / MASTER_TUNE_INPUT_OHMS;
+    let mut high = source_volts / WHEEL_SUMMER_INPUT_OHMS;
     for _ in 0..32 {
         let current = (low + high) * 0.5;
         let diode_volts = diode_pair_voltage(current);
-        let wiper_volts = current * MASTER_TUNE_INPUT_OHMS + diode_volts;
+        let wiper_volts = current * WHEEL_SUMMER_INPUT_OHMS + diode_volts;
         let required_source_volts =
             wiper_volts + source_resistance_ohms * (wiper_volts / WIPER_SHUNT_OHMS + current);
         if required_source_volts < source_volts {
@@ -107,7 +119,11 @@ mod tests {
             assert!((positive + negative).abs() < 2.0e-4);
         }
         assert!(normalized_output(8_192 + 256) < 0.01);
-        assert!(normalized_output(8_192 + 4_096) > 0.4);
+        // PW DEADBAND: a fifth of the travel moves pitch by under 0.2
+        // semitone, half of it by about two semitones.
+        assert!(normalized_output(8_192 + 1_638) * RANGE_SEMITONES < 0.2);
+        let half = normalized_output(8_192 + 4_096) * RANGE_SEMITONES;
+        assert!((1.9..=2.5).contains(&half), "{half}");
     }
 
     #[test]
@@ -119,6 +135,12 @@ mod tests {
         let negative_cents = normalized_output(8_192 - midi_tolerance) * RANGE_SEMITONES * 100.0;
         assert!(positive_cents < 0.5);
         assert!(negative_cents > -0.5);
+    }
+
+    #[test]
+    fn solved_travel_reaches_seven_semitones_through_the_unity_summer() {
+        let full = wheel_current_amps(1.0);
+        assert!((full / FULL_SCALE_SUMMER_CURRENT_AMPS - 1.0).abs() < 1.0e-4);
     }
 
     #[test]
