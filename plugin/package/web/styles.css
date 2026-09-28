@@ -1,3 +1,10 @@
+/* The alphanumeric display face (SIL OFL 1.1, see NOTICE.md). */
+@font-face {
+  font-family: "Segment14";
+  src: url("assets/Segment14.otf") format("opentype");
+  font-display: swap;
+}
+
 :root {
   color: #f3f1e9;
   background: #0c0d0f;
@@ -75,8 +82,7 @@ button { -webkit-tap-highlight-color: transparent; }
 }
 
 .boot-message,
-.hardware-panel.loading,
-.program-library.waiting {
+.hardware-panel.loading {
   min-height: 250px;
   display: grid;
   place-items: center;
@@ -152,20 +158,14 @@ button { -webkit-tap-highlight-color: transparent; }
     inset 0 -1px rgba(31, 8, 2, 0.4);
 }
 
-.wood-rail-top {
-  --wood-y: 14%;
-  height: clamp(14px, 1.7vw, 26px);
-  border-bottom: 2px solid #1b0904;
-}
-
-.wood-rail-middle {
-  --wood-y: 51%;
+/* The head of the case: the nameplate on its walnut rail. */
+.wood-rail-plaque {
+  --wood-y: 30%;
   min-height: clamp(76px, 7vw, 108px);
   padding: clamp(9px, 0.9vw, 14px) clamp(18px, 2vw, 32px);
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  border-top: 2px solid #1c0a04;
+  justify-content: center;
   border-bottom: 2px solid #1a0803;
 }
 
@@ -212,73 +212,131 @@ button { -webkit-tap-highlight-color: transparent; }
   letter-spacing: 1.55px;
 }
 
+/* Under the panel only a thin strip of the case shows. */
 .wood-rail-bottom {
   --wood-y: 86%;
-  height: clamp(17px, 2vw, 30px);
+  flex: none;
+  height: clamp(8px, 0.8vw, 12px);
   border-top: 2px solid #1a0803;
 }
 
 .panel-tabs,
 .hardware-panel,
-.program-library {
+.program-memory {
   position: relative;
   z-index: 2;
   margin-right: clamp(15px, 1.6vw, 25px);
   margin-left: clamp(15px, 1.6vw, 25px);
 }
 
-.program-library small {
+/* The program memory under the nameplate: the maker, and RackForge's
+   <rf-program-select> keyed like the panel's silver switches. */
+.program-memory {
+  padding: 10px 14px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas: "identity selector";
+  align-items: center;
+  gap: 14px;
+  border-right: 1px solid #050608;
+  border-left: 1px solid #050608;
+  border-bottom: 1px solid #050608;
+  background:
+    var(--panel-sheen),
+    var(--panel-grain),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), rgba(0, 0, 0, 0.04)),
+    var(--panel-base);
+}
+
+.program-memory small {
   color: #d8d5ca;
   font-size: 8px;
   font-weight: 800;
   letter-spacing: 0.16em;
   text-transform: uppercase;
 }
-.memory-display {
-  width: 112px;
-  min-width: 112px;
-  padding: 6px 9px 8px;
-  display: grid;
-  justify-items: center;
-  gap: 4px;
-  border: 1px solid #030303;
-  background:
-    linear-gradient(180deg, rgba(255, 40, 35, 0.025), transparent),
-    #08090b;
+
+/* The maker, one word to a line, where the nameplate above names the
+   instrument. */
+.program-identity {
+  grid-area: identity;
+  padding-right: 14px;
+  border-right: 1px solid rgba(242, 240, 231, 0.18);
+}
+
+.program-identity small {
+  display: block;
+  width: min-content;
+  line-height: 1.5;
+}
+
+.program-selector-slot {
+  grid-area: selector;
+  min-width: 0;
+  display: flex;
+}
+
+#program-selector {
+  flex: 1 1 auto;
+  --rf-ps-font: 500 13px/1.3 "Arial Narrow", "Roboto Condensed", "Segoe UI", sans-serif;
+  --rf-ps-color: var(--ivory);
+  --rf-ps-muted: var(--muted);
+  --rf-ps-accent: var(--red-hot);
+  --rf-ps-background: #08090b;
+  --rf-ps-border: #030303;
+  --rf-ps-surface: var(--panel-raised);
+  --rf-ps-surface-color: var(--ivory);
+  --rf-ps-radius: 1px;
+  --rf-ps-height: 44px;
+  --rf-ps-backdrop: rgba(4, 4, 6, 0.72);
+}
+
+#program-selector::part(name) {
   box-shadow:
     inset 0 1px 4px rgba(0, 0, 0, 0.9),
     0 1px rgba(255, 255, 255, 0.06);
-  text-align: center;
 }
 
-.memory-display small {
-  font-size: 6.5px;
-  letter-spacing: 0.1em;
-  white-space: nowrap;
+/* The name, with its bank and number, lit as a red LED display. */
+#program-selector::part(name-text) {
+  color: #ff342f;
+  font-family: "Segment14", monospace;
+  font-size: 19px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 6px rgba(255, 47, 42, 0.55);
 }
 
-.seven-segment-display {
-  width: 72px;
-  height: 55px;
-  display: block;
-  overflow: visible;
+#program-selector::part(number),
+#program-selector::part(bank),
+#program-selector::part(bank-chip) {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
 }
 
-.seven-segment-bezel {
-  fill: #050607;
-  stroke: #191a1d;
-  stroke-width: 1;
+#program-selector::part(step) {
+  color: #232426;
+  background:
+    linear-gradient(105deg, rgba(255, 255, 255, 0.5), transparent 34%),
+    linear-gradient(180deg, #d8d7d0, #9d9c97);
+  border: 1px solid #08090a;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.55),
+    0 2px 0 #030303;
 }
 
-.seven-segment {
-  fill: #2b0908;
-  opacity: 0.78;
+#program-selector::part(step):active {
+  background: linear-gradient(180deg, #aaa9a3, #d8d7d0);
+  box-shadow: inset 0 2px 2px rgba(0, 0, 0, 0.16);
+  transform: translateY(2px);
 }
 
-.seven-segment.on {
-  fill: #ff342f;
-  opacity: 1;
-  filter: drop-shadow(0 0 2.4px rgba(255, 47, 42, 0.72));
+#program-selector::part(dialog) {
+  border: 1px solid #050608;
+  border-top: 3px solid var(--red);
+  box-shadow: 0 24px 76px rgba(0, 0, 0, 0.58);
 }
 
 .panel-tabs {
@@ -352,16 +410,17 @@ button { -webkit-tap-highlight-color: transparent; }
 
 .panel-tab:focus-visible,
 .hardware-button:focus-visible,
-.program-button:focus-visible,
 .knob-shell:focus-within {
   outline: 2px solid var(--amber);
   outline-offset: -2px;
 }
 
+/* The panel takes whatever height the window has beyond its own, so a tall
+   surface ends in black panel over the thin rail, not in a band of wood. */
 .hardware-panel {
   --hardware-panel-height: 590px;
-  height: var(--hardware-panel-height);
-  flex: 0 0 var(--hardware-panel-height);
+  min-height: var(--hardware-panel-height);
+  flex: 1 0 var(--hardware-panel-height);
   overflow: hidden;
   border: 1px solid #050608;
   border-top: 0;
@@ -861,8 +920,7 @@ button { -webkit-tap-highlight-color: transparent; }
   filter: brightness(0.9) drop-shadow(0 1px 0 rgba(0, 0, 0, 0.42));
 }
 
-.hardware-button.rackforge-context-press:active,
-.program-button.rackforge-context-press:active { transform: none; }
+.hardware-button.rackforge-context-press:active { transform: none; }
 
 .bridge-error {
   margin: 0;
@@ -877,104 +935,15 @@ button { -webkit-tap-highlight-color: transparent; }
   font-size: 12px;
 }
 
-.program-library {
-  flex: 1 0 auto;
-  padding: 19px 20px 24px;
-  border-right: 1px solid #050608;
-  border-left: 1px solid #050608;
-  background:
-    var(--panel-sheen),
-    var(--panel-grain),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.018), rgba(0, 0, 0, 0.04)),
-    var(--panel-base);
-}
-
-.program-library header {
-  margin-bottom: 14px;
-  display: grid;
-  grid-template-columns: minmax(170px, 1fr) auto auto;
-  align-items: center;
-  gap: 18px;
-}
-
-.program-library h2 {
-  margin: 3px 0 0;
-  color: var(--ivory);
-  font-size: 18px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-}
-
-.program-count {
-  color: var(--muted);
-  font-size: 10px;
-  text-align: right;
-}
-
-.program-library h3 {
-  margin: 17px 0 8px;
-  padding-bottom: 5px;
-  color: #dedbd1;
-  border-bottom: 1px solid rgba(242, 240, 231, 0.48);
-  font-size: 9px;
-  letter-spacing: 0.13em;
-}
-
-.program-grid {
-  display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.program-button {
-  min-width: 0;
-  min-height: 46px;
-  padding: 6px 8px;
-  display: grid;
-  grid-template-columns: 12px minmax(0, 1fr);
-  align-items: center;
-  gap: 5px;
-  border: 1px solid #08090a;
-  border-radius: 1px;
-  color: #232426;
-  background:
-    linear-gradient(105deg, rgba(255, 255, 255, 0.5), transparent 34%),
-    linear-gradient(180deg, #d8d7d0, #9d9c97);
-  box-shadow:
-    inset 0 1px rgba(255, 255, 255, 0.55),
-    0 2px 0 #030303;
-  cursor: pointer;
-  text-align: left;
-}
-
-.program-button span {
-  color: #59100e;
-  font-size: 10px;
-}
-
-.program-button strong {
-  overflow: hidden;
-  font-size: 9px;
-  font-weight: 800;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.program-button.active {
-  color: #111214;
-  background: linear-gradient(180deg, #aaa9a3, #d8d7d0);
-  box-shadow:
-    inset 0 2px 2px rgba(0, 0, 0, 0.16),
-    0 0 0 #030303;
-  transform: translateY(2px);
-}
-
-.program-button.active span {
-  color: var(--red-hot);
-  text-shadow: 0 0 6px var(--red-hot);
-}
-
 @media (max-width: 1260px) {
+  /* Wide, the panel holds the tallest section's height so the page does not
+     jump between tabs. Once the groups stack, the page scrolls anyway, and
+     each section takes its own height. */
+  .hardware-panel {
+    min-height: 0;
+    flex: 1 0 auto;
+  }
+
   .panel-surface {
     grid-template-columns: 1fr;
     grid-template-areas: none;
@@ -1025,15 +994,9 @@ button { -webkit-tap-highlight-color: transparent; }
   .group-scale .control-grid {
     grid-template-columns: repeat(6, minmax(76px, 1fr));
   }
-
-  .program-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 }
 
 @media (max-width: 850px) {
-  .hardware-panel {
-    --hardware-panel-height: 840px;
-  }
-
   .panel-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 
   .panel-tab:nth-child(n + 4) { border-top: 1px solid #34353b; }
@@ -1058,28 +1021,20 @@ button { -webkit-tap-highlight-color: transparent; }
   }
 
   .group-scale .control-grid { grid-template-columns: repeat(4, minmax(74px, 1fr)); }
-
-  .program-library header { grid-template-columns: 1fr 1fr; }
-  .program-count { display: none; }
-  .program-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 @media (max-width: 560px) {
   .wood-rail,
   .panel-tabs,
   .hardware-panel,
-  .program-library {
+  .program-memory {
     margin-right: 10px;
     margin-left: 10px;
   }
 
   .panel-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
-  .hardware-panel {
-    --hardware-panel-height: 1400px;
-  }
-
-  .wood-rail-middle {
+  .wood-rail-plaque {
     min-height: 76px;
     padding: 9px 12px;
   }
@@ -1109,13 +1064,22 @@ button { -webkit-tap-highlight-color: transparent; }
 
   .group-scale .control-grid { grid-template-columns: repeat(3, minmax(74px, 1fr)); }
 
-  .program-library {
-    padding-right: 10px;
-    padding-left: 10px;
+  /* On a phone the maker takes the first line and the selector the second. */
+  .program-memory {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "identity"
+      "selector";
+    gap: 8px;
+    padding: 8px;
   }
 
-  .program-library header { grid-template-columns: 1fr; }
-  .program-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .program-identity {
+    padding-right: 0;
+    border-right: 0;
+  }
+
+  .program-identity small { width: auto; }
 }
 
 @media (prefers-reduced-motion: reduce) {

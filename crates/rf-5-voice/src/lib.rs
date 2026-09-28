@@ -74,13 +74,21 @@ const FILTER_OVERSAMPLING: usize = 1;
     feature = "held-filter-two-times"
 )))]
 const FILTER_OVERSAMPLING: usize = 4;
-const FILTER_MINIMUM_LOG2_HZ: f32 = 4.031_359_7;
-const FILTER_PANEL_OCTAVES: f32 = 10.0;
+// The panel CV is the ordinary 1/12 V-per-code DAC output, so one stored code
+// is one semitone of 1 V/octave cutoff. Service trim 4-20 (Unison, FILT CUTOFF
+// S/H at 2.000 V) tunes each filter to 440 Hz on key A3 and 880 Hz on A4, the
+// highest A of the C0-C5 keyboard: 5.75 V in total, so 0 V is 8.18 Hz. The
+// V8.1 ROM writes the same 7-bit key code (0 = lowest C, as trim 4-14's
+// sequencer CV confirms) to the Unison CV cell (0x0336-0x0358) and, in
+// polyphonic mode, to each voice's filter S/H (0x04fc-0x051f), so this one
+// anchor holds in both modes. Its tune routine fixes the oscillators
+// independently: C3 is a 19110-cycle period at 2.5 MHz (0x0134), 130.8 Hz.
+const FILTER_MINIMUM_LOG2_HZ: f32 = 3.031_359_7;
 const FILTER_KEYBOARD_BASE_NOTE: f32 = 36.0;
 #[cfg(test)]
-const FILTER_SERVICE_CV_PANEL_POSITION: f32 = 0.2;
+const FILTER_SERVICE_CV_PANEL_POSITION: f32 = 24.0 / 127.0;
 #[cfg(test)]
-const FILTER_SERVICE_REFERENCE_NOTE: u8 = 69;
+const FILTER_SERVICE_REFERENCE_NOTE: u8 = 36 + 45;
 #[cfg(test)]
 const FILTER_SERVICE_REFERENCE_HZ: f32 = 440.0;
 
@@ -404,6 +412,11 @@ impl Voice {
             {
                 self.mixer_decimator = decimator::WideTransitionDecimator2x::default();
             }
+            // The card's filter capacitors were not advanced while dormant
+            // even though its oscillators were; restart them from rest, as a
+            // freshly powered card would, instead of from a stale state that
+            // no longer matches the oscillator phase.
+            self.filter.clear_signal_state();
             self.signal_path_dormant = false;
         }
         self.amplifier_envelope.trigger();
@@ -922,7 +935,7 @@ fn filter_cutoff_log2_hz(
         0.0
     };
     FILTER_MINIMUM_LOG2_HZ
-        + panel.clamp(0.0, 1.0) * FILTER_PANEL_OCTAVES
+        + rf_5_contract::hardware::general_control_volts(panel)
         + keyboard_octaves
         + modulation_octaves
 }
@@ -957,10 +970,13 @@ mod tests {
     }
 
     #[test]
-    fn filter_panel_spans_ten_octaves() {
+    fn filter_panel_spans_ten_octaves_at_its_code_120_ceiling() {
         let bottom = filter_cutoff_hz(0.0, 36, false, 0.0);
-        let top = filter_cutoff_hz(1.0, 36, false, 0.0);
-        assert!((top / bottom - 1_024.0).abs() < 0.01);
+        let top = filter_cutoff_hz(120.0 / 127.0, 36, false, 0.0);
+        assert!((top / bottom - 1_024.0).abs() < 0.05);
+        let one_code = filter_cutoff_hz(61.0 / 127.0, 36, false, 0.0)
+            / filter_cutoff_hz(60.0 / 127.0, 36, false, 0.0);
+        assert!((one_code - libm::exp2f(1.0 / 12.0)).abs() < 1.0e-4);
     }
 
     #[test]
@@ -1050,8 +1066,11 @@ mod tests {
         }
         assert!(long.is_active());
         assert!(!short.is_active());
+        // SD430 puts fixed code 0x64 about 30 mV below the CEM3310's Rx*Cx
+        // point: a ~2.9 ms time constant that is audibly gone within a few
+        // milliseconds but needs ~11.5 time constants to reach digital idle.
         assert!(
-            (300..=800).contains(&disabled_release_frames),
+            (1_000..=2_000).contains(&disabled_release_frames),
             "disabled release took {disabled_release_frames} frames"
         );
         assert!(minimum_release_frames < disabled_release_frames);
@@ -1145,6 +1164,10 @@ mod tests {
             maximum_step = maximum_step.max((sample - previous).abs());
             previous = sample;
         }
+        // Reentry and a fresh card now both start the filter from rest; only
+        // the free-running oscillator phase at the gate differs, which the
+        // SD430 fastest Attack (+25 mV, ~0.39 ms) makes visible in the first
+        // samples. A numerical click from stale state would be far larger.
         assert!(
             maximum_step <= fresh_maximum_step * 1.05 + 1.0e-4,
             "dormant voice reentry step {maximum_step} exceeded fresh attack {fresh_maximum_step}"
@@ -1279,7 +1302,7 @@ mod tests {
             let current = vca::poly_mod_filter_envelope_current_amps(1.0, 86.0 / 127.0, voice);
             let bus = vca::poly_mod_bus_voltage(current, 0.0);
             assert!(
-                (4.5..=6.5).contains(&bus),
+                (4.3..=4.9).contains(&bus),
                 "voice {voice} Sync I peak bus {bus} V",
             );
         }

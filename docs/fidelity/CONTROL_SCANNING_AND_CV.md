@@ -40,25 +40,33 @@ analog control on the output board.
 The physical DAC is 16-bit, with 14 writable bits. Most processed control
 voltages use the seven most-significant bits. Individual oscillator pitch CVs
 use all 14 writable bits so automatic tuning can correct much finer than one
-semitone. Full scale is approximately 10.67 V, while software normally limits
-most CVs to 10 V.
+semitone. Every seven-bit CV steps by exactly 1/12 V (83.33 mV): TM1000D.2
+p. 2-8 gives code 3C(H) as 5.000 V and trim 4-14 sets those 60 codes to exactly
+5.000 V, so the 128-code scale is 32/3 V (`DAC_FULL_SCALE_VOLTS`) and stored
+code 127 holds 10.58 V. The same trim sets the pot ADC so a fully clockwise
+knob reads 10.000 V, i.e. code 120 (`PANEL_FULL_SCALE_POT_CODE`); the factory
+envelope, noise and glide values never exceed that code.
+`rf_5_contract::hardware::general_control_volts` converts a stored code to its
+held voltage, and `normalized_control_volts` is the continuous form for values
+already held or slewing on an S/H cell.
 
-The active circuit boundary no longer forces one voltage span onto every
-common destination. Filter Cutoff is fixed by service trim 4-14 at 10 V for
-panel maximum; Filter Resonance shares that DAC domain and reaches its
-populated 200 kohm current-input resistor. The direct filter-envelope amount
-and both Poly Mod amounts also use the ordinary 0-10 V DAC span before SD333
-Q301/Q303/Q304 convert them to current through populated 5.1k/5.6k/3k emitter
-resistors. Q301/Q303/Q304 each establish one total collector current whose
-common PCB3 line fans out across the five parallel voice-card IABC inputs;
-the five cards do not each receive a copy of that total. Oscillator A level,
-oscillator B level and noise level use the same
-0-10 V span before Q306/Q302/Q305 and their populated 33k/33k/75k emitter
-resistors. Q306 and Q302 likewise fan their total currents across five mixer
-halves, while Q305 drives the one common noise OTA. Glide retains its separately
-admitted 0-5 V control span. Other
-destinations remain isolated behind the existing candidate mapping until an
-equally specific electrical anchor is available.
+Every common S/H therefore holds the same DAC voltage (`cv.rs`
+`COMMON_CV_FULL_SCALE_VOLTS`, 127/12 V at code 127); what differs between
+destinations is the populated network after the cell. Filter Cutoff reaches
+the 1 V/octave CEM3320 control sum, so one stored code is one semitone of
+cutoff; Filter Resonance reaches its populated 200 kohm current-input
+resistor. The direct filter-envelope amount and both Poly Mod amounts reach
+SD333 Q301/Q303/Q304, which convert them to current through populated
+5.1k/5.6k/3k emitter resistors. Q301/Q303/Q304 each establish one total
+collector current whose common PCB3 line fans out across the five parallel
+voice-card IABC inputs; the five cards do not each receive a copy of that
+total. Oscillator A level, oscillator B level and noise level reach
+Q306/Q302/Q305 and their populated 33k/33k/75k emitter resistors. Q306 and
+Q302 likewise fan their total currents across five mixer halves, while Q305
+drives the one common noise OTA. Fig. 2-4 labels GLIDE CV 0-10 V as well, and
+the pulse-width, LFO-rate and envelope cells use the same scale; the envelope
+time cells hold V8.1's complemented code, which the CEM3310 model resolves
+(see [`ENVELOPE_MODEL.md`](ENVELOPE_MODEL.md)).
 
 CV distribution is sequential. The DAC services 38 connected sample-and-hold
 destinations: 23 common/patch destinations on the computer board and 15
@@ -113,8 +121,9 @@ this raw layout; see
 
 - Public controls can remain normalized, but their hardware quantization and
   mapping must be explicit at the circuit boundary.
-- Per-destination S/H spans must remain explicit; a single global normalized
-  voltage is not a valid hardware model.
+- Every seven-bit S/H holds the one 1/12 V-per-code DAC voltage; a
+  destination's behaviour must come from its populated network, not from a
+  per-destination span or a single global normalized voltage.
 - Oscillator pitch cannot share the coarse seven-bit path used by general CVs.
 - Control-rate stepping and sample/hold behaviour now live in a dedicated
   scheduler, separate from audio-rate modulation. One 6 ms unchanged or 11 ms

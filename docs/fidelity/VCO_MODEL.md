@@ -31,7 +31,7 @@ below the active profile's 90%-of-Nyquist boundary and crossfade the next table
 only after that partial lies below true Nyquist. This avoids the former
 host-rate bug that treated pulse as though every profile were four-times
 oversampled and removed three quarters of its valid high-register spectrum.
-For pulse this also handles the documented 1%/99% endpoints without overlapping
+For pulse this also handles 1%/99% and narrower widths without overlapping
 polynomial edges. When continuous modulation moves far enough to replace the
 safe harmonic basis, RF-5 crossfades the two complete periodic
 reconstructions for 0.5 ms; it does not carry their first-sample difference as
@@ -52,11 +52,18 @@ formerly sharp numerical corners from folding above the internal Nyquist
 limit. The reconstruction boundary and its measured numerical response are isolated in
 [`OVERSAMPLING_AND_DECIMATION.md`](OVERSAMPLING_AND_DECIMATION.md).
 
-Each seven-bit PULSE WIDTH pot maps monotonically to the owner's manual's
-approximately 1-99% duty-cycle span, with the nearest code to 50% at the
-physical midpoint. Wheel Mod and Poly Mod are summed after that panel law at
-the shared board CV node. They may therefore overdrive a pulse to exactly 0%
-or 100%, where the CEM3340 pulse output becomes steady DC. Hard sync remains
+Each seven-bit PULSE WIDTH pot follows the populated circuit rather than a
+normalized duty span. The held 1/12 V-per-code CV crosses U432 (52.3k/100k,
+no offset) into CEM3340 pin 5, whose 0-5 V input spans 0-100% duty, so
+`duty = 0.523 * (code / 12 V) / 5 V`. Code 0 is DC, about code 57 is the
+square the owner's manual places at approximately 5, and codes 115 and above
+are DC again, as the manual describes for both ends of the control. Each
+oscillator keeps its own data-sheet PWM full scale inside 4.6-5.4 V. Wheel Mod
+and Poly Mod are summed at the same pin, and positive Poly Mod narrows
+oscillator A's pulse because the PMOD path crosses one fewer inversion than
+the panel CV (see [`POLY_MOD_MODEL.md`](POLY_MOD_MODEL.md)). Either can drive
+a pulse to exactly 0% or 100%, where the CEM3340 pulse output becomes steady
+DC. Hard sync remains
 active because its clock comes from oscillator B's saw reset, not this PWM
 edge. Static pulse widths use the mipmapped reconstruction. When Wheel Mod or
 audio-rate Poly Mod moves the comparator threshold, a two-host-sample
@@ -81,15 +88,16 @@ Waveforms sum before their oscillator level. Enabling a second waveform can
 therefore raise level and drive later blocks harder; RF-5 does not normalize
 the selection count. Saw, triangle and pulse now retain their data-sheet
 voltage relationships and the populated board's 150/200 kohm input weighting.
-Oscillator B exposes separate physical mixer and Poly Mod voltages. The audio
-mixer receives the raw positive-going triangle, while only U451's dedicated
-Poly Mod route subtracts the 2.27 V reference; saw and pulse retain their
-electrical bias in both paths.
+Oscillator B exposes separate physical mixer and Poly Mod voltages. U451
+doubles the raw triangle and subtracts the 4.57 V TRI REF, and that
+approximately +/-5 V wave feeds both the audio mixer and Poly Mod; saw and
+pulse retain their electrical bias in both paths.
 
 Selecting oscillator B triangle also reproduces the CEM3340's load-dependent
-frequency pull. SD431's 150 kohm mixer path loads the finite 65-150 ohm
-triangle buffer, which also drives the internal comparator, lowering B by
-approximately 0.75-1.73 cents according to its physical output profile. Saw's
+frequency pull. U451's 500 kohm input bias (R4253/R4252, 1M/1M) loads the
+finite 65-150 ohm triangle buffer, which also drives the internal comparator,
+lowering B by approximately 0.2-0.5 cents according to its physical output
+profile. Saw's
 buffer isolation and pulse's open-emitter output prevent the same pitch shift
 when those waveforms are selected.
 
@@ -103,9 +111,9 @@ when those waveforms are selected.
 - oscillator B low-frequency and keyboard tracking switches;
 - oscillator sync.
 
-No public parameter was added in this block. The runtime state schema is
-version 11 because the existing normalized PULSE WIDTH values now drive the
-source-backed 1-99% panel law instead of the former protective 2-98% clamp.
+No public parameter was added in this block. The existing normalized PULSE
+WIDTH values are the stored seven-bit codes; the circuit law above, not a
+duty-cycle clamp, decides their duty.
 
 ## Residual uncertainty
 

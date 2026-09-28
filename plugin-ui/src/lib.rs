@@ -8,14 +8,6 @@ use serde::Deserialize;
 const PROTOCOL: &str = "rackforge.plugin.web@1";
 
 #[cfg(any(target_arch = "wasm32", test))]
-#[derive(Clone, Debug, Deserialize)]
-struct Sound {
-    id: String,
-    name: String,
-    bank: String,
-}
-
-#[cfg(any(target_arch = "wasm32", test))]
 fn escape_html(value: &str) -> String {
     let mut escaped = String::with_capacity(value.len());
     for character in value.chars() {
@@ -112,79 +104,6 @@ fn identity_plaque_svg() -> &'static str {
 }
 
 #[cfg(any(target_arch = "wasm32", test))]
-fn program_display_digits(name: &str) -> [char; 2] {
-    let mut display = ['-'; 2];
-    for (slot, digit) in display
-        .iter_mut()
-        .zip(name.chars().filter(char::is_ascii_digit).take(2))
-    {
-        *slot = digit;
-    }
-    display
-}
-
-#[cfg(any(target_arch = "wasm32", test))]
-fn seven_segment_mask(digit: char) -> u8 {
-    const A: u8 = 1 << 0;
-    const B: u8 = 1 << 1;
-    const C: u8 = 1 << 2;
-    const D: u8 = 1 << 3;
-    const E: u8 = 1 << 4;
-    const F: u8 = 1 << 5;
-    const G: u8 = 1 << 6;
-
-    match digit {
-        '0' => A | B | C | D | E | F,
-        '1' => B | C,
-        '2' => A | B | D | E | G,
-        '3' => A | B | C | D | G,
-        '4' => B | C | F | G,
-        '5' => A | C | D | F | G,
-        '6' => A | C | D | E | F | G,
-        '7' => A | B | C,
-        '8' => A | B | C | D | E | F | G,
-        '9' => A | B | C | D | F | G,
-        '-' => G,
-        _ => 0,
-    }
-}
-
-#[cfg(any(target_arch = "wasm32", test))]
-fn seven_segment_digit_svg(digit: char, x: u8) -> String {
-    const SEGMENTS: [(&str, &str); 7] = [
-        ("a", "5,2 19,2 22,5 19,8 5,8 2,5"),
-        ("b", "20,6 23,9 23,19 20,22 17,19 17,9"),
-        ("c", "20,24 23,27 23,37 20,40 17,37 17,27"),
-        ("d", "5,38 19,38 22,41 19,44 5,44 2,41"),
-        ("e", "4,24 7,27 7,37 4,40 1,37 1,27"),
-        ("f", "4,6 7,9 7,19 4,22 1,19 1,9"),
-        ("g", "5,20 19,20 22,23 19,26 5,26 2,23"),
-    ];
-    let mask = seven_segment_mask(digit);
-    let mut svg = format!("<g class=\"seven-segment-digit\" transform=\"translate({x} 1)\">");
-    for (index, (name, points)) in SEGMENTS.iter().enumerate() {
-        let active = mask & (1 << index) != 0;
-        svg.push_str(&format!(
-            "<polygon class=\"seven-segment{} segment-{name}\" points=\"{points}\"></polygon>",
-            if active { " on" } else { "" }
-        ));
-    }
-    svg.push_str("</g>");
-    svg
-}
-
-#[cfg(any(target_arch = "wasm32", test))]
-fn seven_segment_display_svg(program_name: &str) -> String {
-    let digits = program_display_digits(program_name);
-    format!(
-        "<svg class=\"seven-segment-display\" viewBox=\"0 0 62 48\" role=\"img\" aria-label=\"Selected program {}\"><rect class=\"seven-segment-bezel\" x=\"0.5\" y=\"0.5\" width=\"61\" height=\"47\" rx=\"1.5\"></rect>{}{}</svg>",
-        escape_html(program_name),
-        seven_segment_digit_svg(digits[0], 5),
-        seven_segment_digit_svg(digits[1], 33)
-    )
-}
-
-#[cfg(any(target_arch = "wasm32", test))]
 fn relative_knob_value(
     start_value: f64,
     delta_y: f64,
@@ -273,10 +192,11 @@ mod browser {
         instance: Instance,
     }
 
+    /// The panel only follows which program is selected, to re-read its
+    /// controls; RackForge's program selector lists and chooses them.
     #[derive(Debug, Deserialize)]
     struct Instance {
         selected_sound_id: String,
-        sounds: Vec<Sound>,
     }
 
     #[derive(Clone, Debug, Deserialize)]
@@ -339,6 +259,10 @@ mod browser {
         window: Window,
         document: Document,
         root: Element,
+        /// RackForge's `<rf-program-select>`, made once and put back in the
+        /// program memory bar after every render: the render replaces the
+        /// whole page, and a new element each time would lose an open list.
+        program_selector: Element,
         host_origin: String,
         context: Option<HostContext>,
         snapshot: Option<ParameterSnapshot>,
@@ -347,7 +271,6 @@ mod browser {
         sequence: u64,
         refresh_generation: u64,
         active_section: String,
-        pending_sound_id: Option<String>,
         active_parameter_drag: Option<u32>,
         render_after_drag: bool,
         bridge_error: String,
@@ -363,10 +286,20 @@ mod browser {
                 .get_element_by_id("plugin-root")
                 .ok_or_else(|| JsValue::from_str("missing #plugin-root"))?;
             let host_origin = window.location().origin()?;
+            let program_selector = document.create_element("rf-program-select")?;
+            for (name, value) in [
+                ("id", "program-selector"),
+                ("label", "Program"),
+                ("placeholder", "Search RF-5 programs"),
+                ("empty-label", "Waiting for programs…"),
+            ] {
+                program_selector.set_attribute(name, value)?;
+            }
             Ok(Rc::new(RefCell::new(Self {
                 window,
                 document,
                 root,
+                program_selector,
                 host_origin,
                 context: None,
                 snapshot: None,
@@ -375,7 +308,6 @@ mod browser {
                 sequence: 0,
                 refresh_generation: 0,
                 active_section: "modulation".to_owned(),
-                pending_sound_id: None,
                 active_parameter_drag: None,
                 render_after_drag: false,
                 bridge_error: String::new(),
@@ -389,36 +321,22 @@ mod browser {
                 .unwrap_or_else(|| parameter.kind.default_value())
         }
 
-        fn selected_sound_id(&self) -> Option<&str> {
-            self.pending_sound_id.as_deref().or_else(|| {
-                self.context
-                    .as_ref()
-                    .map(|context| context.instance.selected_sound_id.as_str())
-            })
-        }
-
-        fn selected_sound(&self) -> Option<&Sound> {
-            let id = self.selected_sound_id()?;
-            self.context
-                .as_ref()?
-                .instance
-                .sounds
-                .iter()
-                .find(|sound| sound.id == id)
-        }
-
         fn render(&self) {
+            // The head: the nameplate on its walnut rail, then the program
+            // memory. Under the panel only a thin strip of the case shows.
             let mut html = String::from("<div class=\"rf5-frame\">");
-            html.push_str("<div class=\"wood-rail wood-rail-top\" aria-hidden=\"true\"></div>");
-            html.push_str(&self.render_tabs());
-            html.push_str(&self.render_panel());
-            html.push_str("<div class=\"wood-rail wood-rail-middle\">");
+            html.push_str("<div class=\"wood-rail wood-rail-plaque\">");
             html.push_str(identity_plaque_svg());
             html.push_str("</div>");
-            html.push_str(&self.render_programs());
+            html.push_str(&self.render_program_memory());
+            html.push_str(&self.render_tabs());
+            html.push_str(&self.render_panel());
             html.push_str("<div class=\"wood-rail wood-rail-bottom\" aria-hidden=\"true\"></div>");
             html.push_str("</div>");
             self.root.set_inner_html(&html);
+            if let Some(slot) = self.document.get_element_by_id("program-selector-slot") {
+                let _ = slot.append_child(&self.program_selector);
+            }
             layout_group_outlines(&self.root);
         }
 
@@ -543,45 +461,12 @@ mod browser {
             )
         }
 
-        fn render_programs(&self) -> String {
-            let Some(context) = self.context.as_ref() else {
-                return "<section class=\"program-library waiting\">Waiting for the RackForge program catalog…</section>".to_owned();
-            };
-            let selected = self.selected_sound_id().unwrap_or_default();
-            let selected_program = self
-                .selected_sound()
-                .map(|sound| seven_segment_display_svg(&sound.name))
-                .unwrap_or_else(|| seven_segment_display_svg("--"));
-            let mut cards = String::new();
-            let mut current_bank = "";
-            for sound in &context.instance.sounds {
-                if sound.bank != current_bank {
-                    if !current_bank.is_empty() {
-                        cards.push_str("</div>");
-                    }
-                    current_bank = &sound.bank;
-                    cards.push_str(&format!(
-                        "<h3>{}</h3><div class=\"program-grid\">",
-                        bank_label(current_bank)
-                    ));
-                }
-                let active = sound.id == selected;
-                cards.push_str(&format!(
-                    "<button type=\"button\" class=\"program-button{}\" data-action=\"sound\" data-sound-id=\"{}\" aria-pressed=\"{}\"><span>{}</span><strong>{}</strong></button>",
-                    if active { " active" } else { "" },
-                    escape_html(&sound.id),
-                    active,
-                    if active { "●" } else { "○" },
-                    escape_html(&sound.name)
-                ));
-            }
-            if !current_bank.is_empty() {
-                cards.push_str("</div>");
-            }
-            format!(
-                "<section class=\"program-library\"><header><div class=\"memory-identity\"><small>PROGRAM MEMORY</small><h2>RF-5 PROGRAM SELECT</h2></div><div class=\"memory-display\"><small>BANK / PROGRAM</small>{selected_program}</div><span class=\"program-count\">{} programs</span></header>{cards}</section>",
-                context.instance.sounds.len()
-            )
+        /// The program memory, under the nameplate: its maker and RackForge's
+        /// program selector, put in its slot after the page is drawn. The
+        /// selector's name carries the bank and number ("1-2 Low Strings").
+        fn render_program_memory(&self) -> String {
+            "<section class=\"program-memory\"><div class=\"program-identity\"><small>RACKFORGE INSTRUMENTS</small></div><div class=\"program-selector-slot\" id=\"program-selector-slot\"></div></section>"
+                .to_owned()
         }
     }
 
@@ -687,13 +572,6 @@ mod browser {
             "<svg class=\"wave-symbol\" viewBox=\"0 0 42 22\" aria-hidden=\"true\"><path d=\"M3 18V4H21V18H39V4\"></path></svg>"
         } else {
             ""
-        }
-    }
-
-    fn bank_label(bank: &str) -> String {
-        match bank {
-            "factory.rf5.original" => "ORIGINAL 40 PROGRAMS".to_owned(),
-            _ => escape_html(bank),
         }
     }
 
@@ -1021,37 +899,6 @@ mod browser {
                                 refresh.unchecked_ref(),
                                 8_100,
                             );
-                    }
-                }
-                Some("sound") => {
-                    if let Some(sound_id) = element.get_attribute("data-sound-id") {
-                        click_app.borrow_mut().pending_sound_id = Some(sound_id.clone());
-                        click_app.borrow().render();
-                        let selected = sound_id.clone();
-                        request(
-                            &click_app,
-                            "plugin.select_sound",
-                            serde_json::json!({"sound_id": sound_id}),
-                            move |app, result| match result {
-                                Ok(_) => {
-                                    let mut state = app.borrow_mut();
-                                    if let Some(context) = state.context.as_mut() {
-                                        context.instance.selected_sound_id = selected;
-                                    }
-                                    state.pending_sound_id = None;
-                                    state.bridge_error.clear();
-                                    drop(state);
-                                    refresh_parameters(app);
-                                }
-                                Err(error) => {
-                                    let mut state = app.borrow_mut();
-                                    state.pending_sound_id = None;
-                                    state.bridge_error = error;
-                                    drop(state);
-                                    app.borrow().render();
-                                }
-                            },
-                        );
                     }
                 }
                 _ => {}
@@ -1481,27 +1328,25 @@ mod tests {
         assert!(!plaque.contains("plaque-model-gradient"));
     }
 
+    /// Programs are chosen with RackForge's selector, which the panel makes
+    /// once and puts back in the program memory after every render.
     #[test]
-    fn program_number_is_rendered_as_two_real_seven_segment_digits() {
-        assert_eq!(program_display_digits("1-7 Sync I"), ['1', '7']);
-        assert_eq!(program_display_digits("No program"), ['-', '-']);
-
-        let display = seven_segment_display_svg("2-4 Toy Piano");
-        assert!(display.contains("class=\"seven-segment-display\""));
-        assert_eq!(display.matches("class=\"seven-segment on").count(), 9);
-        assert!(display.contains("aria-label=\"Selected program 2-4 Toy Piano\""));
+    fn the_program_memory_carries_the_rackforge_program_selector() {
+        let source = include_str!("lib.rs");
+        assert!(source.contains("create_element(\"rf-program-select\")"));
+        assert!(source.contains("id=\\\"program-selector-slot\\\""));
+        assert!(source.contains("<small>RACKFORGE INSTRUMENTS</small>"));
+        assert!(!source.contains(&["program", "-grid"].concat()));
+        // The nameplate heads the panel, before the program memory.
+        let plaque = source.find("wood-rail-plaque").expect("the nameplate rail");
+        let memory = source
+            .find("render_program_memory());")
+            .expect("the program memory");
+        assert!(plaque < memory, "the nameplate comes first");
     }
 
     #[test]
-    fn protocol_and_catalog_identity_are_stable() {
-        let sound = Sound {
-            id: "original-11-brass".to_owned(),
-            name: "1-1 Brass".to_owned(),
-            bank: "factory.rf5.original".to_owned(),
-        };
+    fn protocol_identity_is_stable() {
         assert_eq!(PROTOCOL, "rackforge.plugin.web@1");
-        assert_eq!(sound.bank, "factory.rf5.original");
-        assert_eq!(sound.id, "original-11-brass");
-        assert_eq!(sound.name, "1-1 Brass");
     }
 }

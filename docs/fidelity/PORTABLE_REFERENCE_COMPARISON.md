@@ -58,8 +58,8 @@ The third row establishes that bounded math remains far inside every admitted
 limit when topology and internal rate are held constant.
 
 Twenty-seven of thirty-four host-rate scenes cross at least one outlier
-threshold. The largest critical-band differences occur at the 1% and 99%
-pulse-width endpoints. Wheel Filter, hard sync, audio-rate PWM, LFO routes and
+threshold. The largest critical-band differences occur in the 1% and 99%
+pulse-width scenes. Wheel Filter, hard sync, audio-rate PWM, LFO routes and
 the CC1 Baseline Pad stress scene also remain outside the admitted window.
 Baseline Pad stays finite and unclipped throughout its full wheel sweep, so the
 former catastrophic failure is fixed even though its 1x/reference timbral

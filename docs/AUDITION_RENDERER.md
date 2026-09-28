@@ -33,9 +33,11 @@ events and writes thirty-four unnormalized 48 kHz mono PCM WAV files:
 23. matched oscillator-A/B coarse pitch with OSC B FINE at physical zero;
 24. the same sustained note with OSC B FINE at its documented one-semitone
     endpoint.
-25. oscillator A pulse at the documented 1% panel endpoint;
-26. the nearest seven-bit code to a 50% square wave;
-27. oscillator A pulse at the documented 99% panel endpoint.
+25. oscillator A pulse at code 1, approximately 1% before the code-0 DC
+    endpoint;
+26. the nearest seven-bit code to a 50% square wave, code 57;
+27. oscillator A pulse at code 113, approximately 99% before the DC endpoint
+    that begins at code 115.
 28. oscillator B triangle in isolation across five octaves.
 29. oscillator-B triangle driving oscillator-A PWM at audio rate.
 30. strong, fast filter-envelope transients through the stateful TL082 slew
@@ -50,8 +52,8 @@ events and writes thirty-four unnormalized 48 kHz mono PCM WAV files:
 
 Scenes 17 and 18 now traverse the absolute SD334/CEM3340 frequency law rather
 than a provisional 20 Hz anchor; their program positions remain suitable for
-direct slow/fast comparison after the corrected approximately 0.0392-26.0 Hz
-nominal endpoint reconstruction.
+direct slow/fast comparison on the reconstructed law, which runs from
+approximately 0.0247 Hz at code 0 to 34.0 Hz at the code-120 panel ceiling.
 
 Run:
 

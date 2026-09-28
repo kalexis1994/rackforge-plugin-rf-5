@@ -31,16 +31,20 @@ Each of the five voices still evaluates:
 - separate CEM3310 filter and amplifier timing capacitors;
 - the final CA3280 voice VCA.
 
-After the passive five-input sum, the common master CA3280, output coupling
-capacitor, loaded NE5534 follower and jack isolation are also retained. Control
+After the passive voice/A-440 summing node and its C4183 state, the common
+master CA3280, output coupling capacitor, loaded NE5534 follower and jack
+isolation are also retained. Control
 scanning, sample-and-hold state, drift, automatic tune, LFO/noise sources and
 performance modulation remain independent physical or firmware-derived state.
 The ten VCO cores and their modulation-dependent phase paths continue evolving
-while their final VCAs are closed. Filter capacitor state is held only after
-the amplifier envelope reaches its idle floor; it resumes beneath the next
-attack from zero. The purely numerical reconstruction history is then cleared,
-and a regression verifies that dormant-card reuse introduces no larger sample
-step than a fresh hardware-style attack.
+while their final VCAs are closed. The filter is not advanced once the
+amplifier envelope reaches its idle floor, so on reentry its four cell
+capacitors and resonance-return state restart from rest, as on a freshly
+powered card, instead of from a stale state that no longer matches the
+still-running oscillator phase; the envelope rises from zero beneath them.
+The purely numerical reconstruction history is cleared as well, and a
+regression verifies that dormant-card reuse introduces no larger sample step
+than a fresh hardware-style attack.
 
 ## Bounded numerical transformations
 
@@ -86,6 +90,27 @@ before the render:
 These figures accepted the arithmetic optimizations relative to the previous
 stable host-rate motor. They do not override the separately documented sample-
 rate comparison. The same bounded arithmetic is retained in the hybrid path.
+
+## Development-host cost
+
+`rf-5-cost` (`crates/rf-5-audition/src/bin/rf-5-cost.rs`) renders two seconds
+of a factory program with five held notes at 48 kHz and reports the best of
+five rounds in nanoseconds per frame. Its absolute figures belong to the x86
+development host; only the ratio between builds transfers to the appliance.
+The circuit-fidelity audit measures, against `main`:
+
+| Program | `main` | Audited branch | Change |
+| --- | ---: | ---: | ---: |
+| 1-4 | 12392 ns | 14254 ns | +15.0% |
+| 4-3 | 10314 ns | 12240 ns | +18.7% |
+| 2-1 | 10230 ns | 10160 ns | -0.7% |
+
+Zeroing the new CEM3320 cell offsets leaves the audited cost unchanged, so
+the increase is not the operating-point arithmetic. The likely cause, not
+proven, is that the corrected and deeper filter envelope drives resonant
+programs into the solver's three-iteration region more often, while 2-1 is
+unchanged. The audited build therefore requires a fresh
+Raspberry Pi stress pass before it inherits any zero-XRUN claim.
 
 ## Hardware validation
 
