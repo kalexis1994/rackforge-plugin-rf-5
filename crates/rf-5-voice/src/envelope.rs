@@ -1,29 +1,43 @@
 //! Ten-device CEM3310 envelope population.
 //!
 //! The source-backed parts are the true-RC attack/decay/release shape,
-//! exponential time control, linear sustain control and populated timing
-//! network. The service dial-six observation supplies one isolated absolute
-//! control-span anchor. Published electrical limits define one filter and one
-//! amplifier profile for every voice card.
+//! exponential time control, linear sustain control, the populated timing
+//! network and the complete SD430 control path: V8.1's `0x7a - pot` time
+//! complement, the 7-bit DAC step and the shared 24.3k/13k/806-ohm level
+//! shifter in front of every time-control pin. Published electrical limits
+//! define one filter and one amplifier profile for every voice card.
+
+use rf_5_contract::hardware::{
+    ENVELOPE_TIME_CONTROL_COMPLEMENT_CODE, analog_pot_code, general_control_volts,
+    general_control_volts_per_code,
+};
 
 const IDLE_THRESHOLD: f32 = 1.0e-5;
+#[cfg(test)]
 const NOMINAL_CONTROL_SENSITIVITY_MV_PER_DECADE: f32 = 60.0;
 const NOMINAL_PEAK_VOLTS: f32 = 5.0;
+#[cfg(test)]
 const NOMINAL_ATTACK_ASYMPTOTE_VOLTS: f32 = 6.5;
 const TIMING_RESISTOR_OHMS: f32 = 24_300.0;
 const TIMING_CAPACITOR_FARADS: f32 = 0.039e-6;
 const NOMINAL_BUFFER_OUTPUT_RESISTANCE_OHMS: f32 = 200.0;
-const OWNER_DIAL_FIVE: f32 = 0.5;
-const OWNER_DIAL_FIVE_SECONDS: f32 = 0.5;
-const SERVICE_DIAL_SIX: f32 = 0.6;
-const SERVICE_ATTACK_SECONDS: f32 = 1.0;
-const SERVICE_DISCHARGE_SECONDS: f32 = 1.0;
-const OWNER_DIAL_TEN_SECONDS: f32 = 30.0;
-const FACTORY_E_PIANO_ATTACK_CONTROL: f32 = 30.0 / 127.0;
-const FACTORY_E_PIANO_ATTACK_SECONDS: f32 = 0.008;
-const FIRMWARE_RELEASE_OFF_CONTROL: f32 = 22.0 / 127.0;
-const FACTORY_E_PIANO_RELEASE_OFF_SECONDS: f32 = 0.0023;
-const AUDIBLE_DISCHARGE_FRACTION: f32 = 0.1;
+// SD430 R415/R413/R414 (amplifier) and R410/R412/R411 (filter) feed each
+// held time CV into one node shared by all five voice cards; R407-class 13k
+// resistors pull that node toward the -5 V rail and R402-class 806-ohm
+// resistors return it to ground. The node drives the CEM3310 Va/Vd/Vr pins.
+const TIME_CONTROL_INPUT_OHMS: f32 = 24_300.0;
+const TIME_CONTROL_BIAS_OHMS: f32 = 13_000.0;
+const TIME_CONTROL_SHUNT_OHMS: f32 = 806.0;
+const TIME_CONTROL_BIAS_RAIL_VOLTS: f32 = -5.0;
+// R405/R406 (amplifier) and R426/R433 (filter) halve the held sustain CV.
+const SUSTAIN_CONTROL_DIVIDER: f32 = 4_750.0 / (4_750.0 + 4_750.0);
+// The data sheet's 60 mV/decade is kT/q at 25 C and carries its published
+// +3300 ppm/C temperature coefficient. Inside the closed instrument the die
+// runs warm; 45 C places the nominal full-scale attack at the owner's-manual
+// "approximately 30 seconds" while keeping the service manual's longer-than-
+// 20-second release and factory 1-4's few-millisecond onset.
+const DATASHEET_REFERENCE_KELVIN: f32 = 298.15;
+const OPERATING_DIE_KELVIN: f32 = 318.15;
 
 #[derive(Clone, Copy, Debug)]
 struct EnvelopeProfile {
@@ -197,15 +211,7 @@ impl EnvelopeCoefficientCache {
         {
             let time_constant = profiled_time_constant_seconds(control, profile, direction);
             self.approach_coefficient = libm::expf(-1.0 / (time_constant * sample_rate));
-            let current_ratio = match direction {
-                CurrentDirection::Charge => profile.attack_current_ratio,
-                CurrentDirection::Discharge => profile.discharge_current_ratio,
-            };
-            self.resistance_multiplier = libm::powf(
-                10.0,
-                calibrated_control_millivolts(control, direction)
-                    / profile.control_sensitivity_mv_per_decade,
-            ) / current_ratio;
+            self.resistance_multiplier = control_multiplier(control, profile, direction);
             self.sample_rate = sample_rate;
             self.control = control;
             self.direction = direction;
@@ -264,9 +270,11 @@ impl AdsrEnvelope {
     ) -> f32 {
         let profile = ENVELOPE_PROFILES[self.profile_index];
         let peak = profile.peak_volts / NOMINAL_PEAK_VOLTS;
-        let sustain_target = (sustain.clamp(0.0, 1.0) * peak
+        // The sustain pin is followed linearly. A held level above the peak
+        // threshold is reached after the peak, so it is not clipped to it.
+        let sustain_target = (sustain_control_normalized(sustain)
             + profile.sustain_error_volts / NOMINAL_PEAK_VOLTS)
-            .clamp(0.0, peak);
+            .clamp(0.0, profile.attack_asymptote_volts / NOMINAL_PEAK_VOLTS);
         match self.stage {
             Stage::Idle => {}
             Stage::Attack => {
@@ -287,12 +295,19 @@ impl AdsrEnvelope {
                 }
             }
             Stage::Decay => {
-                let (coefficient, _) = self.coefficient_cache.coefficients(
-                    sample_rate,
-                    decay,
-                    profile,
-                    CurrentDirection::Discharge,
-                );
+                let coefficient = if sustain_target > self.value {
+                    // Data sheet: a sustain voltage above the peak threshold
+                    // is approached at the fastest attack rate.
+                    libm::expf(
+                        -1.0 / (populated_rc_seconds() * profile.component_rc_ratio
+                            / profile.attack_current_ratio
+                            * sample_rate.max(1.0)),
+                    )
+                } else {
+                    self.coefficient_cache
+                        .coefficients(sample_rate, decay, profile, CurrentDirection::Discharge)
+                        .0
+                };
                 self.value = approach_with_coefficient(self.value, sustain_target, coefficient);
                 if (self.value - sustain_target).abs() <= IDLE_THRESHOLD {
                     self.value = sustain_target;
@@ -399,17 +414,9 @@ fn approach_with_coefficient(value: f32, target: f32, coefficient: f32) -> f32 {
     target + (value - target) * coefficient
 }
 
-pub fn time_constant_seconds(value: f32) -> f32 {
-    time_constant_seconds_for_direction(value, CurrentDirection::Charge)
-}
-
-fn time_constant_seconds_for_direction(value: f32, direction: CurrentDirection) -> f32 {
-    populated_rc_seconds()
-        * libm::powf(
-            10.0,
-            calibrated_control_millivolts(value, direction)
-                / NOMINAL_CONTROL_SENSITIVITY_MV_PER_DECADE,
-        )
+#[cfg(test)]
+fn time_constant_seconds(value: f32) -> f32 {
+    populated_rc_seconds() * nominal_control_multiplier(value)
 }
 
 fn profiled_time_constant_seconds(
@@ -417,160 +424,68 @@ fn profiled_time_constant_seconds(
     profile: EnvelopeProfile,
     direction: CurrentDirection,
 ) -> f32 {
+    populated_rc_seconds()
+        * profile.component_rc_ratio
+        * control_multiplier(value, profile, direction)
+}
+
+/// Ratio of the CEM3310 timing current at `Vc = 0` to the current at the
+/// held control, i.e. the data sheet's `exp(-Vc/VT)` time multiplier divided
+/// by the device's charge or discharge current ratio.
+fn control_multiplier(value: f32, profile: EnvelopeProfile, direction: CurrentDirection) -> f32 {
     let current_ratio = match direction {
         CurrentDirection::Charge => profile.attack_current_ratio,
         CurrentDirection::Discharge => profile.discharge_current_ratio,
     };
-    populated_rc_seconds() * profile.component_rc_ratio / current_ratio
-        * libm::powf(
-            10.0,
-            calibrated_control_millivolts(value, direction)
-                / profile.control_sensitivity_mv_per_decade,
-        )
+    time_exponential(
+        time_control_pin_volts(value),
+        profile.control_sensitivity_mv_per_decade,
+    ) / current_ratio
+}
+
+#[cfg(test)]
+fn nominal_control_multiplier(value: f32) -> f32 {
+    time_exponential(
+        time_control_pin_volts(value),
+        NOMINAL_CONTROL_SENSITIVITY_MV_PER_DECADE,
+    )
+}
+
+fn time_exponential(pin_volts: f32, reference_mv_per_decade: f32) -> f32 {
+    let operating_mv_per_decade =
+        reference_mv_per_decade * OPERATING_DIE_KELVIN / DATASHEET_REFERENCE_KELVIN;
+    libm::powf(10.0, -pin_volts * 1_000.0 / operating_mv_per_decade)
 }
 
 fn populated_rc_seconds() -> f32 {
     TIMING_RESISTOR_OHMS * TIMING_CAPACITOR_FARADS
 }
 
-fn nominal_attack_threshold_time_constants() -> f32 {
-    -libm::logf(1.0 - NOMINAL_PEAK_VOLTS / NOMINAL_ATTACK_ASYMPTOTE_VOLTS)
+/// Held S/H voltage for an envelope time pot. V8.1 writes `0x7a - pot`, so a
+/// short time is a high voltage; the eight-bit subtraction cannot go below
+/// zero on the populated panel range.
+fn time_control_dac_volts(value: f32) -> f32 {
+    let written = ENVELOPE_TIME_CONTROL_COMPLEMENT_CODE.saturating_sub(analog_pot_code(value));
+    f32::from(written) * general_control_volts_per_code()
 }
 
-fn nominal_audible_discharge_time_constants() -> f32 {
-    -libm::logf(AUDIBLE_DISCHARGE_FRACTION)
+/// Thevenin solution of the shared SD430 node: held CV through 24.3k, 13k to
+/// -5 V and 806 ohm to ground. Roughly -283 mV at the longest time and
+/// +25 mV at the shortest, i.e. about five decades of CEM3310 time.
+fn time_control_pin_volts(value: f32) -> f32 {
+    let input_volts = time_control_dac_volts(value);
+    let conductance = 1.0 / TIME_CONTROL_INPUT_OHMS
+        + 1.0 / TIME_CONTROL_BIAS_OHMS
+        + 1.0 / TIME_CONTROL_SHUNT_OHMS;
+    (input_volts / TIME_CONTROL_INPUT_OHMS + TIME_CONTROL_BIAS_RAIL_VOLTS / TIME_CONTROL_BIAS_OHMS)
+        / conductance
 }
 
-fn attack_duration_to_control_millivolts(duration_seconds: f32) -> f32 {
-    let time_constant = duration_seconds / nominal_attack_threshold_time_constants();
-    NOMINAL_CONTROL_SENSITIVITY_MV_PER_DECADE * libm::log10f(time_constant / populated_rc_seconds())
-}
-
-fn discharge_duration_to_control_millivolts(duration_seconds: f32) -> f32 {
-    let time_constant = duration_seconds / nominal_audible_discharge_time_constants();
-    NOMINAL_CONTROL_SENSITIVITY_MV_PER_DECADE * libm::log10f(time_constant / populated_rc_seconds())
-}
-
-fn panel_calibration_controls(direction: CurrentDirection) -> [f32; 5] {
-    [
-        0.0,
-        match direction {
-            CurrentDirection::Charge => FACTORY_E_PIANO_ATTACK_CONTROL,
-            CurrentDirection::Discharge => FIRMWARE_RELEASE_OFF_CONTROL,
-        },
-        OWNER_DIAL_FIVE,
-        SERVICE_DIAL_SIX,
-        1.0,
-    ]
-}
-
-fn panel_calibration_millivolts(direction: CurrentDirection) -> [f32; 5] {
-    let duration_to_control = match direction {
-        CurrentDirection::Charge => attack_duration_to_control_millivolts,
-        CurrentDirection::Discharge => discharge_duration_to_control_millivolts,
-    };
-    [
-        0.0,
-        duration_to_control(match direction {
-            CurrentDirection::Charge => FACTORY_E_PIANO_ATTACK_SECONDS,
-            CurrentDirection::Discharge => FACTORY_E_PIANO_RELEASE_OFF_SECONDS,
-        }),
-        duration_to_control(OWNER_DIAL_FIVE_SECONDS),
-        duration_to_control(match direction {
-            CurrentDirection::Charge => SERVICE_ATTACK_SECONDS,
-            CurrentDirection::Discharge => SERVICE_DISCHARGE_SECONDS,
-        }),
-        duration_to_control(OWNER_DIAL_TEN_SECONDS),
-    ]
-}
-
-fn calibrated_control_millivolts(value: f32, direction: CurrentDirection) -> f32 {
-    // The CEM3310 remains exponential in control voltage. What was not linear
-    // on the instrument is the complete panel-to-time calibration: the owner
-    // manual gives about 0.5 s at dial 5 and a 1 ms-to-30 s panel range, while
-    // the service procedure independently checks about 1 s at dial 6 and more
-    // than 20 s at dial 10. A monotone cubic in the voltage domain honors all
-    // usable landmarks without putting a discontinuity into a live envelope.
-    // The first point is the populated Rx/Cx floor. The second supplies the
-    // missing fast-region evidence: factory 1-4's exact 30/127 Attack reaches
-    // its useful hardware onset in about 3-5 ms, while the firmware's exact
-    // RELEASE-off equivalent 22/127 is nearly silent within about 5 ms. The
-    // remaining three points retain the owner/service dial landmarks. All are
-    // expressed either as the CEM3310 attack-threshold duration or as the
-    // audible decay/release duration to ten percent envelope. At that point
-    // the populated final-VCA converter is already close to -40 dB.
-    let value = value.clamp(0.0, 1.0);
-    let controls = panel_calibration_controls(direction);
-    let millivolts = panel_calibration_millivolts(direction);
-    monotone_cubic_interpolate(value, controls, millivolts)
-}
-
-fn monotone_cubic_interpolate(value: f32, x: [f32; 5], y: [f32; 5]) -> f32 {
-    // Fritsch-Carlson/PCHIP tangents keep the calibrated voltage strictly
-    // monotone and prevent overshoot between sparse manual/service landmarks.
-    let h = [x[1] - x[0], x[2] - x[1], x[3] - x[2], x[4] - x[3]];
-    let delta = [
-        (y[1] - y[0]) / h[0],
-        (y[2] - y[1]) / h[1],
-        (y[3] - y[2]) / h[2],
-        (y[4] - y[3]) / h[3],
-    ];
-    let mut tangent = [0.0_f32; 5];
-    tangent[0] = endpoint_tangent(h[0], h[1], delta[0], delta[1]);
-    tangent[1] = interior_tangent(h[0], h[1], delta[0], delta[1]);
-    tangent[2] = interior_tangent(h[1], h[2], delta[1], delta[2]);
-    tangent[3] = interior_tangent(h[2], h[3], delta[2], delta[3]);
-    tangent[4] = endpoint_tangent(h[3], h[2], delta[3], delta[2]);
-
-    let segment = if value <= x[1] {
-        0
-    } else if value <= x[2] {
-        1
-    } else if value <= x[3] {
-        2
-    } else {
-        3
-    };
-    let normalized = (value - x[segment]) / h[segment];
-    let normalized_squared = normalized * normalized;
-    let normalized_cubed = normalized_squared * normalized;
-    let start_basis = 2.0 * normalized_cubed - 3.0 * normalized_squared + 1.0;
-    let start_tangent_basis = normalized_cubed - 2.0 * normalized_squared + normalized;
-    let end_basis = -2.0 * normalized_cubed + 3.0 * normalized_squared;
-    let end_tangent_basis = normalized_cubed - normalized_squared;
-    start_basis * y[segment]
-        + start_tangent_basis * h[segment] * tangent[segment]
-        + end_basis * y[segment + 1]
-        + end_tangent_basis * h[segment] * tangent[segment + 1]
-}
-
-fn interior_tangent(left_width: f32, right_width: f32, left_slope: f32, right_slope: f32) -> f32 {
-    if left_slope * right_slope <= 0.0 {
-        return 0.0;
-    }
-    let left_weight = 2.0 * right_width + left_width;
-    let right_weight = right_width + 2.0 * left_width;
-    (left_weight + right_weight) / (left_weight / left_slope + right_weight / right_slope)
-}
-
-fn endpoint_tangent(
-    edge_width: f32,
-    adjacent_width: f32,
-    edge_slope: f32,
-    adjacent_slope: f32,
-) -> f32 {
-    let candidate = ((2.0 * edge_width + adjacent_width) * edge_slope
-        - edge_width * adjacent_slope)
-        / (edge_width + adjacent_width);
-    if candidate.signum() != edge_slope.signum() {
-        0.0
-    } else if edge_slope.signum() != adjacent_slope.signum()
-        && candidate.abs() > 3.0 * edge_slope.abs()
-    {
-        3.0 * edge_slope
-    } else {
-        candidate
-    }
+/// CEM3310 sustain-pin voltage relative to the nominal 5 V peak. The sustain
+/// pot is written uncomplemented and halved by the 4.75k/4.75k divider, so
+/// the V8.1 10 V software ceiling (code 120) is exactly the 5 V peak.
+fn sustain_control_normalized(value: f32) -> f32 {
+    general_control_volts(value) * SUSTAIN_CONTROL_DIVIDER / NOMINAL_PEAK_VOLTS
 }
 
 #[cfg(test)]
@@ -603,15 +518,16 @@ mod tests {
     fn trigger_attack_decay_sustain_and_release_are_complete() {
         let mut envelope = AdsrEnvelope::default();
         envelope.trigger();
+        let sustain = sustain_control_normalized(0.4);
         let mut peak = 0.0_f32;
         for _ in 0..500_000 {
             peak = peak.max(envelope.next(48_000.0, 0.01, 0.05, 0.4, 0.01));
-            if (envelope.value - 0.4).abs() < 1.0e-5 {
+            if (envelope.value - sustain).abs() < 1.0e-5 {
                 break;
             }
         }
         assert!(peak > 0.99);
-        assert!((envelope.value - 0.4).abs() < 1.0e-5);
+        assert!((envelope.value - sustain).abs() < 1.0e-5);
         envelope.release();
         for _ in 0..500_000 {
             let _ = envelope.next(48_000.0, 0.01, 0.05, 0.4, 0.01);
@@ -636,80 +552,94 @@ mod tests {
         assert!(fast.value > slow.value);
     }
 
+    fn code(code: u8) -> f32 {
+        f32::from(code) / 127.0
+    }
+
+    fn attack_to_peak_seconds(control: f32) -> f32 {
+        time_constant_seconds(control)
+            * -libm::logf(1.0 - NOMINAL_PEAK_VOLTS / NOMINAL_ATTACK_ASYMPTOTE_VOLTS)
+    }
+
     #[test]
-    fn populated_components_set_the_fastest_time_constant() {
+    fn populated_components_set_the_rc_time_constant() {
         assert!((populated_rc_seconds() - 0.000_947_7).abs() < 1.0e-9);
-        assert_eq!(time_constant_seconds(0.0), populated_rc_seconds());
     }
 
     #[test]
-    fn service_dial_six_anchors_one_second_nominal_attack() {
-        let attack_seconds =
-            time_constant_seconds(SERVICE_DIAL_SIX) * nominal_attack_threshold_time_constants();
-        assert!((attack_seconds - SERVICE_ATTACK_SECONDS).abs() < 1.0e-5);
+    fn sd430_network_sets_the_time_control_pin_span() {
+        // Firmware code 0x7a (pot 0) through 24.3k against 13k/-5 V and 806R.
+        let fastest = time_control_pin_volts(0.0);
+        let panel_ceiling = time_control_pin_volts(code(120));
+        let slowest = time_control_pin_volts(1.0);
+        assert!((0.024..0.026).contains(&fastest), "{fastest}");
+        assert!(
+            (-0.2795..-0.2780).contains(&panel_ceiling),
+            "{panel_ceiling}"
+        );
+        assert!((-0.2835..-0.2826).contains(&slowest), "{slowest}");
+        // The node is zero volts, i.e. exactly Rx*Cx, near pot code 10.
+        assert!(time_control_pin_volts(code(9)) > 0.0);
+        assert!(time_control_pin_volts(code(11)) < 0.0);
     }
 
     #[test]
-    fn service_dial_six_anchors_one_second_audible_release() {
-        let release_seconds =
-            time_constant_seconds_for_direction(SERVICE_DIAL_SIX, CurrentDirection::Discharge)
-                * nominal_audible_discharge_time_constants();
-        assert!((release_seconds - SERVICE_DISCHARGE_SECONDS).abs() < 1.0e-5);
-    }
-
-    #[test]
-    fn factory_e_piano_anchors_the_fast_attack_and_release_off_region() {
-        let attack_seconds = time_constant_seconds(FACTORY_E_PIANO_ATTACK_CONTROL)
-            * nominal_attack_threshold_time_constants();
-        let release_seconds = time_constant_seconds_for_direction(
-            FIRMWARE_RELEASE_OFF_CONTROL,
-            CurrentDirection::Discharge,
-        ) * nominal_audible_discharge_time_constants();
-        assert!((attack_seconds - FACTORY_E_PIANO_ATTACK_SECONDS).abs() < 1.0e-6);
-        assert!((release_seconds - FACTORY_E_PIANO_RELEASE_OFF_SECONDS).abs() < 1.0e-6);
-    }
-
-    #[test]
-    fn owner_panel_landmarks_anchor_the_global_calibration() {
-        let dial_five_seconds =
-            time_constant_seconds(OWNER_DIAL_FIVE) * nominal_attack_threshold_time_constants();
-        let dial_ten_seconds =
-            time_constant_seconds(1.0) * nominal_attack_threshold_time_constants();
-        assert!((dial_five_seconds - OWNER_DIAL_FIVE_SECONDS).abs() < 1.0e-5);
-        assert!((dial_ten_seconds - OWNER_DIAL_TEN_SECONDS).abs() < 1.0e-4);
-    }
-
-    #[test]
-    fn calibrated_panel_curve_is_monotone_at_every_stored_position() {
-        for direction in [CurrentDirection::Charge, CurrentDirection::Discharge] {
-            let mut previous_voltage = calibrated_control_millivolts(0.0, direction);
-            let mut previous_time = time_constant_seconds_for_direction(0.0, direction);
-            assert_eq!(previous_voltage, 0.0);
-            for code in 1..=127 {
-                let control = code as f32 / 127.0;
-                let voltage = calibrated_control_millivolts(control, direction);
-                let time = time_constant_seconds_for_direction(control, direction);
-                assert!(voltage > previous_voltage);
-                assert!(time > previous_time);
-                previous_voltage = voltage;
-                previous_time = time;
-            }
+    fn time_is_exactly_exponential_in_the_stored_code() {
+        // One DAC step moves the pin by the same voltage everywhere, so each
+        // code multiplies the time constant by the same factor.
+        let step = time_constant_seconds(code(1)) / time_constant_seconds(code(0));
+        for stored in 1..=121 {
+            let ratio =
+                time_constant_seconds(code(stored + 1)) / time_constant_seconds(code(stored));
+            assert!((ratio / step - 1.0).abs() < 1.0e-3, "{stored}");
         }
+        assert!((1.09..1.10).contains(&step));
+        // V8.1's eight-bit complement cannot go below zero.
+        assert_eq!(time_constant_seconds(code(122)), time_constant_seconds(1.0));
     }
 
     #[test]
-    fn control_span_respects_the_instrument_panel_range() {
-        let ratio = time_constant_seconds(1.0) / time_constant_seconds(0.0);
-        assert!((20_000.0..=35_000.0).contains(&ratio));
-        assert!((259.0..261.0).contains(&calibrated_control_millivolts(
-            1.0,
-            CurrentDirection::Charge,
-        )));
-        assert!((20.0..21.0).contains(&time_constant_seconds(1.0)));
-        let discharge_period =
-            time_constant_seconds_for_direction(1.0, CurrentDirection::Discharge)
-                * nominal_audible_discharge_time_constants();
-        assert!((discharge_period - OWNER_DIAL_TEN_SECONDS).abs() < 1.0e-4);
+    fn owner_and_service_endpoints_follow_from_the_circuit() {
+        // Owner's manual: approximately 1 ms to 30 s over the panel range.
+        let fastest_attack = attack_to_peak_seconds(0.0);
+        let slowest_attack = attack_to_peak_seconds(code(120));
+        assert!(
+            (0.0004..=0.0012).contains(&fastest_attack),
+            "{fastest_attack}"
+        );
+        assert!((28.0..=33.0).contains(&slowest_attack), "{slowest_attack}");
+        // Service test 4-6: amplifier release at 10 is longer than 20 s.
+        let slowest_release = time_constant_seconds(code(120)) * core::f32::consts::LN_10;
+        assert!(slowest_release > 20.0, "{slowest_release}");
+    }
+
+    #[test]
+    fn factory_e_piano_onset_and_release_off_stay_fast() {
+        // Program 1-4's Attack code 30 reaches half of the final-VCA current
+        // (about 2.8 V above Q410's ~0.56 V knee) in the 3-5 ms measured on
+        // the Rev 3 recording.
+        let half_current_volts = 0.56 + (NOMINAL_PEAK_VOLTS - 0.56) / 2.0;
+        let half_level_seconds = time_constant_seconds(code(30))
+            * libm::logf(
+                NOMINAL_ATTACK_ASYMPTOTE_VOLTS
+                    / (NOMINAL_ATTACK_ASYMPTOTE_VOLTS - half_current_volts),
+            );
+        assert!(
+            (0.003..=0.005).contains(&half_level_seconds),
+            "{half_level_seconds}"
+        );
+        // The fixed 0x64 RELEASE-off write is short but not the minimum.
+        let release_off = time_constant_seconds(code(22));
+        assert!((0.002..=0.004).contains(&release_off), "{release_off}");
+        assert!(release_off > time_constant_seconds(0.0));
+    }
+
+    #[test]
+    fn sustain_code_120_is_the_full_peak() {
+        assert!((sustain_control_normalized(code(120)) - 1.0).abs() < 2.0e-3);
+        assert!((sustain_control_normalized(code(60)) - 0.5).abs() < 2.0e-3);
+        assert_eq!(sustain_control_normalized(0.0), 0.0);
+        assert!(sustain_control_normalized(1.0) > 1.0);
     }
 
     #[test]
@@ -765,17 +695,9 @@ mod tests {
                 let middle = profiled_time_constant_seconds(0.6, profile, direction);
                 let slow = profiled_time_constant_seconds(1.0, profile, direction);
                 assert!(fast < middle && middle < slow);
-                assert!((0.0007..=0.0013).contains(&fast));
-                match direction {
-                    CurrentDirection::Charge => {
-                        assert!((0.5..=0.85).contains(&middle));
-                        assert!((15.0..=30.0).contains(&slow));
-                    }
-                    CurrentDirection::Discharge => {
-                        assert!((0.3..=0.6).contains(&middle));
-                        assert!((9.0..=19.0).contains(&slow));
-                    }
-                }
+                assert!((0.000_2..=0.000_6).contains(&fast), "{fast}");
+                assert!((0.2..=0.7).contains(&middle), "{middle}");
+                assert!((12.0..=45.0).contains(&slow), "{slow}");
             }
         }
     }
@@ -806,10 +728,21 @@ mod tests {
     #[test]
     fn nominal_buffer_produces_the_published_attack_step() {
         let profile = ENVELOPE_PROFILES[4];
-        let offset = buffer_drive_offset(0.0, Stage::Attack, 0.0, 0.0, 0.0, 0.0, profile);
+        // The data sheet's (Ro/Rx)*Vz step applies at Vc = 0, which the SD430
+        // node reaches near stored Attack code 10.
+        let zero_volt_control = 10.0 / 127.0;
+        let offset = buffer_drive_offset(
+            0.0,
+            Stage::Attack,
+            zero_volt_control,
+            0.0,
+            0.0,
+            0.0,
+            profile,
+        );
         let expected = NOMINAL_BUFFER_OUTPUT_RESISTANCE_OHMS / TIMING_RESISTOR_OHMS
             * NOMINAL_ATTACK_ASYMPTOTE_VOLTS;
-        assert!((offset - expected).abs() < 1.0e-6);
+        assert!((offset - expected).abs() < 1.0e-3);
         assert!((0.050..=0.055).contains(&offset));
     }
 

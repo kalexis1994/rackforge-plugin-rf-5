@@ -44,6 +44,9 @@ trajectory.
 - segmented advancement matches the analytical reset phase;
 - invalid offsets remain finite and bounded;
 - sync remains independent of oscillator B's audio selection;
+- a high factory Sync I note's maximum second difference over its first 10 ms
+  stays below 1.1 times that of the same note's steady synced waveform, so the
+  onset carries no doubled click;
 - periodic hard-sync renders stay below -40 dB non-harmonic energy at three
   pitch regions for 44.1, 48, 96 and 192 kHz host rates.
 

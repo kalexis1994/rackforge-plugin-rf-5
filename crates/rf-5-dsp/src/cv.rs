@@ -15,11 +15,12 @@ use rf_5_voice::{
     tuning,
 };
 
-pub(crate) const GLIDE_CV_SPAN_VOLTS: f32 = 5.0;
-const DEFAULT_COMMON_CV_SPAN_VOLTS: f32 = 5.0;
-const FILTER_CONTROL_CV_SPAN_VOLTS: f32 = 10.0;
-const PATCH_AMOUNT_CV_SPAN_VOLTS: f32 = 10.0;
-const AUDIO_LEVEL_CV_SPAN_VOLTS: f32 = 10.0;
+// Every seven-bit common cell holds the ordinary SD332 DAC output: 1/12 V per
+// stored code, 10.000 V at the panel's code 120 and 10.58 V at code 127.
+// (TM1000D.2 p. 2-8 and trim 4-14; Fig. 2-4 labels GLIDE CV 0-10 V as well.)
+// The envelope time cells hold V8.1's complemented code, handled by the
+// CEM3310 model; the held voltage here only sets acquisition and droop.
+const COMMON_CV_FULL_SCALE_VOLTS: f32 = 127.0 / 12.0;
 const SEMITONES_PER_CONTROL_VOLT: f32 = 12.0;
 
 #[derive(Clone, Copy, Debug)]
@@ -297,28 +298,8 @@ fn sample_hold_acquisition_fraction() -> f32 {
     1.0 - libm::expf(-dwell_seconds / time_constant_seconds)
 }
 
-fn common_cv_span_volts(destination: ControlVoltageDestination) -> f32 {
-    match destination {
-        // Service trim 4-14 measures the Filter Cutoff S/H at approximately
-        // 10 V for panel maximum. Filter Resonance shares the same common DAC
-        // and reaches the populated 200 kohm current-input resistor on SD431.
-        ControlVoltageDestination::FilterCutoff | ControlVoltageDestination::FilterResonance => {
-            FILTER_CONTROL_CV_SPAN_VOLTS
-        }
-        // SD332 reaches approximately 10.67 V and V8.1 normally caps patch
-        // CVs at 10 V. SD333 sends these three held voltages through Q301,
-        // Q303 and Q304 before their collector currents reach the voice cards.
-        ControlVoltageDestination::FilterEnvelopeAmount
-        | ControlVoltageDestination::PolyModOscillatorBAmount
-        | ControlVoltageDestination::PolyModFilterEnvelopeAmount => PATCH_AMOUNT_CV_SPAN_VOLTS,
-        // SD333 buffers these held voltages into grounded-base Q306/Q302/Q305.
-        // Their populated 33k/33k/75k emitter resistors set the two oscillator
-        // mixer currents and the common noise-VCA current respectively.
-        ControlVoltageDestination::OscillatorAMix
-        | ControlVoltageDestination::OscillatorBMix
-        | ControlVoltageDestination::NoiseMix => AUDIO_LEVEL_CV_SPAN_VOLTS,
-        _ => DEFAULT_COMMON_CV_SPAN_VOLTS,
-    }
+fn common_cv_span_volts(_destination: ControlVoltageDestination) -> f32 {
+    COMMON_CV_FULL_SCALE_VOLTS
 }
 
 fn common_parameter(destination: ControlVoltageDestination) -> Option<Parameter> {
@@ -405,7 +386,7 @@ mod tests {
             AutoTune::calibrated(),
             ScaleProgram::default(),
         );
-        let expected = RELEASE_DISABLED_EQUIVALENT_NORMALIZED * DEFAULT_COMMON_CV_SPAN_VOLTS;
+        let expected = RELEASE_DISABLED_EQUIVALENT_NORMALIZED * COMMON_CV_FULL_SCALE_VOLTS;
         assert_eq!(
             targets.get(ControlVoltageDestination::FilterRelease as usize),
             expected
@@ -437,11 +418,11 @@ mod tests {
 
         assert_eq!(
             targets.get(ControlVoltageDestination::FilterCutoff as usize),
-            FILTER_CONTROL_CV_SPAN_VOLTS
+            COMMON_CV_FULL_SCALE_VOLTS
         );
         assert_eq!(
             targets.get(ControlVoltageDestination::FilterResonance as usize),
-            FILTER_CONTROL_CV_SPAN_VOLTS
+            COMMON_CV_FULL_SCALE_VOLTS
         );
         for destination in [
             ControlVoltageDestination::FilterEnvelopeAmount,
@@ -450,7 +431,7 @@ mod tests {
         ] {
             assert_eq!(
                 targets.get(destination as usize),
-                PATCH_AMOUNT_CV_SPAN_VOLTS
+                COMMON_CV_FULL_SCALE_VOLTS
             );
         }
         for destination in [
@@ -458,11 +439,14 @@ mod tests {
             ControlVoltageDestination::OscillatorBMix,
             ControlVoltageDestination::NoiseMix,
         ] {
-            assert_eq!(targets.get(destination as usize), AUDIO_LEVEL_CV_SPAN_VOLTS);
+            assert_eq!(
+                targets.get(destination as usize),
+                COMMON_CV_FULL_SCALE_VOLTS
+            );
         }
         assert_eq!(
             targets.get(ControlVoltageDestination::Glide as usize),
-            GLIDE_CV_SPAN_VOLTS
+            COMMON_CV_FULL_SCALE_VOLTS
         );
     }
 

@@ -6,14 +6,17 @@
 
 const OCTAVE_SEMITONES: f32 = 12.0;
 
-// SD431 routes PMOD through R4360 to the CEM3340 oscillator-A summing node.
+// SD431 routes PMOD through R4357 to the CEM3340 oscillator-A summing node.
 // The board's calibrated pitch input uses 100 kohm for one volt per octave,
 // so the populated 301 kohm PMOD input supplies 100/301 octaves per PMOD volt.
 const PITCH_REFERENCE_INPUT_OHMS: f32 = 100_000.0;
 const PITCH_POLY_MOD_INPUT_OHMS: f32 = 301_000.0;
 
-// R4112 feeds the inverting U432 pulse-width summer and R4162 closes its
-// feedback loop. The CEM3340's complete duty-cycle control range is 5 V.
+// R4172 feeds the inverting U432 pulse-width summer and R4162 closes its
+// feedback loop. The panel/Wheel-Mod PW A SUM CV reaches the same summer
+// already inverted by SD334's U366, so it lands on pin 5 positive; PMOD sees
+// only U432's inversion. Positive Poly Mod therefore narrows the pulse. The
+// CEM3340's complete duty-cycle control range is 5 V.
 const PULSE_WIDTH_POLY_MOD_INPUT_OHMS: f32 = 30_100.0;
 const PULSE_WIDTH_FEEDBACK_OHMS: f32 = 52_300.0;
 const CEM3340_PULSE_WIDTH_RANGE_VOLTS: f32 = 5.0;
@@ -37,7 +40,7 @@ pub fn destinations(bus_volts: f32) -> PolyModDestinations {
     }
 
     let oscillator_octaves = bus_volts * PITCH_REFERENCE_INPUT_OHMS / PITCH_POLY_MOD_INPUT_OHMS;
-    let pulse_width = bus_volts * PULSE_WIDTH_FEEDBACK_OHMS
+    let pulse_width = -bus_volts * PULSE_WIDTH_FEEDBACK_OHMS
         / PULSE_WIDTH_POLY_MOD_INPUT_OHMS
         / CEM3340_PULSE_WIDTH_RANGE_VOLTS;
     let filter_octaves = bus_volts * FILTER_REFERENCE_INPUT_OHMS / FILTER_POLY_MOD_INPUT_OHMS;
@@ -57,7 +60,7 @@ mod tests {
     fn one_physical_bus_volt_drives_every_destination() {
         let routed = destinations(1.0);
         assert!((routed.oscillator_a_semitones - 3.986_711).abs() < 1.0e-5);
-        assert!((routed.oscillator_a_pulse_width - 0.347_508_3).abs() < 1.0e-5);
+        assert!((routed.oscillator_a_pulse_width + 0.347_508_3).abs() < 1.0e-5);
         assert!((routed.filter_octaves - 1.821_493_6).abs() < 1.0e-5);
     }
 
@@ -73,7 +76,7 @@ mod tests {
             / (PITCH_REFERENCE_INPUT_OHMS / PITCH_POLY_MOD_INPUT_OHMS);
 
         assert!(
-            (routed.oscillator_a_pulse_width / oscillator_octaves - expected_pulse_ratio).abs()
+            (routed.oscillator_a_pulse_width / oscillator_octaves + expected_pulse_ratio).abs()
                 < 1.0e-6
         );
         assert!(

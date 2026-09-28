@@ -97,31 +97,54 @@ const TRIANGLE_SYMMETRY: [f32; OUTPUT_PROFILE_COUNT] = [
 const TRIANGLE_OUTPUT_IMPEDANCE_OHMS: [f32; OUTPUT_PROFILE_COUNT] = [
     65.0, 78.0, 91.0, 100.0, 112.0, 125.0, 138.0, 150.0, 84.0, 106.0,
 ];
+// CEM3340 data sheet: the PWM input reaches 100% duty at 5.0 V typical,
+// 4.6-5.4 V across devices (0% at 0 V). Each oscillator keeps its own point
+// in that range; the panel law assumes the typical 5 V.
+const PULSE_WIDTH_FULL_SCALE_VOLTS: [f32; OUTPUT_PROFILE_COUNT] =
+    [4.72, 5.18, 4.86, 5.30, 5.00, 4.64, 5.24, 4.93, 5.10, 4.79];
+const NOMINAL_PULSE_WIDTH_FULL_SCALE_VOLTS: f32 = 5.0;
+
+fn device_duty_cycle(nominal_duty: f32, profile: usize) -> f32 {
+    if !nominal_duty.is_finite() {
+        return 0.5;
+    }
+    (nominal_duty * NOMINAL_PULSE_WIDTH_FULL_SCALE_VOLTS
+        / PULSE_WIDTH_FULL_SCALE_VOLTS[profile % OUTPUT_PROFILE_COUNT])
+        .clamp(0.0, 1.0)
+}
 
 // The voice board uses 150 kohm inputs for saw/triangle and 200 kohm for
-// pulse. Each open-emitter pulse output is pulled toward -5 V through 10
-// kohm before its ground-referenced 4016 selector. The selector's input clamp
-// bounds the low state near one diode drop below ground. In the high state the
-// pull-down draws more than the CEM3340 data sheet's 0.6 mA breakpoint, so its
-// 1.3 kohm effective output resistance must be solved together with the 10
-// kohm board load. Values below retain circuit volts and are expressed
-// relative to one 150 kohm input conductance. Loading by the CA3280 input
-// itself is applied at the VCA boundary, where every selected path is known.
+// pulse. Each open-emitter pulse output is pulled to ground through 10 kohm
+// (R4295/R4187 on SD431) before its 4016 selector, so the low state is 0 V.
+// In the high state the pull-down draws more than the CEM3340 data sheet's
+// 0.6 mA breakpoint, so its 1.3 kohm effective output resistance must be
+// solved together with the 10 kohm board load. Values below retain circuit
+// volts and are expressed relative to one 150 kohm input conductance. Loading
+// by the CA3280 input itself is applied at the VCA boundary, where every
+// selected path is known.
 const SAW_TRIANGLE_MIXER_CONDUCTANCE: f32 = 1.0;
-const TRIANGLE_MIXER_LOAD_RESISTANCE_OHMS: f32 = 150_000.0;
+// The triangle pin sees only the selected 4016 and U451's non-inverting input
+// biased by R4253/R4252 (1M/1M): 500 kohm. The 150 kohm mixer and Poly Mod
+// resistors hang on U451's output, not on the CEM3340.
+const TRIANGLE_PIN_LOAD_RESISTANCE_OHMS: f32 = 500_000.0;
 const PULSE_MIXER_CONDUCTANCE: f32 = 150_000.0 / 200_000.0;
 const PULSE_POSITIVE_SUPPLY_VOLTS: f32 = 15.0;
-const PULSE_PULLDOWN_VOLTS: f32 = -5.0;
+const PULSE_PULLDOWN_VOLTS: f32 = 0.0;
 const PULSE_PULLDOWN_RESISTANCE_OHMS: f32 = 10_000.0;
 const PULSE_HIGH_HEADROOM_VOLTS: f32 = 0.3;
 const PULSE_HIGH_OUTPUT_RESISTANCE_OHMS: f32 = 1_300.0;
 const PULSE_HIGH_CURRENT_BREAKPOINT_AMPS: f32 = 0.6e-3;
-const PULSE_LOWER_VOLTS: f32 = -0.6;
+const PULSE_LOWER_VOLTS: f32 = 0.0;
 const PULSE_UPPER_VOLTS: f32 =
     cem3340_loaded_pulse_high_volts(PULSE_PULLDOWN_VOLTS, PULSE_PULLDOWN_RESISTANCE_OHMS);
-// SD431 derives 2.27 V TRI REF and U451 subtracts it from OSC B's raw
-// positive-going triangle before the Poly Mod amount OTA.
-const TRIANGLE_POLY_MOD_REFERENCE_VOLTS: f32 = 2.27;
+// SD431's DC level shifter U451 (R4254/R4255 100k) doubles OSC B's raw 0-5 V
+// triangle and subtracts TRI REF. SD430 derives TRI REF from +15 V through
+// R4279 10k/R4290 4.99k; loaded by the five voice cards it is the annotated
+// 4.57 V. (The circled 2.27 V is U451's inverting-input node, not the
+// reference.) The resulting ~+/-5 V wave feeds both R4285 150k into the U464
+// mixer and R4280 150k into the U428 Poly Mod amount OTA.
+const TRIANGLE_LEVEL_SHIFT_GAIN: f32 = 2.0;
+const TRIANGLE_REFERENCE_VOLTS: f32 = 4.57;
 // The populated 1 nF timing capacitor turns the CEM3340 data-sheet typical
 // 570 uA charge/discharge boundary into 57 kHz:
 // f = 3 I / (2 Vcc C), with Vcc = 15 V. Poly Mod can command considerably
@@ -271,11 +294,7 @@ impl Vco {
         };
         let frequency = triangle_loaded_frequency(frequency, self.profile_index, triangle_selected);
         let increment = (frequency / sample_rate.max(1.0)).clamp(0.0, 0.49);
-        let pulse_width = if pulse_width.is_finite() {
-            pulse_width.clamp(0.0, 1.0)
-        } else {
-            0.5
-        };
+        let pulse_width = device_duty_cycle(pulse_width, self.profile_index);
         let hard_sync_event = saw_hard_sync_event(self.phase, increment);
         self.previous_pulse_width = pulse_width;
         self.pulse_width_initialized = true;
@@ -304,11 +323,7 @@ impl Vco {
         };
         let frequency = triangle_loaded_frequency(frequency, profile, waves.triangle);
         let increment = (frequency / sample_rate.max(1.0)).clamp(0.0, 0.49);
-        let pulse_width = if pulse_width.is_finite() {
-            pulse_width.clamp(0.0, 1.0)
-        } else {
-            0.5
-        };
+        let pulse_width = device_duty_cycle(pulse_width, profile);
         let previous_pulse_width = if self.pulse_width_initialized {
             self.previous_pulse_width
         } else {
@@ -341,8 +356,9 @@ impl Vco {
             let half_range = (TRIANGLE_UPPER_VOLTS[profile] - TRIANGLE_LOWER_VOLTS[profile]) * 0.5;
             let midpoint = (TRIANGLE_UPPER_VOLTS[profile] + TRIANGLE_LOWER_VOLTS[profile]) * 0.5;
             let raw_source_volts = centered * half_range + midpoint;
-            mixer_negative_source_volts += raw_source_volts;
-            poly_mod_source_volts += raw_source_volts - TRIANGLE_POLY_MOD_REFERENCE_VOLTS;
+            let shifted_volts = level_shifted_triangle_volts(raw_source_volts);
+            mixer_negative_source_volts += shifted_volts;
+            poly_mod_source_volts += shifted_volts;
             mixer_negative_source_conductance += SAW_TRIANGLE_MIXER_CONDUCTANCE;
             poly_mod_source_conductance += SAW_TRIANGLE_MIXER_CONDUCTANCE;
         }
@@ -460,6 +476,10 @@ impl Vco {
     }
 }
 
+fn level_shifted_triangle_volts(raw_volts: f32) -> f32 {
+    TRIANGLE_LEVEL_SHIFT_GAIN * raw_volts - TRIANGLE_REFERENCE_VOLTS
+}
+
 fn triangle_loaded_frequency(frequency: f32, profile: usize, triangle_selected: bool) -> f32 {
     if !triangle_selected {
         return frequency;
@@ -473,7 +493,7 @@ pub(crate) fn triangle_load_frequency_ratio(profile: usize) -> f32 {
     // output impedance lets an external load pull oscillator frequency. The
     // CEM3340 sheet gives the first-order reduction directly as Rout/Rload.
     let pull = TRIANGLE_OUTPUT_IMPEDANCE_OHMS[profile % OUTPUT_PROFILE_COUNT]
-        / TRIANGLE_MIXER_LOAD_RESISTANCE_OHMS;
+        / TRIANGLE_PIN_LOAD_RESISTANCE_OHMS;
     1.0 - pull
 }
 
@@ -1077,8 +1097,9 @@ mod tests {
 
     #[test]
     fn one_and_ninety_nine_percent_remain_complementary_pulses() {
-        let mut narrow = Vco::default();
-        let mut wide = Vco::default();
+        // Profile 4 is the data sheet's typical 5.0 V PWM full scale.
+        let mut narrow = Vco::with_phase_and_profile(0.0, 4);
+        let mut wide = Vco::with_phase_and_profile(0.0, 4);
         let mut narrow_sum = 0.0;
         let mut wide_sum = 0.0;
         let mut narrow_edges = 0;
@@ -1100,6 +1121,17 @@ mod tests {
         assert!(((wide_mean - midpoint) / half_range - 0.98).abs() < 0.01);
         assert!((narrow_edges as isize - 100).abs() <= 2);
         assert!((wide_edges as isize - 100).abs() <= 2);
+    }
+
+    #[test]
+    fn pwm_full_scale_population_spans_the_data_sheet_range() {
+        for full_scale in PULSE_WIDTH_FULL_SCALE_VOLTS {
+            assert!((4.6..=5.4).contains(&full_scale));
+        }
+        assert_eq!(device_duty_cycle(0.5, 4), 0.5);
+        assert!(device_duty_cycle(0.5, 5) > 0.5);
+        assert!(device_duty_cycle(0.5, 3) < 0.5);
+        assert_eq!(device_duty_cycle(0.97, 5), 1.0);
     }
 
     #[test]
@@ -1249,7 +1281,8 @@ mod tests {
             - PULSE_HIGH_HEADROOM_VOLTS
             - PULSE_HIGH_OUTPUT_RESISTANCE_OHMS * pull_down_current_amps;
         assert!((PULSE_UPPER_VOLTS - data_sheet_high_volts).abs() < 1.0e-6);
-        assert!((PULSE_UPPER_VOLTS - 12.433_628).abs() < 1.0e-5);
+        // R4295/R4187 return the 10 kohm load to ground, as on the LFO.
+        assert!((PULSE_UPPER_VOLTS - 13.008_85).abs() < 1.0e-5);
     }
 
     #[test]
@@ -1268,9 +1301,10 @@ mod tests {
         let loaded = triangle_loaded_frequency(frequency, profile, true);
         let fractional_pull = 1.0 - loaded / frequency;
 
-        assert!((fractional_pull - 150.0 / 150_000.0).abs() < 1.0e-7);
+        // Profile 7's 150 ohm buffer against U451's 1M/1M input bias.
+        assert!((fractional_pull - 150.0 / 500_000.0).abs() < 1.0e-7);
         let cents = 1_200.0 * libm::log2f(loaded / frequency);
-        assert!((-1.74..-1.72).contains(&cents));
+        assert!((-0.53..-0.51).contains(&cents));
     }
 
     #[test]
@@ -1295,7 +1329,7 @@ mod tests {
     }
 
     #[test]
-    fn triangle_audio_is_raw_while_poly_mod_is_level_shifted() {
+    fn u451_level_shifts_the_triangle_for_audio_and_poly_mod() {
         let profile = 4;
         let mut low = Vco::with_phase_and_profile(0.0, profile);
         let mut high = Vco::with_phase_and_profile(TRIANGLE_SYMMETRY[profile], profile);
@@ -1310,21 +1344,15 @@ mod tests {
         let triangle_high = high.mixer_negative_source_volts;
         let saw_peak_to_peak = SAW_UPPER_VOLTS[profile] - SAW_LOWER_VOLTS[profile];
         let triangle_peak_to_peak = triangle_high - triangle_low;
-        assert!((triangle_low - TRIANGLE_LOWER_VOLTS[profile]).abs() < 1.0e-6);
-        assert!((triangle_high - TRIANGLE_UPPER_VOLTS[profile]).abs() < 1.0e-6);
-        assert!(
-            (low.poly_mod_source_volts
-                - (TRIANGLE_LOWER_VOLTS[profile] - TRIANGLE_POLY_MOD_REFERENCE_VOLTS))
-                .abs()
-                < 1.0e-6
-        );
-        assert!(
-            (high.poly_mod_source_volts
-                - (TRIANGLE_UPPER_VOLTS[profile] - TRIANGLE_POLY_MOD_REFERENCE_VOLTS))
-                .abs()
-                < 1.0e-6
-        );
-        assert!((triangle_peak_to_peak / saw_peak_to_peak - 0.508).abs() < 0.01);
+        let expected_low = 2.0 * TRIANGLE_LOWER_VOLTS[profile] - TRIANGLE_REFERENCE_VOLTS;
+        let expected_high = 2.0 * TRIANGLE_UPPER_VOLTS[profile] - TRIANGLE_REFERENCE_VOLTS;
+        assert!((triangle_low - expected_low).abs() < 1.0e-5);
+        assert!((triangle_high - expected_high).abs() < 1.0e-5);
+        // U451 feeds the same shifted wave to the mixer and to Poly Mod.
+        assert_eq!(low.poly_mod_source_volts, triangle_low);
+        assert_eq!(high.poly_mod_source_volts, triangle_high);
+        // U451's gain of two makes the triangle nearly as large as the saw.
+        assert!((triangle_peak_to_peak / saw_peak_to_peak - 1.016).abs() < 0.02);
     }
 
     #[test]
@@ -1346,12 +1374,9 @@ mod tests {
         let pulse_sample = pulse.next(0.0, 48_000.0, 0.5, PULSE);
         assert!(saw_sample.poly_mod_source_volts >= 0.0);
         assert!(pulse_sample.poly_mod_source_volts >= -0.5);
-        assert!(
-            (triangle_sample.mixer_negative_source_volts
-                - triangle_sample.poly_mod_source_volts
-                - TRIANGLE_POLY_MOD_REFERENCE_VOLTS)
-                .abs()
-                < 1.0e-6
+        assert_eq!(
+            triangle_sample.mixer_negative_source_volts,
+            triangle_sample.poly_mod_source_volts
         );
     }
 

@@ -25,8 +25,8 @@ package is still one portable WebAssembly component, not a set of native builds.
 The state and determinism contract is documented in
 [`docs/PARALLEL_RENDER.md`](docs/PARALLEL_RENDER.md).
 Saw uses a short oversampled PolyBLEP reset, while static pulse uses build-time
-mipmapped Fourier tables that retain every safe audible partial, including the
-original 1%/99% endpoints. Oscillator B's asymmetric
+mipmapped Fourier tables that retain every safe audible partial, including
+1%/99% and narrower pulses. Oscillator B's asymmetric
 triangle uses a local PolyBLAMP correction at both slope transitions. A
 four-times-oversampled path with a 127-tap anti-alias decimator
 is retained as a non-distributed fidelity reference and regression oracle.
@@ -66,12 +66,15 @@ five-voice pre-volume summer. Its original programmable
 Scale Mode adds twelve global, patch-independent chromatic offsets with exact
 V8.1 code steps. Their saw, triangle and pulse
 outputs also retain the published voltage/symmetry ranges, populated-board
-resistor weighting, 128-step 1-99% panel pulse-width law, modulation overtravel
-to stable 0/100% DC and distinct audio versus Poly Mod polarity. The shared LFO
+resistor weighting, a circuit pulse-width law that is DC at panel code 0 and
+from code 115, square near code 57 and driven to stable 0/100% DC by
+modulation, and distinct audio versus Poly Mod polarity. The shared LFO
 now follows SD334's complete CEM3340 reference, multiplier,
-1-uF timing-capacitor and 0-10 V DAC network instead of a provisional 20 Hz
-anchor: its nominal 128-step range is approximately 0.0908-55.8 Hz, with the
-published finite timing-current ceiling rounding only the fastest codes. Its
+0.1-uF timing-capacitor and 1/12 V-per-code DAC network instead of a
+provisional 20 Hz anchor. The untrimmed chip's two internal constants come
+from five LFO rates measured on one Rev 3 unit's factory recordings, and it
+runs from approximately 0.0247 Hz at code 0 to 34.0 Hz at the panel's
+code-120 ceiling. Its
 saw and loaded square retain their positive-going Wheel Mod displacement;
 U380 alone centres triangle around ground for symmetric vibrato. A unified 6/11
 ms CPU cycle drives 38 independent sample-and-hold cells through the exact
@@ -147,7 +150,7 @@ powershell -ExecutionPolicy Bypass -File tools/build-web-ui.ps1
 bash tools/build-package.sh
 ```
 
-The package is written to `artifacts/rf-5-0.1.17.rfplugin`. It contains one
+The package is written to `artifacts/rf-5-0.1.18.rfplugin`. It contains one
 `wasm-v1` component and has no operating-system or CPU-specific binary. GitHub
 Actions verifies the same source on x86-64 and ARM64, then builds one portable
 package as a workflow artifact. Packaging downloads Binaryen 132 for the build

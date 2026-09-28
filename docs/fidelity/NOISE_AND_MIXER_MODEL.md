@@ -3,9 +3,13 @@
 ## Accepted hardware contract
 
 Rev 3 contains two independent MM5837 pseudo-random sources. U375 on common
-board schematic SD334 is the pink-noise source used only by Wheel Mod. Its
-47 kohm input feeds an inverting LM348 stage with 100 kohm / 0.01 uF parallel
-feedback: a 2.1277 low-frequency gain and an approximately 159 Hz pole.
+board schematic SD334 is the pink-noise source used only by Wheel Mod. R395
+(47 kohm) feeds U374, an inverting LM348 low-pass with R393 100 kohm in
+parallel with C372 0.01 uF: a 2.1277 low-frequency gain and an approximately
+159 Hz pole. R394 (300 kohm from +15 V) centres the stage's DC, and any
+residual DC reaching U378 is nulled by service trim 4-15 (NOISE BALANCE,
+"trim out beats"), so a serviced instrument carries no pink-noise offset and
+none is modeled.
 
 U427 on output-board schematic SD430 is the separate white-noise source heard
 in the audio path. C458's 0.1 uF coupling capacitor, R4131's 200 kohm series
@@ -42,8 +46,9 @@ and destination switches.
   and 7.58 Hz white-noise coupling RC are analytically integrated for the
   exact time on each side of that edge instead of quantizing it to the
   internal sample grid.
-- U375 passes through SD334's exact 47k / (100k parallel 0.01uF) pinking
-  network and feeds only the Wheel Mod current mixer. Its voltage boundary
+- U375 passes through SD334's exact R395 47k / (R393 100k parallel C372
+  0.01uF) pinking network, AC-only after the trimmed DC centring, and feeds
+  only the Wheel Mod current mixer. Its voltage boundary
   uses the MM5837 data-sheet minimum 12 Vpp logic-level separation.
 - U427 passes through SD430's 0.1uF / 200k / 10k AC-coupling network and a
   profiled common unlinearized CA3280. The candidate uses the MM5837's
@@ -54,19 +59,22 @@ and destination switches.
   saw/triangle are 150k, pulse is 200k, and simultaneous selections load the
   two 330-ohm-shunted, approximately 100k unlinearized CA3280 inputs before
   its nonlinear transfer. Saw reaches the positive input; pulse and
-  oscillator-B triangle reach the negative input. Both conductance-weighted
+  oscillator-B triangle reach the negative input, the triangle as U451's
+  approximately +/-5 V `2 * Vtri - 4.57 V` output through R4285 rather than
+  the raw 0-5 V pin voltage. Both conductance-weighted
   source sums are expressed in physical volts and preserve the
   schematic-visible waveform DC because no coupling capacitor precedes U464.
   Both U464 output currents feed CEM3320 `IN A` directly; the populated 100k
   feedback in parallel with the nominal 1M output impedance converts them
   through the same 90.909k first-cell transimpedance.
 - The three audio-level cells retain their original 128-position storage and
-  0-10 V output domain. Q306 and Q302 convert oscillator A and B level through
+  the common DAC's 1/12 V per code (10.000 V at the panel's code-120
+  ceiling). Q306 and Q302 convert oscillator A and B level through
   33k each; Q305 converts common noise level through 75k. Their normalized
   endpoints preserve the serviced full-level boundary only after the physical
   2N4250 knees and distinct current laws.
 - Wheel Mod source mix follows the original 128-position panel storage.
-- Source mix recreates the complementary Q307/Q309 current controls: zero is
+- Source mix recreates the complementary Q307/Q308 current controls: zero is
   LFO, one is noise, while intermediate gains follow their unequal populated
   8.2k and 10k-parallel-20k emitter networks rather than a linear crossfade.
 - Noise joins the two-OTA oscillator mix only at each filter input, matching
@@ -89,7 +97,8 @@ distinct fixed seeds so tests, saved sessions and live renders are reproducible.
 The MM5837 sheet bounds its loaded output levels but does not publish typical
 rail error, and the exact CA3280/Q307 population remains unmeasured. RF-5 uses
 the guaranteed 12 Vpp separation, the populated U374 gain, both U378 input
-dividers, the data-sheet OTA slope/current limit and R3113 load rather than a
+dividers, the data-sheet OTA slope/current limit and the R3113 10k parallel
+R2 100k (9.09k) load rather than a
 normalized drive. These are bounded nominal reconstructions, not measurements
 of one populated instrument.
 Oscillator waveform voltage, 150/200 kohm input weighting, the 330 ohm shunt,

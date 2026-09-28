@@ -32,14 +32,39 @@ procedure expects resonance to begin self-oscillating between panel positions
   feed all four filter cells at twice the host rate and their held output is
   linearly reconstructed. The offline oracle retains the
   complete four-times path.
-- Service trim 4-20 replaces the former 14 Hz intercept: 2.000 V of panel CV
-  with keyboard tracking at A3/A4 must produce 440/880 Hz. Solving that anchor
-  places the ten-octave panel sweep above 16.3516 Hz.
+- The absolute anchor follows service trim 4-20 and the V8.1 ROM. The trim
+  sets 2.000 V (code 24) in Unison and tunes each filter to 440 Hz on key A3
+  and 880 Hz on A4, the highest A of the C0-C5 keyboard; A3 is 45 semitones,
+  3.75 V, above C0. The summed 1 V/octave CV is therefore 440 Hz at 5.75 V and
+  8.18 Hz at 0 V on the lowest key. The V8.1 image writes the same seven-bit
+  key code (0 = lowest C, confirmed by trim 4-14's sequencer-CV readings) to
+  the Unison CV cell (offsets `0x0336-0x0358`) and, in polyphonic mode, to each
+  voice's filter S/H (`0x04FC-0x051F`, zero when FILT KBD is off), so one
+  anchor holds in both modes. An earlier candidate placed 440 Hz on middle A,
+  one octave too high; in 2-4 Toy Piano it carried the slow filter release's
+  resonant peak onto the fundamental at the end of the amplifier release. The
+  panel's code-120 ceiling (10.000 V) lies ten octaves above the floor.
 - Keyboard tracking is a physical on/off route and contributes exactly one
   octave of cutoff for every twelve semitones.
-- Filter Cutoff and Filter Resonance use the documented 0-10 V common-CV
-  domain instead of the former global 0-5 V approximation. R4414 converts the
-  resonance span to 0-50 uA at the CEM3320 control-current input.
+- Filter Cutoff and Filter Resonance hold the common DAC's exact 1/12 V per
+  stored code (10.000 V at code 120, 10.58 V at code 127; see
+  [`CONTROL_SCANNING_AND_CV.md`](CONTROL_SCANNING_AND_CV.md)). One cutoff code
+  is therefore one semitone, instead of the former ten octaves spread across
+  all 127 codes. R4414 converts the resonance CV to 50 uA at code 120 at the
+  CEM3320 control-current input.
+- The direct filter envelope reaches the same control sum through U422's
+  linearized CA3280 half and U433's 100 kohm common-CV resistor; 10 uA is one
+  octave. R452 (R462/R492 on voices 2/5) is 47.5 kohm, printed compactly as
+  "47.5K" like its R450 return rather than with the spaced "475 K" of R453,
+  so the direct half mirrors the Poly Mod half's equal 22k/22k pair. The OTA
+  follows the CA3280 data sheet's Figure 3A transfer rather than a fitted gain:
+  its ID terminal feeds an internal current mirror referred to the V- pin
+  (Intersil's functional diagram), so R451 programs the diodes across
+  approximately 28.8 V rather than to ground or across the full 30 V. A full
+  5 V envelope at code 120 moves cutoff by approximately 6.3-6.6
+  octaves across the five voice profiles, and factory 1-4's amount 34 by
+  approximately 1.5-1.6 octaves. The complete amount path is described in
+  [`POLY_MOD_MODEL.md`](POLY_MOD_MODEL.md).
 - Resonance now follows a strongly bending modified-linear Gm curve. A
   saturating rational law is fixed by the data sheet's typical 1 mmho at
   100 uA point and its 2.2 mmho maximum-Gm line, placing half-saturation at
@@ -76,6 +101,25 @@ procedure expects resonance to begin self-oscillating between panel positions
   warm-up motion at a 10 Hz control rate. `VintageSpread` expands its hard
   magnitude boundary from the data-sheet typical 0.5% to the 1.5% maximum;
   it no longer applies five permanent cutoff offsets.
+- Each cell is evaluated about its own SD431 operating point. Per the CEM3320
+  data sheet every cell input sits approximately 0.65 V above ground, the
+  buffer rests where the input currents equal the chip's internal I_REF
+  (45-85 uA, 63 uA typical), and the Vcc - 3 V wide (10-14 Vpp) swing window
+  is centred at 0.46 Vcc = 6.9 V. IN A sees R4367 100 kohm from the noise
+  buffer (0 V DC) besides its 100 kohm feedback; IN B-D each add the 91 kohm
+  coupling resistor from the previous output and a 240 kohm bias resistor to
+  -15 V (R4412, R4408, R4454). The quiescent outputs therefore alternate
+  around the window centre, about +0.7, -1.1, +0.9 and -1.3 V at typical
+  I_REF, and every cell clips asymmetrically. `FilterProfile` carries each
+  chip's `reference_current_amps` (55/70/60/74/66 uA across the five
+  profiles).
+- Signals are the cell's departure from its rest output. Inside the knee's
+  linear half that difference is formed analytically rather than by
+  subtracting two volt-scale values, so thermal-noise-level signals, which
+  seed self-oscillation at 192 kHz, survive f32; where the knee bends the
+  direct form is exact. The resonance-loop solver brackets its estimate with
+  the fourth cell's rails about that cell's rest point instead of a symmetric
+  +/- ceiling.
 - Every cell output buffer uses the profile's clipping span. The bounded
   even-order term is distributed across the four cells so their complete
   passband cascade, rather than each cell independently, remains in the data
@@ -87,11 +131,13 @@ procedure expects resonance to begin self-oscillating between panel positions
 
 The topology, populated pole and resonance-return networks, exponential scale,
 electrical ranges and resonance current domain, direct U464 current input and
-white-noise distribution are source-backed. Filter signals are deviations around the data sheet's
-nominal approximately 650 mV input summing node and 6.9 V buffer quiescent
-level; source DC is retained as displacement from that serviced operating
-point. The five deterministic points inside the published ranges are a
-validation population, not measurements of five chips from one instrument.
+white-noise distribution are source-backed. Filter signals are deviations
+about each cell's rest point, which follows the data sheet's 0.65 V input,
+I_REF and 0.46 Vcc window with SD431's bias network; source DC is retained as
+further displacement from that point. The 0.65 V input is a nominal junction
+value and the five I_REF values sample, rather than measure, the published
+45-85 uA range. The five deterministic points inside the published ranges are
+a validation population, not measurements of five chips from one instrument.
 The smooth Gm function is a replaceable rational reconstruction through the
 published graph and typical point rather than a transistor-level model. The
 five Gm/Q-input pairs are deterministic combinations inside published bounds
@@ -107,7 +153,8 @@ replaceable hypotheses because no admitted source publishes those trajectories.
 
 ## Acceptance tests
 
-- the panel mapping spans exactly ten octaves;
+- the panel mapping spans ten octaves at its code-120 ceiling and moves
+  exactly one semitone per stored code;
 - keyboard tracking doubles cutoff per octave and has no effect when disabled;
 - a low cutoff rejects substantially more 6 kHz energy than a high cutoff;
 - resonance extends an impulse tail and remains stable at supported rates;
@@ -118,7 +165,8 @@ replaceable hypotheses because no admitted source publishes those trajectories.
   1 Hz at both 48 and 192 kHz;
 - the nonlinear instantaneous-loop residual remains below 0.0004 circuit
   volts across cutoff, resonance, drive and clipping stress cases;
-- full resonance CV produces 50 uA through the populated 200 kohm resistor;
+- the code-120 resonance CV produces 50 uA through the populated 200 kohm
+  resistor;
 - the resonance return reproduces C4164's approximately 1.064 Hz corner,
   U474's 3.4 gain, Q IN's DC/audio dividers and its approximately 2.501 Hz
   shunt transition for the typical 3.6 kohm input;
@@ -137,6 +185,11 @@ replaceable hypotheses because no admitted source publishes those trajectories.
   slope;
 - the no-fit-parameter rational Gm law places half-saturation at 120 uA and
   remains within six percent of three normalized Figure 6 landmarks;
+- at typical 63 uA I_REF the four cell offsets fall at +0.6 to +0.8,
+  -1.2 to -0.9, +0.7 to +1.0 and -1.4 to -1.1 V about the 6.9 V window
+  centre, every profile's I_REF lies inside 45-85 uA and every rest point
+  stays inside its own swing window;
+- an offset cell is silent at rest and clips asymmetrically under heavy drive;
 - four 150 pF cells and their 100k/91k/1M network reproduce the populated
   near-unity interstage gain;
 - the predicted and rendered paths contain exactly four nonlinear cells, with

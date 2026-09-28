@@ -6,24 +6,37 @@
 //! frequency law. The complete panel sweep remains inside the CEM3340's
 //! published timing-capacitor current capability.
 
-use rf_5_contract::hardware::quantize_analog_pot;
+use rf_5_contract::hardware::{general_control_volts, quantize_analog_pot};
 use rf_5_voice::vco::cem3340_loaded_pulse_high_volts;
 
 // SD334 does not use an arbitrary rate calibration. Its CEM3340 is populated
-// with the data-sheet scale network, a 1 uF timing capacitor and a 2.21 Mohm
-// reference-current feed. Two fixed currents establish the zero-code bias and
-// the 0-10 V DAC adds the panel sweep through R3136.
+// with the data-sheet scale network, a 0.1 uF timing capacitor (C382, ".1
+// mylar 5%") and a 2.21 Mohm reference-current feed. R3135 (487k 1% from
+// +15 V) supplies the only fixed SUM current and the 1/12 V-per-code DAC adds
+// the panel sweep through R3136. R3110 (10k from +15 V) is not a SUM input:
+// with R3111 2k it holds PW MOD at 2.5 V for the 50% square.
 const POPULATED_FREQUENCY_INPUT_OHMS: f32 = 110_000.0;
-const PANEL_CONTROL_RANGE_VOLTS: f32 = 10.0;
 const CEM3340_POSITIVE_SUPPLY_VOLTS: f32 = 15.0;
 const CEM3340_REFERENCE_RESISTANCE_OHMS: f32 = 2_210_000.0;
 const CEM3340_BASE_RESISTANCE_OHMS: f32 = 1_820.0;
 const CEM3340_SCALE_ZERO_RESISTANCE_OHMS: f32 = 30_100.0;
 const CEM3340_SCALE_TIMING_RESISTANCE_OHMS: f32 = 5_620.0;
-const FIXED_FIVE_VOLT_HIGH_INPUT_OHMS: f32 = 487_000.0;
-const FIXED_FIVE_VOLT_LOW_INPUT_OHMS: f32 = 101_000.0;
-const FIXED_REFERENCE_VOLTS: f32 = 5.0;
-const POPULATED_TIMING_CAPACITANCE_FARADS: f32 = 1.0e-6;
+const FIXED_BIAS_INPUT_OHMS: f32 = 487_000.0;
+const FIXED_BIAS_SUPPLY_VOLTS: f32 = 15.0;
+const POPULATED_TIMING_CAPACITANCE_FARADS: f32 = 0.1e-6;
+// The data sheet writes the multiplier as I_OM = 22 V_T/R_T (1 - I_C R_Z/3.0):
+// 22 V_T is the tempco generator's pin-2 voltage and 3.0 V the pin-1
+// reference, both typical internal values. The sheet expects R_Z to be trimmed
+// +/-20% to reach a specified scale; the LFO has no such trim, so the chip's
+// own values set both its scale and its offset. They are taken from the one
+// Rev 3 unit measured across the panel, the Synthmania factory recordings:
+// 4-4 (code 19) 0.0785 Hz, 4-7 (66) 1.282 Hz, 1-3 (90) 5.76 Hz, 4-5 (95)
+// 7.60 Hz and 5-5 (100) 10.06 Hz lie on one exponential within +/-53 cents
+// with 24.9 (+13%) and 3.053 V (+1.8%). The same unit's steeper scale spans
+// about 0.025-34 Hz across the panel, wider than the owner's manual's
+// approximate 0.04-20 Hz.
+const CEM3340_MULTIPLIER_GAIN: f32 = 24.9;
+const CEM3340_MULTIPLIER_REFERENCE_VOLTS: f32 = 3.053;
 
 // SD334 does not AC-centre the complete LFO bus. Saw and pulse remain
 // positive-going through their 4016 switches, while only triangle crosses
@@ -139,19 +152,14 @@ impl Lfo {
 }
 
 pub fn frequency_hz(control: f32) -> f32 {
-    let control = quantize_analog_pot(control);
-    let control_volts = control * PANEL_CONTROL_RANGE_VOLTS;
+    let control_volts = general_control_volts(quantize_analog_pot(control));
     let generator_current = exponential_generator_current_amps(control_volts);
     3.0 * generator_current
         / (2.0 * CEM3340_POSITIVE_SUPPLY_VOLTS * POPULATED_TIMING_CAPACITANCE_FARADS)
 }
 
 fn frequency_control_current_amps(control_volts: f32) -> f32 {
-    // SD334 R3105 and R3110 both originate at +5 V. The scan is easy to
-    // misread: R3105 is 487 kohm, not 681 kohm, and it is not tied to +15 V.
-    FIXED_REFERENCE_VOLTS / FIXED_FIVE_VOLT_HIGH_INPUT_OHMS
-        + FIXED_REFERENCE_VOLTS / FIXED_FIVE_VOLT_LOW_INPUT_OHMS
-        + control_volts / POPULATED_FREQUENCY_INPUT_OHMS
+    FIXED_BIAS_SUPPLY_VOLTS / FIXED_BIAS_INPUT_OHMS + control_volts / POPULATED_FREQUENCY_INPUT_OHMS
 }
 
 fn exponential_generator_current_amps(control_volts: f32) -> f32 {
@@ -159,12 +167,15 @@ fn exponential_generator_current_amps(control_volts: f32) -> f32 {
     let control_current = frequency_control_current_amps(control_volts);
 
     // CEM3340 data-sheet equations, combined:
-    // I_OM = 22 V_T / R_T * (1 - I_C R_Z / 3 V)
+    // I_OM = K V_T / R_T * (1 - I_C R_Z / V_M), K typically 22
     // V_B  = I_OM R_S
     // I_EG = I_REF exp(-V_B / V_T)
     // V_T cancels, leaving the populated resistors and summed control current.
-    let exponent = -22.0 * CEM3340_BASE_RESISTANCE_OHMS / CEM3340_SCALE_TIMING_RESISTANCE_OHMS
-        * (1.0 - control_current * CEM3340_SCALE_ZERO_RESISTANCE_OHMS / 3.0);
+    let exponent = -CEM3340_MULTIPLIER_GAIN * CEM3340_BASE_RESISTANCE_OHMS
+        / CEM3340_SCALE_TIMING_RESISTANCE_OHMS
+        * (1.0
+            - control_current * CEM3340_SCALE_ZERO_RESISTANCE_OHMS
+                / CEM3340_MULTIPLIER_REFERENCE_VOLTS);
     reference_current * libm::expf(exponent)
 }
 
@@ -195,8 +206,9 @@ mod tests {
 
     #[test]
     fn circuit_frequency_mapping_is_monotonic() {
-        assert!((frequency_hz(0.0) - 0.039_187_15).abs() < 1.0e-6);
-        assert!((frequency_hz(1.0) - 26.024_84).abs() < 0.001);
+        // The measured unit spans about 0.025-34 Hz up to the panel ceiling.
+        assert!((frequency_hz(0.0) - 0.024_725).abs() < 2.0e-5);
+        assert!((frequency_hz(120.0 / 127.0) - 34.037).abs() < 0.03);
         let mut previous = frequency_hz(0.0);
         for step in 1..=127 {
             let current = frequency_hz(step as f32 / 127.0);
@@ -208,36 +220,48 @@ mod tests {
     #[test]
     fn populated_scale_network_sets_the_complete_sweep() {
         let minimum = exponential_generator_current_amps(0.0);
-        let maximum = exponential_generator_current_amps(PANEL_CONTROL_RANGE_VOLTS);
+        let maximum = exponential_generator_current_amps(general_control_volts(1.0));
         let ratio = maximum / minimum;
-        let expected_octaves =
-            10.0 * CEM3340_BASE_RESISTANCE_OHMS * 22.0 * CEM3340_SCALE_ZERO_RESISTANCE_OHMS
-                / (CEM3340_SCALE_TIMING_RESISTANCE_OHMS
-                    * 3.0
-                    * POPULATED_FREQUENCY_INPUT_OHMS
-                    * core::f32::consts::LN_2);
-        assert!((libm::log2f(ratio) - expected_octaves).abs() < 1.0e-5);
-        assert!((expected_octaves - 9.375_293).abs() < 1.0e-5);
-        assert!((ratio - 664.116_7).abs() < 0.01);
+        let expected_octaves = general_control_volts(1.0)
+            * CEM3340_BASE_RESISTANCE_OHMS
+            * CEM3340_MULTIPLIER_GAIN
+            * CEM3340_SCALE_ZERO_RESISTANCE_OHMS
+            / (CEM3340_SCALE_TIMING_RESISTANCE_OHMS
+                * CEM3340_MULTIPLIER_REFERENCE_VOLTS
+                * POPULATED_FREQUENCY_INPUT_OHMS
+                * core::f32::consts::LN_2);
+        assert!((libm::log2f(ratio) - expected_octaves).abs() < 1.0e-4);
+        assert!((expected_octaves - 11.035_2).abs() < 1.0e-3);
     }
 
     #[test]
     fn populated_reference_and_timing_network_set_absolute_endpoints() {
         let minimum_current = exponential_generator_current_amps(0.0);
-        let maximum_current = exponential_generator_current_amps(PANEL_CONTROL_RANGE_VOLTS);
-        assert!((minimum_current - 0.391_871_55e-6).abs() < 1.0e-12);
-        assert!((maximum_current - 260.248_43e-6).abs() < 0.001e-6);
-        assert!(minimum_current > 50.0e-9);
-        assert!(maximum_current < 400.0e-6);
+        let maximum_current = exponential_generator_current_amps(general_control_volts(1.0));
+        // R3135's 30.8 uA bias and C382's 0.1 uF keep the panel inside the
+        // data sheet's 10 nA-500 uA generator capability; only the slowest
+        // codes fall below its most accurate 50 nA-100 uA portion.
+        assert!((minimum_current - 24.725e-9).abs() < 0.02e-9);
+        assert!((maximum_current - 51.886e-6).abs() < 0.03e-6);
+        assert!(minimum_current > 10.0e-9 && minimum_current < 50.0e-9);
+        assert!(maximum_current < 100.0e-6);
     }
 
     #[test]
-    fn original_brass_code_matches_the_documented_vibrato_rate() {
-        // Sequential's 1-1 Brass sheet calls this setting approximately 5 Hz.
-        // The official Group 5 program carries legacy LFO code 92.
-        let brass = frequency_hz(92.0 / 127.0);
-        assert!((brass - 4.341_144_6).abs() < 0.001);
-        assert!((4.0..=6.0).contains(&brass));
+    fn measured_rev_3_unit_rates_lie_on_the_chip_law() {
+        // Stable LFO fundamentals in the Synthmania Rev 3 factory recordings,
+        // at each program's stored code. 1-1 Brass is left out: its only clean
+        // vibrato stretch (5.25 Hz at code 92) disagrees with all five.
+        for (code, measured_hz) in [
+            (19.0, 0.0785),
+            (66.0, 1.282),
+            (90.0, 5.76),
+            (95.0, 7.60),
+            (100.0, 10.055),
+        ] {
+            let cents = 1200.0 * libm::log2f(frequency_hz(code / 127.0) / measured_hz);
+            assert!(cents.abs() < 60.0, "code {code}: {cents} cents");
+        }
     }
 
     #[test]

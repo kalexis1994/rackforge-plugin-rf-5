@@ -8,17 +8,22 @@ routes the selected oscillator-A and oscillator-B waveforms through separate
 CA3280 mixer VCAs with the linearizing-diode terminal cut off. CEM3320 OUT D is
 AC-coupled by C4164, loaded by R4460 and amplified 3.4 times by U474 before the
 filtered signal enters a CA3280 final VCA whose linearizing terminal is active
-and whose bias current is controlled by the amplifier envelope through Q410
-and two populated 3.3 kohm resistors. Q410 is a grounded-base Fairchild 2N4250 PNP;
-its emitter junction therefore converts CEM3310 voltage to CA3280 IABC current
-rather than passing a normalized envelope value directly.
+and whose bias current is controlled by the amplifier envelope through Q410.
+Q410 is a grounded-base Fairchild 2N4250 PNP (TM1000D.2 Fig. 2-4 Detail B):
+only its 3.3 kohm emitter resistor R4496 sets the current, while R4533 in the
+collector merely isolates the IABC pin from a current source. Its emitter
+junction therefore converts CEM3310 voltage to CA3280 IABC current rather
+than passing a normalized envelope value directly.
 
-Five equal 39 kohm input resistors feed the high-impedance U480 follower, so
-the common node is a passive one-fifth average of the five low-impedance voice
-outputs. A second linearized CA3280 applies the physical volume control,
-followed by an NE5534 buffer and the back-panel output network. Balance
-trimmers remove OTA DC offset and the service procedure separately calibrates
-final-VCA balance and per-voice volume.
+Each final VCA drives its output current into R4529, the 25 kohm VOL
+rheostat that service adjustment 4-22 leaves at or near maximum, so every card
+reaches the common node as a Thevenin source behind 25 kohm plus its 39 kohm
+R4565-R4569 summing resistor. The five cards and the A-440 network meet at the
+high-impedance U480 follower; idle cards still load the node. A second
+linearized CA3280 applies the physical volume control, followed by an NE5534
+buffer and the back-panel output network. Balance trimmers remove OTA DC
+offset and the service procedure separately calibrates final-VCA balance and
+per-voice volume.
 
 The same OTA family also controls modulation. U378 crossfades common LFO and
 noise in opposite directions, while each voice has a linearized dual-envelope
@@ -40,7 +45,8 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
   developed across R4129's 10k, buffered by U474 and distributed through five
   100k paths to the CEM3320 inputs; noise does not pass through a fictitious
   third mixer OTA on every voice card.
-- The 0-10 V oscillator A/B level cells reach the paired voice-mixer VCAs
+- The oscillator A/B level cells (1/12 V per stored code, 10.000 V at the
+  panel's code-120 ceiling) reach the paired voice-mixer VCAs
   through SD333 Q306/Q302 and 33k emitter resistors. The common noise cell
   reaches its OTA through Q305 and 75k. Each Q306/Q302 collector current is
   divided across the five parallel voice-card IABC inputs; Q305 instead drives
@@ -62,19 +68,29 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
   slew state is shared by resonance and final-VCA feed. No separate normalized
   pre-VCA gain or duplicate high-pass is added here.
 - The final-VCA signal transfer is separate from the generic linearized
-  modulation OTA. Intersil Figure 3A supplies two bounded landmarks at 650 uA
-  IABC and 200 uA diode current: a long linear centre and rounded current limit
-  at approximately four horizontal 1 V divisions with 10 kohm inputs. SD431's
-  populated 20 kohm/20 kohm inputs double the source-voltage span. The filter
-  and VCA exchange circuit volts directly, so a sixth-order smooth norm places
-  the asymptote at eight volts and starts measurable compression inside the
-  CEM3320 population's 10-14 Vpp output range.
+  modulation OTA but obeys the same Figure 3A law. Intersil's functional
+  diagram shows the ID terminal feeding an internal current mirror referred to
+  the V- pin, so every ID programming resistor from +15 V sees approximately
+  28.8 V (`LINEARIZED_ID_PROGRAMMING_VOLTS`, two junctions above -15 V).
+  U477's R4546 68 kohm therefore sets approximately 424 uA of diode current.
+  Figure 3A (IABC 650 uA, ID 200 uA, 10 kohm + 10 kohm inputs) is linear until
+  the input current reaches +/-ID, +/-4 V across its 20 kohm loop, so the
+  linear range scales with ID times the populated input loop: SD431's
+  R4548/R4547 20 kohm/20 kohm inputs give approximately +/-17 V. The filter and
+  VCA exchange circuit volts directly; a sixth-order smooth norm keeps the
+  graph's long linear centre and rounded knee, so the CEM3320 population's
+  10-14 Vpp output passes essentially linearly and only far larger drive
+  rounds.
+- Toward the summer each card is a Thevenin source of `Iout * 25 kohm` behind
+  64 kohm (`VOICE_SUMMER_SOURCE_OHMS`). With `Iout = 0.776 Is IABC / ID` at
+  the nominal 1.325 mA Q410 current, the small-signal Thevenin gain is
+  `0.776 * 1.325 mA / 424 uA * 25 kohm / 40 kohm`, approximately 1.52
+  (`FINAL_VCA_THEVENIN_GAIN`), rather than an assumed unity gain.
 - The nominal 0-5 V amplifier envelope is converted once per host sample by
-  the populated R4495/Q410/R4533 network. A Fairchild 2N4250 junction fit uses
-  the original approximately 0.56 V at 100 uA and 26 mV thermal slope, solving
-  the implicit diode-plus-6.6-kohm equation directly. The nominal peak reaches
-  approximately 665 uA IABC, closely matching the CA3280 data sheet's 650 uA
-  linearized-transfer plot; the result then remains fixed across all four
+  the populated R4496/Q410 network. A Fairchild 2N4250 junction fit uses the
+  original approximately 0.56 V at 100 uA and 26 mV thermal slope, solving the
+  implicit diode-plus-3.3-kohm equation directly. The nominal peak reaches
+  approximately 1.33 mA IABC; the result then remains fixed across all four
   oversampled audio evaluations.
 - The IABC result is normalized only after the physical conversion so a 5 V
   envelope preserves the serviced level anchor. The admitted 4.7-5.3 V CEM3310
@@ -84,31 +100,54 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
   before it enters the host-rate common summer. The distributed path uses the
   fixed two-to-one decimator; the complete four-times oracle uses the 127-tap
   low-pass. Both place reconstruction after filter resonance and VCA curvature.
-- The five post-VCA voice signals cross equal 39 kohm resistors into U480. The
-  resulting common signal is their exact passive average; this replaces the
-  former unexplained 0.18 host gain with the populated one-fifth network.
+- The five voice Thevenin sources meet at U480's input through their 64 kohm
+  source resistances. The A-440 network hangs on the same node: TP401 (the
+  0/5 V 8253 square passed by U459 while A-440 is selected, grounded by U460
+  otherwise) feeds R4498 10 kohm into C4183 0.1 uF to ground, and R4519
+  20 kohm joins C4183 to the node. C4183 is the node's single state;
+  `summing_node` in `output.rs` eliminates the node voltage algebraically and
+  advances the capacitor exactly for inputs held across each host sample.
+  Above the shelf C4183 is a short, R4519 alone loads the node and each card
+  contributes approximately 0.122 of its Thevenin voltage; at low frequency
+  the 30 kohm branch loads it less (approximately 0.140). The result is an
+  approximately +1.2 dB bass shelf, essentially complete below about 50 Hz
+  and half-way near 180 Hz, plus the physical A-440 injection. Idle cards keep
+  loading the node, so the one-voice level does not depend on how many cards
+  are sounding.
 - The master CA3280 is distinct from the per-voice VCAs and follows the
-  physical master-volume control. PCB1's R113 10 kohm linear pot is loaded by
-  SD430 R4555's 100 kohm and C4184's 0.22 uF before the U480 buffer. Its loaded
-  wiper voltage is smoothed with the position-dependent Thevenin resistance,
-  rather than treating the control as an instantaneous digital multiplier.
-- Q411 is a second grounded-base 2N4250 converter. The buffered volume voltage
-  crosses R4542 and R4541, both 4.7 kohm, before reaching U479 IABC. The same
-  room-temperature junction law used for Q410 reconstructs approximately
-  468 uA at the five-volt endpoint. This turns the physical linear pot into a
-  useful audio taper: the loaded midpoint produces approximately 2.439 V and
-  42.3% of maximum control current.
-- U479 is reconstructed from the Figure 3A centre slope as a separate master
-  signal transfer. Its 68 kohm diode feed produces approximately 212 uA,
-  close to the graph's 200 uA condition. Scaling the approximate 100 uA/V
-  graph slope from 10 kohm/650 uA to the populated 15 kohm/468 uA point and
-  developing current across 20 kohm in parallel with 100 kohm gives
-  approximately 0.80 small-signal voltage gain at full volume. The same
-  rounded sixth-order graph envelope places its source-input asymptote at
-  six circuit volts.
-- The master-VCA output is AC-coupled by the populated 2.2 uF C4189 into the
-  parallel 20 kohm/100 kohm load formed by R4562 and R4541. The resulting
-  first-order high-pass corner is approximately 4.34 Hz. C4189 is represented
+  physical master-volume control. PCB1's R113 is a 10 kohm linear pot (SD131,
+  the panel board it is mounted on, notes "ALL POTS 10K, LIN"; SD334's
+  cross-reference prints 100K). Its top is fed from the +5 V analog rail
+  through R345 (100 ohm) and the normalled AMPLIFIER CV IN jack, and SD430
+  R4535's 100 kohm and C4184's 0.22 uF load its wiper before the U480 buffer.
+  Its loaded wiper voltage is smoothed with the position-dependent Thevenin
+  resistance, rather than treating the control as an instantaneous digital
+  multiplier.
+- Q411 is a second grounded-base 2N4250 converter. As with Q410, only its
+  4.7 kohm emitter resistor R4542 sets the current; R4541 in the collector
+  merely isolates U479's IABC pin. The same room-temperature junction law used
+  for Q410 reconstructs approximately 0.93 mA at the nominal five-volt
+  endpoint. R345 leaves the fully open wiper at approximately 4.946 V, so Q411
+  runs about 1.2% below that nominal current at full volume. The junction law
+  turns the physical linear pot into a useful audio taper: the loaded midpoint
+  produces approximately 2.414 V and 41.5% of the nominal control current.
+- U479 follows the same Figure 3A law as U477. R4561's 68 kohm from +15 V
+  programs its diodes at approximately 424 uA; the voice node enters through
+  R4564 15 kohm with R4563 13 kohm on the other input, and the output current
+  develops across R4562's 20 kohm in parallel with R4543's 100 kohm. At the
+  nominal 0.93 mA Q411 current the full-volume voltage gain is
+  `0.776 * 0.932 mA / 424 uA * 16.67 kohm / (15 kohm + 13 kohm)`,
+  approximately 1.02 (`MASTER_VCA_VOLTAGE_GAIN`), and the linear range is
+  +/-ID x 28 kohm, approximately +/-11.9 V: five ordinary voices pass
+  proportionally and only a grossly overdriven node reaches the rounded
+  sixth-order current limit.
+- The master-VCA output is AC-coupled by the populated 2.2 uF C4189. R4562
+  (20 kohm) loads its OTA side and R4543 (100 kohm) its U481 side. Because
+  U479 is a current source, the midband load is their 16.67 kohm parallel
+  value while the capacitor charges through their 120 kohm series sum: the
+  first-order high-pass corner is `1 / (2 pi * 2.2 uF * 120 kohm)`,
+  approximately 0.60 Hz (a 264 ms time constant), not the 4.34 Hz of the
+  parallel pair. C4189 is represented
   by its stored physical capacitor voltage and advanced with the exact
   exponential RC solution, so its elapsed-time decay does not inherit a host
   sample-rate approximation.
@@ -119,13 +158,16 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
   separate grounded-base SD333 converters: Q301/5.1k for direct filter
   envelope, Q303/5.6k for oscillator-B Poly Mod and Q304/3k for envelope Poly
   Mod. Each converter establishes one total current shared by five parallel
-  IABC inputs. Their 0-10 V held controls now follow the same source-backed
+  IABC inputs. Their 1/12 V-per-code held controls follow the same source-backed
   2N4250 junction equation and physical fanout as the audio VCAs instead of
   linear normalized gains.
-- U422's direct filter-envelope half carries a bounded 3.15 populated
-  reference gain at the unresolved CA3280 transconductance boundary. This
-  preserves the official 1-4 amount while bringing its documented onset
-  octave beside the fundamental; it is not a patch-specific audio gain or EQ.
+- U422's direct filter-envelope half carries no fitted gain. Its 47.5 kohm
+  R452 source (R462/R492 on voices 2/5) and 28.8 V-programmed ID feed follow
+  the CA3280 data sheet's Figure 3A linearized transfer,
+  `Iout = 0.776 Is IABC / ID` up to the 0.82 IABC peak, into U433's 100 kohm
+  common-CV input; a 5 V envelope at code 120 moves cutoff by approximately
+  6.3-6.6 octaves and factory 1-4's amount 34 by approximately 1.5-1.6
+  octaves (see [`POLY_MOD_MODEL.md`](POLY_MOD_MODEL.md)).
 - The two Poly Mod amount stages produce physical CA3280 output currents.
   U422's envelope half uses populated 22k signal/return and 120k diode-bias
   paths; U428's oscillator half retains the enabled 150k/200k waveform-source
@@ -133,17 +175,22 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
   is bounded at the data sheet's guaranteed minimum +/-12 V output swing
   before U431's follower and the three destination networks.
 - U481 is now an explicit NE5534 voltage follower on the populated +/-15 V
-  rails. R4544 permanently loads its output with 1 kohm and R4543 contributes
+  rails. R4544 permanently loads its output with 1 kohm and R4545 contributes
   the measured 560 ohm jack source resistance. The accepted manufacturer
   boundaries are 24 Vpp guaranteed and 26 Vpp typical into at least 600 ohm,
   38 mA typical output current and 13 V/us typical slew rate. The high-
-  impedance RackForge input leaves R4543 unloaded; a finite external-load
+  impedance RackForge input leaves R4545 unloaded; a finite external-load
   fixture verifies the divider without silently assuming a particular mixer.
 - All modeled audio stages exchange circuit volts through the jack. One
-  explicit candidate conversion maps two jack volts to one host unit only
-  after U481. The mapping is strictly linear and replaces the former host
-  `tanh`, which compressed strong chords before any physical stage reached its
-  own overload boundary.
+  explicit candidate conversion maps approximately 2.96 jack volts to one host
+  unit only after U481 (`CANDIDATE_CIRCUIT_VOLTS_PER_HOST_UNIT`). It is derived,
+  not chosen: the audited circuit runs about 2 dB hotter than earlier releases
+  (1/12 V DAC steps, U451's triangle, the C4183 shelf), so the constant places
+  one voice above the shelf 2 dB below the earlier releases' per-voice host
+  level (0.2 summer x 0.80 master / 2 V per unit), restoring their headroom
+  for the strongest resonant programs. The mapping is strictly linear and
+  replaces the former host `tanh`, which compressed strong chords before any
+  physical stage reached its own overload boundary.
 - Master volume is direct, is not delayed by the CPU control scheduler and is
   preserved when programs change.
 
@@ -151,38 +198,48 @@ amount device and an unlinearized oscillator-B Poly Mod amount device.
 
 The device modes, routing, approximate input impedances, waveform-source
 resistors, final-VCA 20 kohm input network, Q410/Q411 identities and bias
-networks, R113/R4555/C4184 master-volume network, the 2N4250 room-temperature
-base-emitter curve, equal-resistor summer, linear gain-versus-bias law,
-AC-coupling values and output topology are source-backed.
+networks, R113/R345/R4535/C4184 master-volume network, the 2N4250
+room-temperature base-emitter curve, the R4529/R4565-R4569 voice summer and
+R4498/C4183/R4519 A-440 branch, linear gain-versus-bias law, AC-coupling
+values and output topology are source-backed.
 The deterministic population is bounded by the published 0.70-1.30
 peak-output-current ratio and kept deliberately narrower. Figure 3A is a
-printed bitmap, so the approximately four-division limit and sixth-order knee
-are explicit bounded interpretations rather than digitized device
-measurements. The oscillator and noise current networks no longer require a
-one-saw loading normalization. Q410 temperature, overload-knee spread,
-populated-device matching, external output load and the final four-volts-per-
-host-unit conversion remain hypotheses. Neither that conversion nor a digital
-full-scale limiter is present inside the analog path.
+printed bitmap, so its 0.776 linearized transfer, the +/-ID linear limit and
+the sixth-order knee are explicit bounded interpretations rather than
+digitized device measurements. The ID terminal's two-junction reference to
+V- is read from Intersil's functional diagram, not a tabulated terminal
+voltage. R4529 is taken at the maximum that trim 4-22 normally leaves; a
+serviced card set slightly below it would lower that voice's Thevenin gain and
+source resistance together. The oscillator and noise current networks no
+longer require a one-saw loading normalization. Q410 temperature, overload-knee
+spread, populated-device matching, external output load and the final
+approximately 2.96-volts-per-host-unit conversion remain hypotheses. Neither
+that conversion nor a digital full-scale limiter is present inside the analog
+path.
 The five-volt volume reference follows the documented analog control domain,
-but its populated rail and R113 end-to-end tolerance are unmeasured. U479's
-approximately 100 uA/V centre slope is read from the printed Figure 3A bitmap,
-not a numerical manufacturer table. Exact THD, gain law and overload require
+but its populated rail and R113 end-to-end tolerance are unmeasured, and
+SD131's 10K note is preferred over SD334's 100K cross-reference because SD131
+is the board R113 is mounted on. Exact THD, gain law and overload require
 recorded sweeps from a serviced reference instrument.
 
 ## Acceptance tests
 
 - zero bias current closes every physical VCA boundary exactly;
 - gain rises monotonically with control current;
-- Q306/Q302 each produce approximately 280 uA total at full oscillator level,
+- Q306/Q302 each produce approximately 280 uA total at the code-120 panel
+  ceiling,
   or about 56 uA per parallel voice-card input, while Q305 reaches approximately
   125 uA at the one common noise OTA; all three preserve their transistor knees
   and calibrated endpoints;
-- the 5 V envelope reconstructs 650-680 uA IABC, has a silicon-junction knee,
-  and accepts the complete bounded 4.7-5.3 V CEM3310 population;
+- the 5 V envelope reconstructs 1.30-1.35 mA IABC through R4496 alone, has a
+  silicon-junction knee, and accepts the complete bounded 4.7-5.3 V CEM3310
+  population;
 - the linearized transfer retains more strong-signal range than the mixer VCA;
-- the populated 20 kohm inputs double Figure 3A's 10 kohm source-voltage span,
-  preserve calibrated small-signal gain and put the final-VCA knee inside the
-  CEM3320's 10-14 Vpp output range;
+- both 68 kohm linearizing feeds program 420-428 uA against the negative
+  rail; Figure 3A's +/-ID x 20 kohm reproduces its +/-4 V limit, the final
+  VCA's linear range is 16.8-17.1 V with a 1.50-1.54 Thevenin gain, and it
+  retains more than 99.5% of its small-signal gain at 14 Vpp while rounding
+  below 90% only near 40 Vpp;
 - all mixer profiles remain inside published output bounds, paired halves stay
   close but distinct, and serviced final-voice small-signal gains match;
 - a single 150 kohm mixer path develops approximately 10.9 mV at U464's input,
@@ -195,18 +252,24 @@ recorded sweeps from a serviced reference instrument.
   preserve waveform-dependent input loading and remain within guaranteed
   CA3280 voltage compliance;
 - the master stage remains bounded while retaining multi-voice headroom;
-- the loaded linear volume pot reaches zero and five volts, its midpoint is
-  approximately 2.439 V, Q411 reaches 460-475 uA, and the resulting current law
-  is monotonic with an approximately 42% midpoint;
+- the loaded linear volume pot reaches zero and, through R345, approximately
+  4.946 V with approximately 98.9 ohm source resistance; its midpoint is
+  approximately 2.414 V behind approximately 2.46 kohm; Q411 reaches
+  0.92-0.94 mA through R4542 alone at the nominal 5 V; full volume settles at
+  98-100% of that nominal control and the midpoint at 40-44%;
 - C4184 smoothing is monotonic and produces the same elapsed-time response at
   48 and 96 kHz;
-- five equal 39 kohm paths produce exactly one fifth of the voice sum, U479's
-  diode current remains within 7% of Figure 3A's condition and the populated
-  full-volume small-signal voltage gain remains between 0.79 and 0.81;
-- the 4.34 Hz coupling network rejects steady DC at every supported sample
-  rate, its 100 ms capacitor decay matches the analytic value at
-  44.1/48/96/192 kHz, and it retains the expected approximately 97.7%
-  amplitude at 20 Hz;
+- the R4519/C4183/R4498 branch lifts the per-voice node gain to 1.14-1.16
+  times its midband value at 5 Hz and leaves 10 kHz within 0.1%;
+- U479's full-volume small-signal voltage gain lies between 1.0 and 1.04 and
+  its linear range between 11.8 and 12.0 V, so a five-voice node reaches the
+  jack within 1% of five times one voice while a grossly overdriven node is
+  held below half its linear value;
+- the 0.60 Hz coupling network rejects steady DC at every supported sample
+  rate, its 100 ms capacitor decay matches the analytic 264 ms time constant
+  at 44.1/48/96/192 kHz, and a 20 Hz tone matches the analytic product of the
+  coupling network (approximately 99.95%), the C4183 shelf and the full-volume
+  control ratio;
 - the loaded NE5534 remains exactly linear through its guaranteed +/-12 V
   span at 44.1/48/96/192 kHz, is bounded by its typical +/-13 V swing, draws
   less than the published current capability through R4544 and preserves the
@@ -219,6 +282,7 @@ recorded sweeps from a serviced reference instrument.
   internal tone below -80 dB relative to its input RMS.
 
 Primary evidence: TM1000D.2 sections 2-5 and 2-8, schematics SD431-SD435 and
-SD430, service adjustments 4-21 and 4-22, the CA3280 and NE5534 data sheets and
-Fairchild's 2N4248/2N4249/2N4250 data. Provenance is recorded in
+SD430, Fig. 2-4 Detail B, service adjustments 4-21 and 4-22, the CA3280
+(including Figure 3A) and NE5534 data sheets and Fairchild's
+2N4248/2N4249/2N4250 data. Provenance is recorded in
 `SOURCE_LEDGER.md`.

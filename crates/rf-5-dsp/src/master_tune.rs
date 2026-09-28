@@ -1,14 +1,14 @@
 //! Direct analog MASTER TUNE path on Rev 3 PCB 3 (SD334).
 //!
-//! R104 is a 100 kohm linear potentiometer from the +5 V analog rail to
-//! ground. Its wiper reaches U369 through 1 Mohm; the 100 kohm feedback path
+//! R104 is a 10 kohm linear potentiometer from the +5 V analog rail to
+//! ground (SD131, the panel board it is mounted on: "all pots 10K, LIN";
+//! SD334's cross-reference prints 100K). Its wiper reaches U369 through 1 Mohm; the 100 kohm feedback path
 //! attenuates it by ten before the unity-gain A/B master summers. The
-//! potentiometer's Thevenin resistance is retained here because loading by the
-//! 1 Mohm input makes the two excursions around the centre detent slightly
-//! asymmetric.
+//! potentiometer's Thevenin resistance is retained here; against the 1 Mohm
+//! input it leaves each excursion within 0.25% of three semitones.
 
 const POT_SUPPLY_VOLTS: f32 = 5.0;
-const POT_RESISTANCE_OHMS: f32 = 100_000.0;
+const POT_RESISTANCE_OHMS: f32 = 10_000.0;
 const INPUT_RESISTANCE_OHMS: f32 = 1_000_000.0;
 const FIRST_SUMMER_FEEDBACK_OHMS: f32 = 100_000.0;
 const FINAL_SUMMER_GAIN: f32 = 1.0;
@@ -48,8 +48,8 @@ mod tests {
     fn populated_network_reaches_beyond_one_semitone_both_ways() {
         let flat = offset_semitones(0.0);
         let sharp = offset_semitones(1.0);
-        assert!((flat - -2.926_829_3).abs() < 0.000_01);
-        assert!((sharp - 3.073_170_7).abs() < 0.000_01);
+        assert!((flat - -2.992_518_7).abs() < 0.000_01);
+        assert!((sharp - 3.007_481_3).abs() < 0.000_01);
         assert!(flat < -1.0);
         assert!(sharp > 1.0);
     }

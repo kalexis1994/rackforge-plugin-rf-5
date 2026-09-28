@@ -4,11 +4,13 @@
 
 The Rev 3 CPU board assigns counter 1 of the 8253 to the reference tone. It
 divides the 2.5 MHz clock by 5682, producing 439.985920 Hz rather than replacing
-the circuit with an idealized 440.000 Hz oscillator. SD430 then routes that
-square wave through the A-440 4016 switch and the populated R4498/C4183
-10 kohm/0.1 uF network. R4559 feeds the resulting signal into the same common
-node as the five 39 kohm voice inputs, ahead of the master CA3280 and Master
-Volume. When deselected, U460 grounds the reference input.
+the circuit with an idealized 440.000 Hz oscillator. While A-440 is selected,
+U459 passes that 0/5 V square to TP401; otherwise U460 grounds TP401. SD430
+then routes TP401 through R4498 10 kohm into C4183 0.1 uF to ground, and
+R4519 20 kohm joins C4183 to the U480 node where the five voice cards meet
+through their 25 kohm VOL rheostats and 39 kohm summing resistors, ahead of
+the master CA3280 and Master Volume. The branch therefore loads the voices
+whether or not the reference is selected.
 
 The owner's manual describes TUNE as a momentary, non-programmable operation.
 The panel is occupied for approximately two to eight seconds, depending on how
@@ -17,15 +19,19 @@ Pitch, Master Tune and Unison CV sources from the oscillator measurement path.
 
 ## Active reconstruction
 
-`rf_5_dsp::a440` keeps the counter free-running at the exact integer division,
-places every counter transition at its fractional position inside the host
-sample, analytically integrates the populated first-order RC on both sides of
-that transition, and weights its injection by the 39 kohm/20 kohm
-input-conductance ratio. The existing common output stage then applies Master
-Volume, coupling-capacitor response and bounded host scaling. Turning A-440
-off drives zero into the RC model so its stored capacitor voltage settles as
-the grounded hardware does. The capacitor state after one second agrees across
-44.1, 48, 96 and 192 kHz instead of inheriting host-sample edge jitter.
+`rf_5_dsp::a440` keeps the counter free-running at the exact integer division
+and returns only the mean TP401 voltage over each host sample, placing every
+counter transition at its exact fractional position inside that sample; the
+selected mean is 2.5 V at every supported rate, and deselection returns
+exactly 0 V. Because R4519 couples C4183 to a node the voices also drive, the
+network is not solved here: `summing_node` in `output.rs` treats C4183 as the
+node's single state and advances it exactly for the held TP401 and voice
+inputs, so the A-440 injection is the physical network response and the same
+capacitor gives the voice path its approximately +1.2 dB low-frequency shelf
+(see [`VCA_AND_OUTPUT_MODEL.md`](VCA_AND_OUTPUT_MODEL.md)). The common output
+stage then applies Master Volume, coupling-capacitor response and linear host
+scaling. With A-440 off, the grounded TP401 lets C4183 settle as the hardware
+does.
 
 The engine exposes A-440 as non-program patch-independent machine state. TUNE
 is a momentary host control: its stored value is always zero, its queried value
@@ -40,8 +46,9 @@ current ten-VCO thermal condition and refreshes all held pitch CVs.
 ## Isolated uncertainty
 
 The counter ratio, switch topology and populated SD430 component values are
-fixed. The absolute circuit-to-host level remains tied to the same unmeasured
-gain staging as the voice summer. No published source gives the exact audible
+fixed. The 5 V logic high assumes an unloaded 8253/4016 output on the +5 V
+supply, and the absolute circuit-to-host level remains tied to the same
+unmeasured host boundary as the voice summer. No published source gives the exact audible
 transient at the output while the service algorithm visits each oscillator and
 octave; RF-5 deliberately suppresses those internal sweeps rather than inventing
 calibration tones. This boundary can be replaced by documented bench audio

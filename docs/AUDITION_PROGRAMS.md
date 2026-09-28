@@ -21,7 +21,7 @@ The fixture set includes:
   their high-level waveform combinations;
 - `Audition - Filter Resonance` places the five physical filter profiles near
   the documented self-oscillation calibration region through the populated
-  0-10 V/200 kohm CEM3320 resonance-control path.
+  1/12 V-per-code/200 kohm CEM3320 resonance-control path.
 - `Audition - Envelope Punch` uses short filter/amplifier decays so repeated
   notes expose the ten CEM3310 profiles;
 - `Audition - Envelope Phase Steps` repeats short gates with nonzero sustain so
@@ -60,9 +60,10 @@ The fixture set includes:
   position so the Q309/CA3280/C376 linear pitch transitions can be heard.
 - `Audition - LFO Slow Range` and `Audition - LFO Fast Range` expose two
   widely separated points of the absolute SD334/CEM3340 common-LFO law with
-  the same restrained vibrato routing. The law's nominal panel endpoints are
-  approximately 0.0392 and 26.0 Hz; the two audition positions are
-  approximately 0.0762 and 8.02 Hz.
+  the same restrained vibrato routing. The law runs from approximately
+  0.0247 Hz at code 0 to 34.0 Hz at the code-120 panel ceiling (51.9 Hz at
+  code 127); the two audition positions, codes 13 and 104, are approximately
+  0.0541 and 13.0 Hz.
 - `Audition - LFO Saw Unipolar` and `Audition - LFO Square Unipolar` isolate
   the two positive-going SD334 paths. Unlike the triangle auditions, their
   Wheel Mod movement rises from the unmodulated position instead of travelling
@@ -71,7 +72,9 @@ The fixture set includes:
   Semitone` use the same two-saw setup at both documented FINE endpoints, so
   the unison start and one-semitone rise can be compared directly.
 - `Audition - Pulse Width 1%`, `50%` and `99%` isolate oscillator A's pulse at
-  both documented panel endpoints and the nearest stored square-wave code.
+  code 1 (approximately 0.9%), the square-wave code 57 and code 113
+  (approximately 98.5%), the last codes before the circuit law's DC endpoints
+  at code 0 and codes 115 and above.
 - `Audition - Filter Slew Transient` drives three-note attacks through the five
   stateful TL082 profiles so their large-signal recovery remains audible inside
   the physical resonance loop.

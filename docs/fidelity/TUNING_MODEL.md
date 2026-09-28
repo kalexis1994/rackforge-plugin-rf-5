@@ -44,12 +44,14 @@ in [`SCALE_MODE.md`](SCALE_MODE.md).
 
 ## Explicit hypotheses
 
-One value cannot yet be proven from the admitted documents alone:
-
-- MIDI note 36 is used for the keyboard's zero-volt, lowest-C reference.
-
-This is isolated in `tuning.rs` and covered by tests, so later measurements can
-replace it without changing oscillator topology or host parameter IDs.
+The absolute oscillator scale is fixed by the V8.1 tune routine: it first
+tunes C3 to a 19110-cycle period of the 2.5 MHz clock (`0x0134`, 130.82 Hz)
+and halves that reference for C4 (`0x014F`), so pitch coordinate 0 is C0 at
+16.35 Hz. The coordinate is the key code plus OSC FREQ / 2 (`0x03B0-0x03D9`,
+capped at 108). One mapping choice remains RF-5's own: MIDI note 36 is the
+keyboard's zero-volt lowest C, which makes a MIDI note sound at its own pitch
+with OSC FREQ at code 48. It changes neither the oscillator-to-key nor the
+filter-to-key relationship of any stored program.
 
 ## Automatic tune
 
