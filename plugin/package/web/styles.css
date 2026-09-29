@@ -367,7 +367,8 @@ button { -webkit-tap-highlight-color: transparent; }
   display: none;
   content: var(--rf5-digits, "");
   color: #ff342f;
-  font-family: "Segment14", monospace;
+  /* Arimo lends the decimal point Segment14 draws as a dash. */
+  font-family: "Segment14", "Arimo", sans-serif;
   font-size: 24px;
   letter-spacing: 0.12em;
   line-height: 1;
