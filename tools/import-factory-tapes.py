@@ -244,7 +244,9 @@ def render_rust(programs, digest: str) -> str:
 
 def render_catalog(programs, extra_banks) -> str:
     banks = [{"id": bank, "name": name, "order": order}
-             for order, (_, _, bank, name, _, _) in enumerate(FILES)] + extra_banks
+             for order, (_, _, bank, name, _, _) in enumerate(FILES)]
+    # Other banks (RF-5's USER bank) follow the factory files.
+    banks += [{**bank, "order": len(FILES) + index} for index, bank in enumerate(extra_banks)]
     catalog_order = 0
     lines = ["{", '  "banks": [']
     lines.append(",\n".join(f"    {inline(bank)}" for bank in banks))
