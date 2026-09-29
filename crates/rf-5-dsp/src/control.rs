@@ -193,6 +193,7 @@ impl ControlScheduler {
             Parameter::VintageSpread,
             Parameter::A440,
             Parameter::Tune,
+            Parameter::ProgramChangeMutesTails,
         ] {
             copy_parameter(&mut result, target, parameter);
         }
@@ -221,6 +222,7 @@ fn is_direct_control(parameter: Parameter) -> bool {
             | Parameter::VintageSpread
             | Parameter::A440
             | Parameter::Tune
+            | Parameter::ProgramChangeMutesTails
     )
 }
 

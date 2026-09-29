@@ -244,7 +244,8 @@ impl Program {
         }
     }
 
-    fn original(raw: [ProgramByte; PROGRAM_BYTES]) -> Self {
+    /// A program recalled from its memory bytes, as the original's are.
+    pub(crate) fn original(raw: [ProgramByte; PROGRAM_BYTES]) -> Self {
         let decoded = decode_program(raw, Settings::default()).as_array();
         let mut values = [0.0; PATCH_PARAMETER_COUNT];
         values.copy_from_slice(&decoded[..PATCH_PARAMETER_COUNT]);

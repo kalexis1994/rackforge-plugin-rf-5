@@ -1,9 +1,10 @@
-#![cfg_attr(target_arch = "wasm32", no_std)]
+mod program;
 
 use core::{mem, slice};
 
 use rackforge_plugin_sdk::{
-    BlockContext, ParallelProcessor, PlanWriter, UnitContext, UnitMix, export_parallel_processor,
+    BlockContext, PROGRAM_EDIT_BASIC, PROGRAM_EDIT_DECLARATIVE, PROGRAM_EDIT_PREVIEW,
+    ParallelProcessor, PlanWriter, UnitContext, UnitMix, export_parallel_processor,
 };
 use rf_5_dsp::{
     CommonVoiceFrame, Engine, ParallelVoiceUnit, PreparedSample, VOICE_COUNT, VoiceCalibration,
@@ -16,6 +17,10 @@ const MAX_MIDI_EVENTS: usize = 256;
 const MAX_PARAMETER_EVENTS: usize = 256;
 const MAX_COMMANDS_PER_UNIT: usize = 800;
 const DEFAULT_PRESET_ID: &str = "original-11-brass";
+/// One JSON exchange with the host: the catalog, with the RF-5's own
+/// programs after the factory ones, is the largest. 64 full-length own
+/// programs after the Rev 3's 120 factory programs need about 32 KiB.
+const MAX_TRANSFER_BYTES: usize = 64 * 1024;
 const WIRE_VERSION: u32 = 1;
 const SHARED_MAGIC: u32 = u32::from_le_bytes(*b"RFSH");
 const DISPATCH_MAGIC: u32 = u32::from_le_bytes(*b"RFDU");
@@ -73,6 +78,7 @@ impl WireVoiceCommand {
             1 => VoiceCommandKind::Start,
             2 => VoiceCommandKind::Retune,
             3 => VoiceCommandKind::Release,
+            4 => VoiceCommandKind::Damp,
             _ => return None,
         };
         Some(VoiceCommand {
@@ -115,6 +121,8 @@ pub struct Rf5Processor {
     command_counts: [usize; VOICE_COUNT],
     dispatch_scratch: [u8; DISPATCH_STRIDE],
     command_overflow: bool,
+    /// The RF-5's own programs, as RackForge hands them back and RECORD saves them.
+    programs: program::Library,
 }
 
 impl Default for Rf5Processor {
@@ -130,6 +138,7 @@ impl Default for Rf5Processor {
             command_counts: [0; VOICE_COUNT],
             dispatch_scratch: [0; DISPATCH_STRIDE],
             command_overflow: false,
+            programs: program::Library::new(),
         }
     }
 }
@@ -215,7 +224,40 @@ impl ParallelProcessor for Rf5Processor {
     }
 
     fn load_preset(&mut self, id: &str) -> bool {
+        if let Some(memory) = program::own_memory(&self.programs, id) {
+            return self.engine.load_program_memory(memory);
+        }
         self.engine.load_program(id)
+    }
+
+    fn write_program_catalog(&mut self, destination: &mut [u8]) -> Option<usize> {
+        program::catalog(&self.programs, destination)
+    }
+
+    fn program_editing_capabilities(&self) -> u32 {
+        PROGRAM_EDIT_BASIC | PROGRAM_EDIT_PREVIEW | PROGRAM_EDIT_DECLARATIVE
+    }
+
+    fn begin_program_edit(&mut self, request: &[u8], destination: &mut [u8]) -> Option<usize> {
+        program::begin(&self.programs, &self.engine, request, destination)
+    }
+
+    fn prepare_program_save(&mut self, document: &[u8], destination: &mut [u8]) -> Option<usize> {
+        program::prepare(document, destination)
+    }
+
+    fn install_program(&mut self, prepared: &[u8]) -> bool {
+        program::install(&mut self.programs, prepared, MAX_TRANSFER_BYTES)
+    }
+
+    fn preview_program(&mut self, prepared: &[u8]) -> bool {
+        program::validated_prepared(prepared)
+            .and_then(|document| program::memory(&document))
+            .is_some_and(|memory| self.engine.load_program_memory(memory))
+    }
+
+    fn program_editor_view(&mut self, document: &[u8], destination: &mut [u8]) -> Option<usize> {
+        program::view(document, destination)
     }
 
     fn save_state(&self, destination: &mut [u8]) -> Option<usize> {
@@ -296,6 +338,7 @@ impl ParallelProcessor for Rf5Processor {
         payload: &[u8],
         context: &UnitContext<'_>,
         output: &mut [f32],
+        _report: &mut [u8],
     ) {
         let channels = context.output_channels as usize;
         let samples = context.frames as usize * channels;
@@ -445,14 +488,8 @@ export_parallel_processor!(
     max_output_channels = MAX_OUTPUT_CHANNELS,
     max_midi_events = MAX_MIDI_EVENTS,
     max_parameter_events = MAX_PARAMETER_EVENTS,
-    max_transfer_bytes = 4096
+    max_transfer_bytes = MAX_TRANSFER_BYTES
 );
-
-#[cfg(all(target_arch = "wasm32", not(test)))]
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo<'_>) -> ! {
-    core::arch::wasm32::unreachable()
-}
 
 #[cfg(test)]
 mod tests {
@@ -660,6 +697,42 @@ mod tests {
     }
 
     #[test]
+    fn program_change_tail_cut_reaches_every_unit_exactly() {
+        let _guard = parallel_export_test_guard();
+        let mut reference = Engine::default();
+        let mut parallel = RackForgeParallelExport::default();
+        assert!(reference.load_program(DEFAULT_PRESET_ID));
+        assert!(reference.prepare(48_000.0));
+        assert!(parallel.prepare(48_000.0, TEST_FRAMES, 0, 2));
+        assert!(reference.load_program("original-38-echo-repeat"));
+        assert!(parallel.load_preset("original-38-echo-repeat"));
+
+        let mut actual = [0.0; TEST_FRAMES as usize * 2];
+        for block in 0..40 {
+            let midi_events: &[MidiEvent] = match block {
+                0 => &[midi(5, [0x90, 60, 110]), midi(9, [0x90, 64, 100])],
+                20 => &[midi(17, [0x80, 60, 0])],
+                _ => &[],
+            };
+            let expected = render_reference(&mut reference, midi_events, &[]);
+            parallel.process(&[], &mut actual, midi_events, &[], TEST_FRAMES, 0, 2);
+            assert_eq!(
+                actual, expected,
+                "diverged before the recall at block {block}"
+            );
+        }
+
+        // One tail is releasing and one key is held when the program changes.
+        assert!(reference.load_program("original-11-brass"));
+        assert!(parallel.load_preset("original-11-brass"));
+        for block in 0..40 {
+            let expected = render_reference(&mut reference, &[], &[]);
+            parallel.process(&[], &mut actual, &[], &[], TEST_FRAMES, 0, 2);
+            assert_eq!(actual, expected, "tail cut diverged at block {block}");
+        }
+    }
+
+    #[test]
     fn percussive_originals_retrigger_every_voice_through_the_parallel_contract() {
         let _guard = parallel_export_test_guard();
         for program in ["original-14-percussive-e-piano", "original-16-harpsichord"] {
@@ -783,6 +856,28 @@ mod tests {
                 settled_reference,
             );
         }
+    }
+
+    /// RackForge refuses a package whose runtime descriptor and manifest
+    /// disagree, so a version or state-format bump must move both.
+    #[test]
+    fn runtime_descriptor_matches_the_manifest() {
+        let runtime: serde_json::Value =
+            serde_json::from_str(include_str!("../package/metadata/runtime.json")).unwrap();
+        let manifest = include_str!("../package/rackforge-plugin.toml");
+        let field = |name: &str| {
+            manifest
+                .lines()
+                .find_map(|line| line.strip_prefix(&format!("{name} = ")))
+                .map(|value| value.trim().trim_matches('"').to_owned())
+                .unwrap_or_else(|| panic!("manifest has no {name}"))
+        };
+        assert_eq!(runtime["id"].as_str().unwrap(), field("id"));
+        assert_eq!(runtime["version"].as_str().unwrap(), field("version"));
+        assert_eq!(
+            runtime["state_version"].as_u64().unwrap().to_string(),
+            field("state_version")
+        );
     }
 
     #[test]

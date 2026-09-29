@@ -326,6 +326,11 @@
       "index": 62, "id": "tune", "name": "Tune", "page": "output", "order": 3,
       "kind": { "type": "boolean", "default": false },
       "flags": { "automatable": false, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
+    },
+    {
+      "index": 63, "id": "program-change-mutes-tails", "name": "Cut Tails on Program Change", "page": "output", "order": 4,
+      "kind": { "type": "boolean", "default": true },
+      "flags": { "automatable": false, "modulatable": false, "read_only": false, "advanced": false }, "suggested_control": "button"
     }
   ],
   "semantic_controls": [

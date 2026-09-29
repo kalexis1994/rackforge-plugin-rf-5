@@ -347,6 +347,10 @@ impl AdsrEnvelope {
         self.stage == Stage::Idle
     }
 
+    pub fn is_releasing(self) -> bool {
+        self.stage == Stage::Release
+    }
+
     pub fn value(self) -> f32 {
         self.value
     }
