@@ -29,14 +29,14 @@ const POPULATED_TIMING_CAPACITANCE_FARADS: f32 = 0.1e-6;
 // reference, both typical internal values. The sheet expects R_Z to be trimmed
 // +/-20% to reach a specified scale; the LFO has no such trim, so the chip's
 // own values set both its scale and its offset. They are taken from the one
-// Rev 3 unit measured across the panel, the Synthmania factory recordings:
-// 4-4 (code 19) 0.0785 Hz, 4-7 (66) 1.282 Hz, 1-3 (90) 5.76 Hz, 4-5 (95)
-// 7.60 Hz and 5-5 (100) 10.06 Hz lie on one exponential within +/-53 cents
-// with 24.9 (+13%) and 3.053 V (+1.8%). The same unit's steeper scale spans
-// about 0.025-34 Hz across the panel, wider than the owner's manual's
-// approximate 0.04-20 Hz.
-const CEM3340_MULTIPLIER_GAIN: f32 = 24.9;
-const CEM3340_MULTIPLIER_REFERENCE_VOLTS: f32 = 3.053;
+// Rev 3 unit measured across the panel, the Synthmania factory recordings, at
+// the codes the Rev 3's factory tapes store: 4-4 (code 16) 0.0785 Hz, 4-7 (66)
+// 1.282 Hz, 1-3 (93) 5.76 Hz, 4-5 (98) 7.60 Hz and 5-5 (103) 10.06 Hz lie on
+// one exponential within +/-6 cents with 23.52 (+7%) and 3.115 V (+3.8%).
+// The unit's scale spans about 0.032-26 Hz across the panel, near the owner's
+// manual's approximate 0.04-20 Hz.
+const CEM3340_MULTIPLIER_GAIN: f32 = 23.52;
+const CEM3340_MULTIPLIER_REFERENCE_VOLTS: f32 = 3.115;
 
 // SD334 does not AC-centre the complete LFO bus. Saw and pulse remain
 // positive-going through their 4016 switches, while only triangle crosses
@@ -206,9 +206,9 @@ mod tests {
 
     #[test]
     fn circuit_frequency_mapping_is_monotonic() {
-        // The measured unit spans about 0.025-34 Hz up to the panel ceiling.
-        assert!((frequency_hz(0.0) - 0.024_725).abs() < 2.0e-5);
-        assert!((frequency_hz(120.0 / 127.0) - 34.037).abs() < 0.03);
+        // The measured unit spans about 0.032-26 Hz up to the panel ceiling.
+        assert!((frequency_hz(0.0) - 0.032_232).abs() < 2.0e-5);
+        assert!((frequency_hz(120.0 / 127.0) - 25.950).abs() < 0.03);
         let mut previous = frequency_hz(0.0);
         for step in 1..=127 {
             let current = frequency_hz(step as f32 / 127.0);
@@ -231,7 +231,7 @@ mod tests {
                 * POPULATED_FREQUENCY_INPUT_OHMS
                 * core::f32::consts::LN_2);
         assert!((libm::log2f(ratio) - expected_octaves).abs() < 1.0e-4);
-        assert!((expected_octaves - 11.035_2).abs() < 1.0e-3);
+        assert!((expected_octaves - 10.216_1).abs() < 1.0e-3);
     }
 
     #[test]
@@ -241,8 +241,8 @@ mod tests {
         // R3135's 30.8 uA bias and C382's 0.1 uF keep the panel inside the
         // data sheet's 10 nA-500 uA generator capability; only the slowest
         // codes fall below its most accurate 50 nA-100 uA portion.
-        assert!((minimum_current - 24.725e-9).abs() < 0.02e-9);
-        assert!((maximum_current - 51.886e-6).abs() < 0.03e-6);
+        assert!((minimum_current - 32.232e-9).abs() < 0.02e-9);
+        assert!((maximum_current - 38.339e-6).abs() < 0.03e-6);
         assert!(minimum_current > 10.0e-9 && minimum_current < 50.0e-9);
         assert!(maximum_current < 100.0e-6);
     }
@@ -250,18 +250,21 @@ mod tests {
     #[test]
     fn measured_rev_3_unit_rates_lie_on_the_chip_law() {
         // Stable LFO fundamentals in the Synthmania Rev 3 factory recordings,
-        // at each program's stored code. 1-1 Brass is left out: its only clean
-        // vibrato stretch (5.25 Hz at code 92) disagrees with all five.
+        // at each program's code on the factory tapes.
         for (code, measured_hz) in [
-            (19.0, 0.0785),
+            (16.0, 0.0785),
             (66.0, 1.282),
-            (90.0, 5.76),
-            (95.0, 7.60),
-            (100.0, 10.055),
+            (93.0, 5.76),
+            (98.0, 7.60),
+            (103.0, 10.055),
         ] {
             let cents = 1200.0 * libm::log2f(frequency_hz(code / 127.0) / measured_hz);
-            assert!(cents.abs() < 60.0, "code {code}: {cents} cents");
+            assert!(cents.abs() < 10.0, "code {code}: {cents} cents");
         }
+        // 1-1 Brass's one clean vibrato stretch, 5.25 Hz at code 92, is a
+        // short, rougher reading; it agrees within its own uncertainty.
+        let brass = 1200.0 * libm::log2f(frequency_hz(92.0 / 127.0) / 5.25);
+        assert!(brass.abs() < 80.0, "1-1 Brass: {brass} cents");
     }
 
     #[test]

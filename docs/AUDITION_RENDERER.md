@@ -53,7 +53,7 @@ events and writes thirty-four unnormalized 48 kHz mono PCM WAV files:
 Scenes 17 and 18 now traverse the absolute SD334/CEM3340 frequency law rather
 than a provisional 20 Hz anchor; their program positions remain suitable for
 direct slow/fast comparison on the reconstructed law, which runs from
-approximately 0.0247 Hz at code 0 to 34.0 Hz at the code-120 panel ceiling.
+approximately 0.0322 Hz at code 0 to 26.0 Hz at the code-120 panel ceiling.
 
 Run:
 
