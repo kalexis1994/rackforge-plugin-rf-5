@@ -346,7 +346,9 @@ fn checksum(bytes: &[u8]) -> u8 {
 }
 
 fn pack(bits: &[bool]) -> Vec<u8> {
-    bits.chunks_exact(8)
+    bits.as_chunks::<8>()
+        .0
+        .iter()
         .map(|byte| {
             byte.iter()
                 .fold(0_u8, |value, bit| value << 1 | u8::from(*bit))
@@ -397,11 +399,12 @@ pub fn read(bytes: &[u8]) -> Result<Reading, ReadError> {
     };
     let bank = length == bank_bytes;
     let programs = bytes[..length]
-        .chunks_exact(PROGRAM_BYTES)
+        .as_chunks::<PROGRAM_BYTES>()
+        .0
+        .iter()
         .enumerate()
         .map(|(index, chunk)| {
-            let mut memory = [0; PROGRAM_BYTES];
-            memory.copy_from_slice(chunk);
+            let memory = *chunk;
             Program {
                 place: if bank {
                     format!("B-{}", index + 1)
