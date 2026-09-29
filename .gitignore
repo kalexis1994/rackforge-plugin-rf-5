@@ -7,3 +7,4 @@
 *.rfplugin
 __pycache__/
 *.pyc
+/tools/rackforge-plugin-kit/

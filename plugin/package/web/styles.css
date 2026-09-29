@@ -1,4 +1,21 @@
+/* One light for the whole panel. The UI writes --light-x/--light-y (towards
+   the light), --shadow-x/--shadow-y (away from it) and --light-angle (a
+   gradient from the lit side to the shaded side) on the document root from
+   plugin-ui's LIGHT_SOURCE_BEARING_DEGREES. Every directional shadow keeps
+   its length, blur and colour and takes its direction from them; a lighting
+   gradient keeps its angle relative to the light it was drawn under. LED
+   glows emit their own light and wood grain is texture, so neither moves. */
+
 /* The alphanumeric display face (SIL OFL 1.1, see NOTICE.md). */
+/* The panel's lettering: a Helvetica-proportioned grotesque, as the
+   Prophet-5's legends are (Latin subset, weights 400-700). */
+@font-face {
+  font-family: "Arimo";
+  src: url("assets/Arimo-Latin.ttf") format("truetype");
+  font-weight: 400 700;
+  font-display: swap;
+}
+
 @font-face {
   font-family: "Segment14";
   src: url("assets/Segment14.otf") format("opentype");
@@ -11,24 +28,25 @@
   font-family: "Arial Narrow", "Roboto Condensed", "Segoe UI", sans-serif;
   --panel-base: #111217;
   --panel-raised: #1a1b21;
-  --panel-sheen: linear-gradient(
-    104deg,
-    rgba(57, 58, 68, 0.04) 0%,
-    rgba(57, 58, 68, 0.07) 10%,
-    rgba(57, 58, 68, 0.13) 20%,
-    rgba(57, 58, 68, 0.21) 32%,
-    rgba(57, 58, 68, 0.28) 44%,
-    rgba(57, 58, 68, 0.3) 50%,
-    rgba(57, 58, 68, 0.27) 56%,
-    rgba(57, 58, 68, 0.2) 68%,
-    rgba(57, 58, 68, 0.12) 80%,
-    rgba(57, 58, 68, 0.065) 90%,
-    rgba(57, 58, 68, 0.035) 100%
-  );
-  --panel-grain: repeating-linear-gradient(
-    94deg,
-    rgba(255, 255, 255, 0.008) 0 1px,
-    rgba(0, 0, 0, 0.013) 1px 3px
+  /* Brushed black anodised aluminium: Ward's anisotropic lobe (see
+     plugin-ui light.rs), far more stretched along the brushing than on
+     the switch caps, centred towards the light; t = 100% is 3 sigma. */
+  --panel-sheen: radial-gradient(
+    ellipse 140% 38% at calc(50% + var(--light-x) * 30%) calc(50% + var(--light-y) * 40%),
+    rgba(92, 94, 108, 0.180) 0.00%,
+    rgba(92, 94, 108, 0.174) 8.33%,
+    rgba(92, 94, 108, 0.159) 16.67%,
+    rgba(92, 94, 108, 0.136) 25.00%,
+    rgba(92, 94, 108, 0.109) 33.33%,
+    rgba(92, 94, 108, 0.082) 41.67%,
+    rgba(92, 94, 108, 0.058) 50.00%,
+    rgba(92, 94, 108, 0.039) 58.33%,
+    rgba(92, 94, 108, 0.024) 66.67%,
+    rgba(92, 94, 108, 0.014) 75.00%,
+    rgba(92, 94, 108, 0.008) 83.33%,
+    rgba(92, 94, 108, 0.004) 91.67%,
+    rgba(92, 94, 108, 0.002) 100.00%,
+    transparent 100%
   );
   --ivory: #f1efe6;
   --muted: #999991;
@@ -39,7 +57,12 @@
   --wood-dark: #35170e;
   --wood-mid: #784025;
   --wood-light: #b16c42;
+  /* Varnished walnut (tools/generate-walnut.py), and the same followed by
+     its mirror image, so it repeats down a case of any height unseen. */
   --wood-texture: url("assets/walnut-satin.jpg");
+  --wood-texture-tall: url("assets/walnut-satin-tall.jpg");
+  /* The powder-coat relief, made offline by plugin-ui (texture.rs). */
+  --panel-texture: url("assets/finishes/panel.png");
 }
 
 * { box-sizing: border-box; }
@@ -56,7 +79,7 @@ body {
   min-height: 100dvh;
   padding: 0;
   background:
-    radial-gradient(ellipse at 50% -20%, rgba(88, 89, 96, 0.24), transparent 54%),
+    radial-gradient(ellipse at calc(50% + var(--light-x) * 40%) -20%, rgba(88, 89, 96, 0.24), transparent 54%),
     linear-gradient(150deg, #090a0c, #17191c 54%, #090a0c);
   overflow-x: hidden;
   -webkit-user-select: none;
@@ -68,12 +91,18 @@ input { font: inherit; }
 
 button { -webkit-tap-highlight-color: transparent; }
 
+/* Hidden until plugin-ui has everything the page is drawn with, then
+   faded in whole. */
 #plugin-root {
   width: 100%;
   min-height: 100%;
   min-height: 100dvh;
   display: flex;
+  opacity: 0;
+  transition: opacity 450ms ease-out;
 }
+
+#plugin-root.ready { opacity: 1; }
 
 #plugin-root,
 #plugin-root * {
@@ -94,6 +123,9 @@ button { -webkit-tap-highlight-color: transparent; }
 }
 
 .rf5-frame {
+  /* The walnut showing at each side of the panel; the strip under it
+     matches. */
+  --wood-side: clamp(15px, 1.6vw, 25px);
   width: 100%;
   min-height: 100%;
   min-height: 100dvh;
@@ -104,15 +136,18 @@ button { -webkit-tap-highlight-color: transparent; }
   border: 1px solid #1e0b05;
   border-radius: 0;
   background-color: var(--wood-mid);
+  /* The walnut is sized by the case's width only and repeats down it, so a
+     page that grows or shrinks (another tab) shows more or less of it, never
+     a stretched one. The varnish's gloss follows the light. */
   background-image:
-    linear-gradient(180deg, rgba(255, 238, 218, 0.075), rgba(44, 14, 5, 0.3)),
-    var(--wood-texture);
-  background-position: center, center;
-  background-repeat: no-repeat;
-  background-size: 100% 100%, cover;
+    linear-gradient(var(--light-angle), rgba(255, 238, 218, 0.1), rgba(44, 14, 5, 0.3)),
+    var(--wood-texture-tall);
+  background-position: center, center top;
+  background-repeat: no-repeat, repeat-y;
+  background-size: 100% 100%, max(100%, 1024px) auto;
   box-shadow:
-    inset 0 1px rgba(255, 255, 255, 0.16),
-    0 24px 76px rgba(0, 0, 0, 0.58);
+    inset calc(var(--shadow-x) * 1px) calc(var(--shadow-y) * 1px) rgba(255, 255, 255, 0.16),
+    calc(var(--shadow-x) * 24px) calc(var(--shadow-y) * 24px) 76px rgba(0, 0, 0, 0.58);
 }
 
 .rf5-frame::before,
@@ -142,11 +177,11 @@ button { -webkit-tap-highlight-color: transparent; }
   --wood-y: 50%;
   position: relative;
   z-index: 1;
-  margin: 0 clamp(15px, 1.6vw, 25px);
+  margin: 0 var(--wood-side);
   background-color: var(--wood-mid);
   background-image:
-    linear-gradient(180deg, rgba(255, 244, 227, 0.14), transparent 24%, rgba(36, 10, 3, 0.34)),
-    linear-gradient(96deg, rgba(255, 255, 255, 0.055), transparent 18% 80%, rgba(0, 0, 0, 0.2)),
+    linear-gradient(var(--light-angle), rgba(255, 244, 227, 0.14), transparent 24%, rgba(36, 10, 3, 0.34)),
+    linear-gradient(calc(var(--light-angle) - 84deg), rgba(255, 255, 255, 0.055), transparent 18% 80%, rgba(0, 0, 0, 0.2)),
     var(--wood-texture);
   background-position: center, center, center var(--wood-y);
   background-repeat: no-repeat;
@@ -154,8 +189,8 @@ button { -webkit-tap-highlight-color: transparent; }
   border-right: 1px solid rgba(0, 0, 0, 0.58);
   border-left: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow:
-    inset 0 1px rgba(255, 246, 231, 0.09),
-    inset 0 -1px rgba(31, 8, 2, 0.4);
+    inset calc(var(--shadow-x) * 1px) calc(var(--shadow-y) * 1px) rgba(255, 246, 231, 0.09),
+    inset calc(var(--shadow-x) * -1px) calc(var(--shadow-y) * -1px) rgba(31, 8, 2, 0.4);
 }
 
 /* The head of the case: the nameplate on its walnut rail. */
@@ -174,104 +209,91 @@ button { -webkit-tap-highlight-color: transparent; }
   height: auto;
   display: block;
   overflow: visible;
-  filter: drop-shadow(0 3px 2px rgba(0, 0, 0, 0.55));
+  /* A thin, flat plate: only a contact shadow. */
+  filter: drop-shadow(calc(var(--shadow-x) * 1px) calc(var(--shadow-y) * 1px) 0.6px rgba(0, 0, 0, 0.5));
 }
 
 .plaque-shadow {
-  fill: rgba(0, 0, 0, 0.55);
-  transform: translateY(2px);
+  fill: rgba(0, 0, 0, 0.45);
+  transform: translate(calc(var(--shadow-x) * 0.8px), calc(var(--shadow-y) * 0.8px));
 }
 
-.plaque-rim { fill: #b8b4a8; }
-.plaque-face { fill: url(#plaque-face); }
-.plaque-sheen { fill: url(#plaque-sheen); }
+.plaque-metal { fill: url(#plaque-metal); }
+.plaque-glint { fill: url(#plaque-glint); }
+.plaque-glint-low { fill: url(#plaque-glint-low); }
 
-.plaque-fastener {
-  fill: url(#plaque-fastener);
-  stroke: #010102;
-  stroke-width: 1;
+/* The rolled edge: a ring graded by the light (plugin-ui), and at its very
+   foot the metal turning away from the eye, a touch darker all round. */
+.plaque-bevel rect {
+  fill: none;
+  stroke-width: 3;
 }
 
-.plaque-fastener-core { fill: #07080a; }
+.plaque-bevel .plaque-bevel-foot {
+  stroke: rgba(30, 32, 36, 0.14);
+  stroke-width: 1.4;
+}
+
+.plaque-engraving { fill: #1b1c1e; }
+.plaque-engraving-edge { fill: rgba(255, 255, 255, 0.45); }
+
+.plaque-brand {
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 2.4px;
+}
 
 .plaque-model {
-  fill: #d5d1c5;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 54px;
-  font-weight: 500;
-  letter-spacing: -2px;
-  paint-order: stroke;
-  stroke: rgba(255, 255, 255, 0.08);
-  stroke-width: 0.55px;
+  font-family: "Uncial Antiqua", Georgia, serif;
+  font-size: 50px;
 }
 
 .plaque-description {
-  fill: #c3bfb4;
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 1.55px;
 }
 
-/* Under the panel only a thin strip of the case shows. */
+/* Under the panel the case shows as much walnut as at its sides. */
 .wood-rail-bottom {
   --wood-y: 86%;
   flex: none;
-  height: clamp(8px, 0.8vw, 12px);
+  height: calc(var(--wood-side) + 2px);
   border-top: 2px solid #1a0803;
 }
 
-.panel-tabs,
-.hardware-panel,
-.program-memory {
+/* The panel face: one powder-coated sheet under the program memory, the
+   page keys and the controls, so its finish runs through them unbroken. The
+   powder-coat relief (plugin-ui texture.rs) is drawn at half its pixel size
+   so it stays crisp on double-density screens. */
+.panel-face {
   position: relative;
   z-index: 2;
-  margin-right: clamp(15px, 1.6vw, 25px);
-  margin-left: clamp(15px, 1.6vw, 25px);
+  margin-right: var(--wood-side);
+  margin-left: var(--wood-side);
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  border: 1px solid #050608;
+  border-top: 0;
+  background:
+    var(--panel-texture, none) 0 0 / 256px 256px repeat,
+    var(--panel-sheen),
+    linear-gradient(var(--light-angle), rgba(255, 255, 255, 0.02), rgba(0, 0, 0, 0.045)),
+    var(--panel-base);
 }
 
-/* The program memory under the nameplate: the maker, and RackForge's
-   <rf-program-select> keyed like the panel's silver switches. */
+/* The program memory under the nameplate: RackForge's <rf-program-select>
+   keyed like the panel's silver switches. The maker is on the nameplate. */
 .program-memory {
   padding: 10px 14px;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  grid-template-areas: "identity selector";
-  align-items: center;
-  gap: 14px;
-  border-right: 1px solid #050608;
-  border-left: 1px solid #050608;
-  border-bottom: 1px solid #050608;
-  background:
-    var(--panel-sheen),
-    var(--panel-grain),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.018), rgba(0, 0, 0, 0.04)),
-    var(--panel-base);
-}
-
-.program-memory small {
-  color: #d8d5ca;
-  font-size: 8px;
-  font-weight: 800;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-/* The maker, one word to a line, where the nameplate above names the
-   instrument. */
-.program-identity {
-  grid-area: identity;
-  padding-right: 14px;
-  border-right: 1px solid rgba(242, 240, 231, 0.18);
-}
-
-.program-identity small {
-  display: block;
-  width: min-content;
-  line-height: 1.5;
+  column-gap: 18px;
+  align-items: start;
 }
 
 .program-selector-slot {
-  grid-area: selector;
   min-width: 0;
   display: flex;
 }
@@ -287,14 +309,19 @@ button { -webkit-tap-highlight-color: transparent; }
   --rf-ps-surface: var(--panel-raised);
   --rf-ps-surface-color: var(--ivory);
   --rf-ps-radius: 1px;
-  --rf-ps-height: 44px;
+  /* As tall as the steps: a switch over its name. */
+  --rf-ps-height: 86px;
   --rf-ps-backdrop: rgba(4, 4, 6, 0.72);
 }
 
 #program-selector::part(name) {
+  height: 44px;
+  /* Level with the switches' middle, 31px down the bar (half of 62). */
+  position: relative;
+  top: 9px;
   box-shadow:
-    inset 0 1px 4px rgba(0, 0, 0, 0.9),
-    0 1px rgba(255, 255, 255, 0.06);
+    inset calc(var(--shadow-x) * 1px) calc(var(--shadow-y) * 1px) 4px rgba(0, 0, 0, 0.9),
+    calc(var(--shadow-x) * 1px) calc(var(--shadow-y) * 1px) rgba(255, 255, 255, 0.06);
 }
 
 /* The name, with its bank and number, lit as a red LED display. */
@@ -307,7 +334,22 @@ button { -webkit-tap-highlight-color: transparent; }
   text-shadow: 0 0 6px rgba(255, 47, 42, 0.55);
 }
 
-#program-selector::part(number),
+/* The program's place in the list is printed on the panel over the display,
+   at its left edge, not lit inside it. */
+#program-selector::part(name) { overflow: visible; }
+
+#program-selector::part(number) {
+  position: absolute;
+  bottom: calc(100% + 5px);
+  left: 0;
+  color: var(--ivory);
+  font-family: "Arimo", Arial, sans-serif;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1;
+}
+
 #program-selector::part(bank),
 #program-selector::part(bank-chip) {
   font-size: 9px;
@@ -316,99 +358,144 @@ button { -webkit-tap-highlight-color: transparent; }
   text-transform: uppercase;
 }
 
+/* The steps are the panel's light switches, an arrow printed where the LED
+   would be (plugin-ui, in the element's arrow slots); the element's own
+   button is stripped bare around them. */
 #program-selector::part(step) {
-  color: #232426;
-  background:
-    linear-gradient(105deg, rgba(255, 255, 255, 0.5), transparent 34%),
-    linear-gradient(180deg, #d8d7d0, #9d9c97);
-  border: 1px solid #08090a;
-  box-shadow:
-    inset 0 1px rgba(255, 255, 255, 0.55),
-    0 2px 0 #030303;
+  width: 46px;
+  height: 86px;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
 }
 
-#program-selector::part(step):active {
-  background: linear-gradient(180deg, #aaa9a3, #d8d7d0);
-  box-shadow: inset 0 2px 2px rgba(0, 0, 0, 0.16);
-  transform: translateY(2px);
+.hardware-button.program-step {
+  height: 86px;
+  display: grid;
+  grid-template-rows: 62px 24px;
+  justify-items: center;
 }
+
+.program-step > .control-label {
+  align-self: start;
+  margin-top: 4px;
+}
+
+/* Only RackForge defines the element; without it (a page opened outside
+   the host) its step keys would stand loose in the bar. */
+#program-selector:not(:defined) { display: none; }
 
 #program-selector::part(dialog) {
   border: 1px solid #050608;
   border-top: 3px solid var(--red);
-  box-shadow: 0 24px 76px rgba(0, 0, 0, 0.58);
+  box-shadow: calc(var(--shadow-x) * 24px) calc(var(--shadow-y) * 24px) 76px rgba(0, 0, 0, 0.58);
 }
 
-.panel-tabs {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  border-right: 1px solid #050608;
-  border-left: 1px solid #050608;
-  background: #090a0d;
+/* RackForge's program save dialog, opened by RECORD, dressed as a panel
+   plate: the powder coat, a white outline with its title set into it, the
+   name on a red LED display, and the panel's switches for buttons. */
+#program-save {
+  --rf-save-font: 700 12px/1.2 "Arimo", Arial, sans-serif;
+  --rf-save-color: var(--ivory);
+  --rf-save-muted: #a9a8a1;
+  --rf-save-accent: var(--red-hot);
+  --rf-save-danger: #ff6a5e;
+  --rf-save-surface: var(--panel-base);
+  --rf-save-border: var(--line);
+  --rf-save-radius: 15px;
+  --rf-save-backdrop: rgba(4, 4, 6, 0.72);
+  --rf-save-width: 440px;
+  --rf-save-padding: 30px 24px 16px;
+  --rf-save-gap: 16px;
+  --rf-save-field-height: 44px;
 }
 
-.panel-tab {
-  min-width: 0;
-  min-height: 54px;
-  padding: 8px 12px;
-  position: relative;
-  display: grid;
-  align-content: center;
-  gap: 3px;
-  border: 0;
-  border-right: 1px solid #34353b;
-  color: #8f8f8c;
+#program-save::part(dialog) {
+  overflow: visible;
+  border: 3px solid var(--line);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(0, 0, 0, 0.08)),
-    #111217;
-  cursor: pointer;
-  text-align: left;
+    var(--panel-texture, none) 0 0 / 256px 256px repeat,
+    var(--panel-sheen),
+    var(--panel-base);
+  box-shadow: calc(var(--shadow-x) * 24px) calc(var(--shadow-y) * 24px) 76px rgba(0, 0, 0, 0.62);
 }
 
-.panel-tab:last-child { border-right: 0; }
-
-.panel-tab::before {
-  content: "";
-  width: 8px;
-  height: 8px;
+#program-save::part(title) {
+  padding: 0 10px;
   position: absolute;
-  top: 7px;
-  right: 9px;
-  border: 1px solid #030303;
-  border-radius: 50%;
-  background: #290706;
-  box-shadow: inset 0 1px 2px #000;
-}
-
-.panel-tab strong {
-  font-size: 10px;
-  letter-spacing: 0.1em;
-}
-
-.panel-tab span {
-  overflow: hidden;
-  font-size: 7px;
-  letter-spacing: 0.07em;
-  text-overflow: ellipsis;
+  top: -10px;
+  left: 50%;
+  background: var(--panel-base);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  line-height: 18px;
   white-space: nowrap;
+  transform: translateX(-50%);
 }
 
-.panel-tab.active {
-  color: white;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(0, 0, 0, 0.08)),
-    #202127;
-  box-shadow: inset 0 3px #d58445;
+#program-save::part(label),
+#program-save::part(current),
+#program-save::part(status),
+#program-save::part(error) {
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.panel-tab.active::before {
-  background: var(--red-hot);
+#program-save::part(label) { color: var(--ivory); }
+
+#program-save::part(name) {
+  padding: 0 12px;
+  color: #ff342f;
+  background: #08090b;
+  border: 1px solid #030303;
+  border-radius: 1px;
   box-shadow:
-    0 0 6px 2px rgba(255, 52, 46, 0.55),
-    inset 0 1px rgba(255, 255, 255, 0.75);
+    inset calc(var(--shadow-x) * 1px) calc(var(--shadow-y) * 1px) 4px rgba(0, 0, 0, 0.9),
+    calc(var(--shadow-x) * 1px) calc(var(--shadow-y) * 1px) rgba(255, 255, 255, 0.06);
+  font-family: "Segment14", monospace;
+  font-size: 19px;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 6px rgba(255, 47, 42, 0.55);
+  text-transform: uppercase;
+  caret-color: #ff342f;
 }
 
-.panel-tab:focus-visible,
+#program-save::part(actions) {
+  justify-content: center;
+  gap: 30px;
+}
+
+/* The buttons are stripped bare round the panel's switches. */
+#program-save::part(action) {
+  width: 46px;
+  min-height: 0;
+  height: 86px;
+  padding: 0;
+  border: 0;
+  background: none;
+  overflow: visible;
+}
+
+/* The page keys: the panel's own switches in a row, the lit one the page
+   shown, over a PAGE legend, on the same powder coat as the panel. */
+.panel-tabs { padding: 8px 14px 6px; }
+
+.panel-tabs > .legend-controls { column-gap: 4px; }
+
+.page-key {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: minmax(22px, auto) 62px;
+  justify-items: center;
+}
+
+.page-key > .control-label {
+  align-self: end;
+  margin-bottom: 4px;
+}
+
 .hardware-button:focus-visible,
 .knob-shell:focus-within {
   outline: 2px solid var(--amber);
@@ -422,16 +509,13 @@ button { -webkit-tap-highlight-color: transparent; }
   min-height: var(--hardware-panel-height);
   flex: 1 0 var(--hardware-panel-height);
   overflow: hidden;
-  border: 1px solid #050608;
-  border-top: 0;
-  background: var(--panel-base);
 }
 
 .hardware-panel.loading {
   min-height: 320px;
   align-content: center;
   gap: 18px;
-  background: var(--panel-sheen), var(--panel-grain), var(--panel-base);
+  background: var(--panel-sheen), var(--panel-base);
 }
 
 .hardware-panel.loading button {
@@ -451,11 +535,6 @@ button { -webkit-tap-highlight-color: transparent; }
   grid-template-areas: var(--section-areas, none);
   align-items: stretch;
   gap: 10px;
-  background:
-    var(--panel-sheen),
-    var(--panel-grain),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(0, 0, 0, 0.045)),
-    var(--panel-base);
 }
 
 .section-modulation .panel-surface {
@@ -465,9 +544,44 @@ button { -webkit-tap-highlight-color: transparent; }
   gap: 17px;
 }
 
+/* The modulation column shares one set of columns, as on the Prophet-5: a
+   wide one for the first knob, then five switch pitches, so Poly-Mod's
+   destinations, the LFO's shapes and Wheel-Mod's last three destinations
+   stand one above another, and the LFO's knob under OSC B. The LFO is the
+   narrower box, starting at the second column (a group's border and
+   padding take 20px of its width). */
+.section-modulation .control-group .control-grid {
+  grid-template-columns: 24fr repeat(5, 15.2fr);
+  column-gap: 1px;
+}
+
+.section-modulation .group-lfo .control-grid { grid-template-columns: repeat(5, 1fr); }
+
+/* Its box reaches a little into the first column, padded by as much, so
+   its knob keeps the columns but not the box's edge. */
 .section-modulation .group-lfo {
-  width: 74%;
-  margin-inline: auto;
+  --lfo-reach: 28px;
+  margin-right: 0;
+  margin-left: calc((100% - 20px) * 0.24 - var(--lfo-reach));
+  padding-left: calc(8px + var(--lfo-reach));
+}
+
+/* There a legend's controls sit on the group's own columns. */
+.section-modulation .control-grid > .control-legend {
+  grid-column: span var(--legend-span);
+  grid-template-columns: subgrid;
+}
+
+.section-modulation .control-legend > * { grid-column: 1 / -1; }
+.section-modulation .legend-controls {
+  grid-template-columns: subgrid;
+  gap: 0;
+}
+
+/* Poly-Mod's destinations and the LFO's shapes take the last three. */
+.section-modulation .group-poly-mod .control-grid > .legend-destination,
+.section-modulation .group-lfo .control-grid > .legend-shape {
+  grid-column: -4 / span var(--legend-span);
 }
 
 .section-oscillators .panel-surface {
@@ -515,7 +629,7 @@ button { -webkit-tap-highlight-color: transparent; }
   background: rgba(4, 5, 7, 0.055);
   box-shadow:
     inset 0 0 0 1px rgba(0, 0, 0, 0.24),
-    0 1px rgba(255, 255, 255, 0.025);
+    calc(var(--shadow-x) * 1px) calc(var(--shadow-y) * 1px) rgba(255, 255, 255, 0.025);
 }
 
 .section-outline {
@@ -533,25 +647,29 @@ button { -webkit-tap-highlight-color: transparent; }
   stroke: var(--line);
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 2px;
+  stroke-width: 3px;
   vector-effect: non-scaling-stroke;
 }
 
 .control-group h2 {
   width: auto;
-  height: 16px;
+  height: 18px;
   margin: 0;
   padding: 0;
   position: absolute;
   z-index: 2;
-  top: -8px;
-  left: calc(var(--group-corner-radius) + 5px);
+  top: -9px;
+  /* Centred over the group, as every heading on the Prophet-5 is. */
+  left: 50%;
   display: block;
+  transform: translateX(-50%);
   color: var(--ivory);
   background: transparent;
-  font-size: 10px;
-  letter-spacing: 0.095em;
-  line-height: 16px;
+  font-family: "Arimo", Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 18px;
   white-space: nowrap;
 }
 
@@ -566,18 +684,73 @@ button { -webkit-tap-highlight-color: transparent; }
   gap: 8px 1px;
 }
 
-.group-poly-mod .control-grid { grid-template-columns: 1.15fr 1.15fr repeat(3, 0.82fr); }
-
-.group-lfo .control-grid {
-  grid-template-columns: repeat(4, minmax(64px, 1fr));
+/* A run of controls the original panel prints over a line naming what they
+   share, as Poly-Mod's DESTINATION switches, spread evenly across it: a
+   column of its grid for each. */
+.control-legend {
+  grid-column: span var(--legend-span);
+  display: grid;
+  justify-self: stretch;
 }
+
+.legend-controls {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  gap: 2px;
+}
+
+/* Controls kept together with no line (Oscillator B's pulse width with LO
+   FREQ and KEYBOARD beside it), packed at their own width so they stay
+   side by side even on a narrow panel. */
+.control-legend.control-cluster { grid-column: span 2; }
+
+.control-cluster > .legend-controls {
+  grid-auto-columns: auto;
+  justify-content: center;
+  column-gap: 22px;
+}
+
+.legend-line {
+  height: 12px;
+  position: relative;
+  color: var(--ivory);
+  font-family: "Arimo", Arial, sans-serif;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  line-height: 12px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* The rule is the section outline's straight, thinner kin; plugin-ui runs
+   it from the first switch's middle to the last's, open round the name. */
+.legend-line span { position: relative; }
+
+.legend-rule {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.legend-rule path {
+  fill: none;
+  stroke: var(--line);
+  stroke-linecap: round;
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+}
+
 
 .group-oscillator-a .control-grid {
   grid-template-columns: repeat(5, minmax(66px, 1fr));
 }
 
-.group-wheel-mod .control-grid { grid-template-columns: 1.18fr repeat(5, 0.82fr); }
-.group-oscillator-b .control-grid { grid-template-columns: repeat(8, minmax(64px, 1fr)); }
+.group-oscillator-b .control-grid { grid-template-columns: repeat(7, minmax(64px, 1fr)); }
 .group-mixer .control-grid { grid-template-columns: repeat(3, minmax(76px, 1fr)); }
 
 .group-filter .control-grid,
@@ -622,9 +795,10 @@ button { -webkit-tap-highlight-color: transparent; }
   max-width: 100%;
   overflow: visible;
   color: var(--ivory);
-  font-size: 8px;
-  font-weight: 800;
-  letter-spacing: 0.065em;
+  font-family: "Arimo", Arial, sans-serif;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   line-height: 1.1;
   text-align: center;
   text-overflow: clip;
@@ -636,7 +810,6 @@ button { -webkit-tap-highlight-color: transparent; }
   min-width: 38px;
   padding: 2px 4px;
   color: #a9a8a1;
-  background: rgba(0, 0, 0, 0.16);
   font-family: ui-monospace, Consolas, monospace;
   font-size: 8px;
   line-height: 13px;
@@ -688,10 +861,21 @@ button { -webkit-tap-highlight-color: transparent; }
 
 .knob-number {
   fill: #e4e2d9;
-  font-family: "Arial Narrow", "Segoe UI", sans-serif;
-  font-size: 7.5px;
-  font-weight: 800;
+  font-family: "Arimo", Arial, sans-serif;
+  font-size: 9.5px;
+  font-weight: 700;
   text-anchor: middle;
+  dominant-baseline: central;
+}
+
+/* What a mix knob's two ends blend: LFO and NOISE on Wheel-Mod's. */
+.knob-end {
+  fill: #e4e2d9;
+  font-family: "Arimo", Arial, sans-serif;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  dominant-baseline: central;
 }
 
 .knob-shadow {
@@ -702,6 +886,8 @@ button { -webkit-tap-highlight-color: transparent; }
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.68);
   filter: blur(4px);
+  /* Drawn 22.5px below the cap's centre; it follows the light. */
+  transform: translate(calc(var(--shadow-x) * 22.5px), calc((var(--shadow-y) - 1) * 22.5px));
 }
 
 .knob-cap {
@@ -709,55 +895,50 @@ button { -webkit-tap-highlight-color: transparent; }
   height: 52px;
   position: absolute;
   top: 18px;
-  border: 1px solid #030304;
+  /* The skirt stands straight on the panel: no dark ring round its foot. */
   border-radius: 50%;
   overflow: hidden;
   background:
     repeating-conic-gradient(from 1deg, #07080a 0deg 3deg, #26272a 3deg 5deg, #0b0c0e 5deg 8deg),
     #0b0c0e;
   box-shadow:
-    inset 1px 1px 2px rgba(255, 255, 255, 0.1),
-    inset -2px -2px 4px rgba(0, 0, 0, 0.78),
-    0 4px 5px rgba(0, 0, 0, 0.62);
+    inset calc(var(--shadow-x) * 1.414px) calc(var(--shadow-y) * 1.414px) 2px rgba(255, 255, 255, 0.1),
+    inset calc(var(--shadow-x) * -2.828px) calc(var(--shadow-y) * -2.828px) 4px rgba(0, 0, 0, 0.78),
+    calc(var(--shadow-x) * 4px) calc(var(--shadow-y) * 4px) 5px rgba(0, 0, 0, 0.62);
   pointer-events: none;
 }
 
 .knob-top {
   position: absolute;
-  inset: 3px;
+  /* Leaves a thin band of the serrated grip showing around the ring. */
+  inset: 1.5px;
   border: 1px solid #5d5e61;
   border-radius: 50%;
-  background:
-    repeating-linear-gradient(92deg, rgba(255, 255, 255, 0.13) 0 1px, rgba(0, 0, 0, 0.035) 1px 3px),
-    linear-gradient(112deg, #66676a 0%, #dedfdf 25%, #85868a 49%, #d5d5d3 72%, #5b5c60 100%);
-  box-shadow:
-    inset 1px 1px 1px rgba(255, 255, 255, 0.62),
-    inset -1px -1px 2px rgba(0, 0, 0, 0.42);
+  /* The silver ring is a chamfer sloping down and out from the flat top;
+     plugin-ui shades it around its circumference under the panel light. */
+  background: var(--knob-chamfer);
 }
 
 .knob-top::after {
   content: "";
   position: absolute;
-  inset: 4px;
+  inset: 2px;
   border: 1px solid #161619;
   border-radius: 50%;
-  background:
-    linear-gradient(112deg, transparent 8%, rgba(255, 255, 255, 0.055) 30%, rgba(255, 255, 255, 0.012) 48%, transparent 69%),
-    radial-gradient(circle at 35% 24%, #302c2d, #211f21 45%, #111114 84%);
+  /* A flat top: under a distant light it is lit almost evenly. */
+  background: linear-gradient(var(--light-angle), #242225, #19171a);
   box-shadow:
-    inset 1px 1px 2px rgba(255, 255, 255, 0.035),
-    inset -1px -1px 2px rgba(0, 0, 0, 0.55);
+    inset calc(var(--shadow-x) * 1.414px) calc(var(--shadow-y) * 1.414px) 2px rgba(255, 255, 255, 0.035),
+    inset calc(var(--shadow-x) * -1.414px) calc(var(--shadow-y) * -1.414px) 2px rgba(0, 0, 0, 0.55);
 }
 
+/* All-silver knobs: the top is the ring's metal turned straight up, so only
+   the light (from plugin-ui) sets it apart; no line or lip between them. */
 .parameter-master-tune .knob-top::after,
 .parameter-master-volume .knob-top::after {
-  border-color: #77787b;
-  background:
-    repeating-linear-gradient(91deg, rgba(255, 255, 255, 0.13) 0 1px, rgba(0, 0, 0, 0.035) 1px 3px),
-    linear-gradient(108deg, #74757a 0%, #d6d7d8 24%, #8c8d91 49%, #e1e1df 70%, #68696d 100%);
-  box-shadow:
-    inset 1px 1px 2px rgba(255, 255, 255, 0.62),
-    inset -2px -2px 3px rgba(0, 0, 0, 0.36);
+  border-color: transparent;
+  background: var(--knob-silver-top);
+  box-shadow: none;
 }
 
 .parameter-master-tune .knob-marker::before,
@@ -774,7 +955,7 @@ button { -webkit-tap-highlight-color: transparent; }
 
 .knob-marker::before {
   content: "";
-  width: 4px;
+  width: 3px;
   height: 18px;
   position: absolute;
   top: 7px;
@@ -795,7 +976,8 @@ button { -webkit-tap-highlight-color: transparent; }
 }
 
 .button-control {
-  grid-template-rows: 22px 19px 64px 15px;
+  /* The figure's row leaves it 6px clear of the switch under it. */
+  grid-template-rows: 22px 32px 62px 15px;
   grid-template-areas:
     "label"
     "symbol"
@@ -805,17 +987,31 @@ button { -webkit-tap-highlight-color: transparent; }
 
 .button-control > .control-label { grid-area: label; }
 
+/* A switch with no figure over it has its name right on it, in the
+   figure's row, so the switches of a row still line up. */
+.button-control.bare > .control-label {
+  grid-area: symbol;
+  align-self: end;
+  margin-bottom: 3px;
+}
+
+.button-control.bare > .wave-symbol-slot { display: none; }
+.button-control > .hardware-button { grid-area: switch; }
+
+/* Each figure is nearly as tall as it is wide, as on the Prophet-5. */
 .wave-symbol-slot {
   width: 34px;
-  height: 20px;
+  height: 26px;
   display: grid;
   grid-area: symbol;
   place-items: center;
+  /* Clear of the switch below it. */
+  align-self: start;
 }
 
 .wave-symbol {
   width: 34px;
-  height: 20px;
+  height: 26px;
   overflow: visible;
 }
 
@@ -830,7 +1026,7 @@ button { -webkit-tap-highlight-color: transparent; }
 
 .hardware-button {
   width: 46px;
-  height: 64px;
+  height: 62px;
   padding: 0;
   display: block;
   place-self: center;
@@ -843,19 +1039,37 @@ button { -webkit-tap-highlight-color: transparent; }
 
 .prophet-switch {
   width: 46px;
-  height: 64px;
+  height: 62px;
   display: block;
   overflow: visible;
+}
+
+/* The thin gutter of the cut-out each switch is sunk into. The panel's cut
+   edge catches light only where it faces the light (plugin-ui sets each
+   edge's stroke-opacity); the cap shades the rest. */
+.switch-well-rim {
+  fill: none;
+  stroke: #ffffff;
+  stroke-width: 0.7;
 }
 
 .switch-block {
   transform-box: fill-box;
   transform-origin: 50% 50%;
-  filter: drop-shadow(0 2px 1px rgba(0, 0, 0, 0.58));
+  /* Sunk into its cut-out, the block only shades the gutter floor. */
+  filter: drop-shadow(calc(var(--shadow-x) * 1px) calc(var(--shadow-y) * 1px) 0.6px rgba(0, 0, 0, 0.7));
   transition: transform 65ms ease-out, filter 65ms ease-out;
 }
 
 .switch-deck { fill: rgba(255, 255, 255, 0.025); }
+
+/* Ward sheen on the cap's facets, each flat and so lit evenly; the
+   opacities come from plugin-ui's light. */
+.switch-sheen { fill: #ffffff; }
+
+/* Dust, worked out from the cap's form by plugin-ui (texture.rs). */
+.switch-dirt,
+.panel-dust { pointer-events: none; }
 
 .switch-deck-seam {
   fill: none;
@@ -892,33 +1106,61 @@ button { -webkit-tap-highlight-color: transparent; }
 
 .led.on .led-glint { fill: rgba(255, 255, 255, 0.85); }
 
+/* A lit LED's light on the cap's top bevel, precomputed by plugin-ui as a
+   gradient; only its opacity follows the LED. */
+.led-spill {
+  opacity: 0;
+  transition: opacity 90ms linear;
+}
+
+.led.on[data-led="a"] ~ .switch-rocker .led-spill-a,
+.led.on[data-led="b"] ~ .switch-rocker .led-spill-b { opacity: 1; }
+
 .switch-rocker {
   pointer-events: none;
 }
 
-.switch-rocker-left { fill: #0a0b0e; }
-.switch-rocker-right { fill: #050608; }
-.switch-rocker-top { fill: #3b3c40; }
+.switch-rocker-left { fill: #060709; }
+.switch-rocker-right { fill: #020203; }
+.switch-rocker-top { fill: #24252a; }
 
 .switch-rocker-highlight {
   fill: rgba(255, 255, 255, 0.11);
 }
 
-.switch-rocker-foot { fill: rgba(0, 0, 0, 0.4); }
+/* The pyramid's bottom bevel faces away from an upper light: darkest. */
+.switch-rocker-foot { fill: #030304; }
 
-.hardware-button.tune-button .switch-rocker-left { fill: #aaa9a3; }
-.hardware-button.tune-button .switch-rocker-right { fill: #73746f; }
-.hardware-button.tune-button .switch-rocker-top { fill: #efeee7; }
-.hardware-button.tune-button .switch-rocker-highlight { fill: rgba(255, 255, 255, 0.48); }
-.hardware-button.tune-button .switch-rocker-foot { fill: #777873; }
+/* RECORD: the panel's switch in its own orange, #E44116, with its LED. */
+.record-button linearGradient[id^="switch-block"] stop:nth-child(1) { stop-color: #ff4b1a; }
+.record-button linearGradient[id^="switch-block"] stop:nth-child(2) { stop-color: #e44116; }
+.record-button linearGradient[id^="switch-block"] stop:nth-child(3) { stop-color: #b03211; }
+.record-button linearGradient[id^="switch-rocker"] stop:nth-child(1) { stop-color: #ff4a19; }
+.record-button linearGradient[id^="switch-rocker"] stop:nth-child(2) { stop-color: #e44116; }
+.record-button linearGradient[id^="switch-rocker"] stop:nth-child(3) { stop-color: #ab3110; }
+.hardware-button.record-button .switch-rocker-left { fill: #c73913; }
+.hardware-button.record-button .switch-rocker-right { fill: #91290e; }
+.hardware-button.record-button .switch-rocker-top { fill: #ff4f1b; }
+.hardware-button.record-button .switch-rocker-highlight { fill: rgba(255, 255, 255, 0.18); }
+.hardware-button.record-button .switch-rocker-foot { fill: #84260d; }
+
+.hardware-button.tune-button .switch-rocker-left { fill: #68726f; }
+.hardware-button.tune-button .switch-rocker-right { fill: #4c5351; }
+.hardware-button.tune-button .switch-rocker-top { fill: #919f9a; }
+.hardware-button.tune-button .switch-rocker-highlight { fill: rgba(255, 255, 255, 0.18); }
+.hardware-button.tune-button .switch-rocker-foot { fill: #454c49; }
 
 .hardware-button:hover .switch-block {
   filter: brightness(1.08);
 }
 
-.hardware-button:not(.rackforge-context-press):active .switch-block {
+/* Down at once under the finger; back up at the block's own pace. A page
+   key just pressed is drawn anew, so it starts down (plugin-ui). */
+.hardware-button:not(.rackforge-context-press):active .switch-block,
+.hardware-button.releasing .switch-block {
   transform: translateY(1.5px) scaleY(0.985);
-  filter: brightness(0.9) drop-shadow(0 1px 0 rgba(0, 0, 0, 0.42));
+  filter: brightness(0.9) drop-shadow(calc(var(--shadow-x) * 1px) calc(var(--shadow-y) * 1px) 0 rgba(0, 0, 0, 0.42));
+  transition-duration: 8ms;
 }
 
 .hardware-button.rackforge-context-press:active { transform: none; }
@@ -949,11 +1191,6 @@ button { -webkit-tap-highlight-color: transparent; }
     grid-template-columns: 1fr;
     grid-template-areas: none;
     gap: 18px;
-  }
-
-  .section-modulation .group-lfo {
-    width: 100%;
-    margin-inline: 0;
   }
 
   .section-oscillators .group-oscillator-a,
@@ -998,10 +1235,6 @@ button { -webkit-tap-highlight-color: transparent; }
 }
 
 @media (max-width: 850px) {
-  .panel-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-
-  .panel-tab:nth-child(n + 4) { border-top: 1px solid #34353b; }
-
   .panel-surface {
     min-height: 0;
     padding: 23px 10px 14px;
@@ -1025,15 +1258,41 @@ button { -webkit-tap-highlight-color: transparent; }
 }
 
 @media (max-width: 560px) {
-  .wood-rail,
-  .panel-tabs,
-  .hardware-panel,
-  .program-memory {
-    margin-right: 10px;
-    margin-left: 10px;
+  .rf5-frame { --wood-side: 10px; }
+
+  /* Five page names across a phone: a size smaller, so each keeps to its
+     key. */
+  .page-key > .control-label {
+    font-size: 7.2px;
+    letter-spacing: 0.03em;
   }
 
-  .panel-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* Two columns a row: a legend's controls take a row of their own. */
+  .control-grid > .control-legend { grid-column: 1 / -1; }
+
+  /* Too narrow for the modulation column's shared columns: two to a row,
+     each legend a row of its own. */
+  .section-modulation .group-lfo { --lfo-reach: 0px; margin-left: 0; }
+
+  .section-modulation .control-group .control-grid,
+  .section-modulation .group-lfo .control-grid {
+    grid-template-columns: repeat(2, minmax(78px, 1fr));
+  }
+
+  .section-modulation .control-grid > .control-legend,
+  .section-modulation .group-poly-mod .control-grid > .legend-destination,
+  .section-modulation .group-lfo .control-grid > .legend-shape {
+    grid-column: 1 / -1;
+    grid-template-columns: none;
+  }
+
+  .section-modulation .legend-controls { grid-template-columns: none; }
+
+  .wood-rail,
+  .panel-face {
+    margin-right: var(--wood-side);
+    margin-left: var(--wood-side);
+  }
 
   .wood-rail-plaque {
     min-height: 76px;
@@ -1041,13 +1300,6 @@ button { -webkit-tap-highlight-color: transparent; }
   }
 
   .identity-plaque { width: min(100%, 330px); }
-
-  .panel-tab {
-    min-height: 49px;
-    padding: 7px 9px;
-  }
-
-  .panel-tab span { display: none; }
 
   .control-grid,
   .group-poly-mod .control-grid,
@@ -1065,22 +1317,7 @@ button { -webkit-tap-highlight-color: transparent; }
 
   .group-scale .control-grid { grid-template-columns: repeat(3, minmax(74px, 1fr)); }
 
-  /* On a phone the maker takes the first line and the selector the second. */
-  .program-memory {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      "identity"
-      "selector";
-    gap: 8px;
-    padding: 8px;
-  }
-
-  .program-identity {
-    padding-right: 0;
-    border-right: 0;
-  }
-
-  .program-identity small { width: auto; }
+  .program-memory { padding: 8px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
