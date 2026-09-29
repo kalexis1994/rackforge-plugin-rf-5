@@ -68,7 +68,7 @@ fn from_hex(hex: &str) -> Option<[u8; PROGRAM_MEMORY_BYTES]> {
         return None;
     }
     let mut memory = [0; PROGRAM_MEMORY_BYTES];
-    for (byte, pair) in memory.iter_mut().zip(hex.as_bytes().chunks_exact(2)) {
+    for (byte, pair) in memory.iter_mut().zip(hex.as_bytes().as_chunks::<2>().0) {
         *byte = u8::from_str_radix(core::str::from_utf8(pair).ok()?, 16).ok()?;
     }
     Some(memory)
