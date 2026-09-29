@@ -389,6 +389,11 @@ mod tests {
         assert!(restarted.install_program(&prepared));
     }
 
+    fn factory_count() -> usize {
+        let catalog: Value = serde_json::from_str(FACTORY_CATALOG).unwrap();
+        catalog["presets"].as_array().unwrap().len()
+    }
+
     #[test]
     fn the_library_holds_its_limit_and_the_catalog_still_fits() {
         let mut processor = Rf5Processor::default();
@@ -405,7 +410,7 @@ mod tests {
         let listed = catalog(&mut processor);
         assert_eq!(
             listed["presets"].as_array().unwrap().len(),
-            40 + MAX_PROGRAMS
+            factory_count() + MAX_PROGRAMS
         );
         // Saving over one still works when full.
         let again = begin(&mut processor, Some("custom.user-64")).unwrap();
