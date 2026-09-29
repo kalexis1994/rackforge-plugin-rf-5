@@ -21,3 +21,8 @@ three product-photography compositions:
 The original hardware photographs were used only as construction and density
 references. The RF-5 name, plaque, panel arrangement and visual identity are
 original, and no third-party manufacturer or model marks are retained.
+
+`walnut-satin-raw.jpg` is the unvarnished walnut of the plugin UI's case. Run
+`python tools/generate-walnut.py` to bake its varnish in and write
+`plugin/package/web/assets/walnut-satin.jpg` and the seamless, mirrored
+`walnut-satin-tall.jpg` that repeats down the case.

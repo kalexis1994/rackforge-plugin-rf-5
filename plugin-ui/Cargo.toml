@@ -22,13 +22,19 @@ web-sys = { version = "0.3", features = [
     "DomTokenList",
     "Element",
     "Event",
+    "FontFaceSet",
     "EventTarget",
     "HtmlElement",
+    "HtmlImageElement",
     "KeyboardEvent",
     "Location",
     "MessageEvent",
     "MouseEvent",
     "Node",
+    "NodeList",
     "PointerEvent",
     "Window",
 ] }
+
+[dev-dependencies]
+png = "0.17"

@@ -3,12 +3,26 @@ pub struct ControlGroup {
     pub id: &'static str,
     pub title: &'static str,
     pub parameter_ids: &'static [&'static str],
+    /// Runs of these controls that the original panel sets close together
+    /// over a legend line.
+    pub legends: &'static [Legend],
+}
+
+/// A run of a group's controls printed together over a line naming what
+/// they share, as Poly-Mod's DESTINATION switches are on the Prophet-5.
+/// With no label there is no line: the controls are only kept together.
+#[derive(Clone, Copy, Debug)]
+pub struct Legend {
+    pub label: &'static str,
+    pub parameter_ids: &'static [&'static str],
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct PanelSection {
     pub id: &'static str,
     pub label: &'static str,
+    /// The name on its key when the row is too narrow for `label`.
+    pub short: &'static str,
     pub caption: &'static str,
     pub groups: &'static [ControlGroup],
 }
@@ -23,11 +37,32 @@ const POLY_MOD: ControlGroup = ControlGroup {
         "poly-mod-oscillator-a-pulse-width",
         "poly-mod-filter",
     ],
+    legends: &[
+        Legend {
+            label: "SOURCE AMOUNT",
+            parameter_ids: &[
+                "poly-mod-filter-envelope-amount",
+                "poly-mod-oscillator-b-amount",
+            ],
+        },
+        Legend {
+            label: "DESTINATION",
+            parameter_ids: &[
+                "poly-mod-oscillator-a-frequency",
+                "poly-mod-oscillator-a-pulse-width",
+                "poly-mod-filter",
+            ],
+        },
+    ],
 };
 const LFO: ControlGroup = ControlGroup {
     id: "lfo",
     title: "LFO",
     parameter_ids: &["lfo-frequency", "lfo-saw", "lfo-triangle", "lfo-square"],
+    legends: &[Legend {
+        label: "SHAPE",
+        parameter_ids: &["lfo-saw", "lfo-triangle", "lfo-square"],
+    }],
 };
 const WHEEL_MOD: ControlGroup = ControlGroup {
     id: "wheel-mod",
@@ -40,6 +75,16 @@ const WHEEL_MOD: ControlGroup = ControlGroup {
         "wheel-mod-oscillator-b-pulse-width",
         "wheel-mod-filter",
     ],
+    legends: &[Legend {
+        label: "DESTINATION",
+        parameter_ids: &[
+            "wheel-mod-oscillator-a-frequency",
+            "wheel-mod-oscillator-b-frequency",
+            "wheel-mod-oscillator-a-pulse-width",
+            "wheel-mod-oscillator-b-pulse-width",
+            "wheel-mod-filter",
+        ],
+    }],
 };
 const OSCILLATOR_A: ControlGroup = ControlGroup {
     id: "oscillator-a",
@@ -51,6 +96,10 @@ const OSCILLATOR_A: ControlGroup = ControlGroup {
         "oscillator-a-pulse-width",
         "oscillator-sync",
     ],
+    legends: &[Legend {
+        label: "SHAPE",
+        parameter_ids: &["oscillator-a-saw", "oscillator-a-pulse"],
+    }],
 };
 const OSCILLATOR_B: ControlGroup = ControlGroup {
     id: "oscillator-b",
@@ -65,11 +114,30 @@ const OSCILLATOR_B: ControlGroup = ControlGroup {
         "oscillator-b-low-frequency",
         "oscillator-b-keyboard",
     ],
+    legends: &[
+        Legend {
+            label: "SHAPE",
+            parameter_ids: &[
+                "oscillator-b-saw",
+                "oscillator-b-triangle",
+                "oscillator-b-pulse",
+            ],
+        },
+        Legend {
+            label: "",
+            parameter_ids: &[
+                "oscillator-b-pulse-width",
+                "oscillator-b-low-frequency",
+                "oscillator-b-keyboard",
+            ],
+        },
+    ],
 };
 const MIXER: ControlGroup = ControlGroup {
     id: "mixer",
     title: "MIXER",
     parameter_ids: &["oscillator-a-level", "oscillator-b-level", "noise-level"],
+    legends: &[],
 };
 const FILTER: ControlGroup = ControlGroup {
     id: "filter",
@@ -84,16 +152,19 @@ const FILTER: ControlGroup = ControlGroup {
         "filter-sustain",
         "filter-release",
     ],
+    legends: &[],
 };
 const AMPLIFIER: ControlGroup = ControlGroup {
     id: "amplifier",
     title: "AMPLIFIER",
     parameter_ids: &["amp-attack", "amp-decay", "amp-sustain", "amp-release"],
+    legends: &[],
 };
 const PERFORMANCE: ControlGroup = ControlGroup {
     id: "performance",
     title: "PERFORMANCE",
     parameter_ids: &["glide", "unison"],
+    legends: &[],
 };
 const OUTPUT: ControlGroup = ControlGroup {
     id: "output",
@@ -107,6 +178,7 @@ const OUTPUT: ControlGroup = ControlGroup {
         "vintage-spread",
         "program-change-mutes-tails",
     ],
+    legends: &[],
 };
 const SCALE: ControlGroup = ControlGroup {
     id: "scale",
@@ -125,6 +197,7 @@ const SCALE: ControlGroup = ControlGroup {
         "scale-a-sharp",
         "scale-b",
     ],
+    legends: &[],
 };
 
 const MODULATION_GROUPS: &[ControlGroup] = &[POLY_MOD, LFO, WHEEL_MOD];
@@ -137,30 +210,35 @@ pub const SECTIONS: &[PanelSection] = &[
     PanelSection {
         id: "modulation",
         label: "MODULATION",
+        short: "MOD",
         caption: "POLY-MOD · LFO · WHEEL-MOD",
         groups: MODULATION_GROUPS,
     },
     PanelSection {
         id: "oscillators",
         label: "OSCILLATORS",
+        short: "OSC",
         caption: "OSCILLATOR A · OSCILLATOR B · MIXER",
         groups: OSCILLATOR_GROUPS,
     },
     PanelSection {
         id: "filter",
         label: "FILTER + ENVELOPES",
+        short: "FILTER",
         caption: "FILTER · FILTER ENV · AMPLIFIER",
         groups: FILTER_GROUPS,
     },
     PanelSection {
         id: "voice",
         label: "VOICE",
+        short: "VOICE",
         caption: "GLIDE · UNISON · OUTPUT",
         groups: VOICE_GROUPS,
     },
     PanelSection {
         id: "scale",
         label: "SCALE MODE",
+        short: "SCALE",
         caption: "TWELVE PROGRAMMABLE NOTE OFFSETS",
         groups: SCALE_GROUPS,
     },
@@ -177,6 +255,26 @@ pub fn section(id: &str) -> &'static PanelSection {
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn every_legend_spans_a_run_of_its_own_group() {
+        for group in SECTIONS.iter().flat_map(|section| section.groups) {
+            for legend in group.legends {
+                let start = group
+                    .parameter_ids
+                    .iter()
+                    .position(|id| *id == legend.parameter_ids[0])
+                    .unwrap_or_else(|| panic!("{} not in {}", legend.label, group.id));
+                assert_eq!(
+                    &group.parameter_ids[start..start + legend.parameter_ids.len()],
+                    legend.parameter_ids,
+                    "{} in {}",
+                    legend.label,
+                    group.id
+                );
+            }
+        }
+    }
 
     #[test]
     fn panel_maps_every_public_parameter_exactly_once() {
