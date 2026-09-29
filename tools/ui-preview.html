@@ -10,24 +10,37 @@
     </style>
   </head>
   <body>
-    <iframe id="surface" src="../plugin/package/web/play.html" title="RF-5 Play surface"></iframe>
+    <iframe id="surface" title="RF-5 surface"></iframe>
     <script type="module">
       const protocol = "rackforge.plugin.web@1";
+      const pluginId = "org.rackforge.rf-5";
+      // ?surface=config opens the CONFIG page instead of PLAY.
+      const surface = new URLSearchParams(location.search).get("surface") === "config" ? "config" : "play";
       const frame = document.querySelector("#surface");
-      const [schema, catalog] = await Promise.all([
+      const [schema, catalog, originals] = await Promise.all([
         fetch("../plugin/package/metadata/parameters.json").then((response) => response.json()),
         fetch("../plugin/package/metadata/presets.json").then((response) => response.json()),
+        fetch("../crates/rf-5-dsp/src/original_programs_data.rs").then((response) => response.text()),
       ]);
+      // The factory programs' memory, as the engine holds it: 24 bytes each.
+      const factoryMemory = new Map();
+      for (const block of originals.split("OriginalProgram {").slice(1)) {
+        const id = block.match(/id: "([^"]+)"/)?.[1];
+        const bytes = [...block.matchAll(/from_raw\(0x([0-9a-f]{2})\)/g)].map((match) => match[1]);
+        if (id && bytes.length === 24) factoryMemory.set(id, bytes.join(""));
+      }
       const sounds = catalog.presets.map((preset) => ({
         id: preset.id,
         name: preset.name,
         bank: preset.bank,
         editable: false,
       }));
-      // Programs recorded in the preview, as RackForge's CUSTOM collection.
+      const banks = [...catalog.banks, { id: "user", name: "User", order: 1 }];
+      // Programs recorded in the preview, as RackForge's CUSTOM collection,
+      // with the documents the engine would have made for them.
+      const customDocuments = new Map();
       let draft = null;
       let draftCounter = 0;
-      let customCounter = 0;
       const values = new Map(schema.parameters.map((parameter) => [
         parameter.index,
         typeof parameter.kind.default === "boolean"
@@ -36,6 +49,7 @@
       ]));
       let selectedSoundId = sounds[0]?.id ?? "";
       window.__consoleErrors = [];
+      window.__requests = [];
       window.addEventListener("error", (event) => window.__consoleErrors.push(String(event.message)));
 
       // RackForge injects its plugin kit (<rf-program-select>,
@@ -50,14 +64,15 @@
           frame.contentDocument.head.append(script);
         }
       };
-      if (frame.contentDocument?.readyState === "complete") injectPluginKit();
       frame.addEventListener("load", injectPluginKit);
+      frame.src = `../plugin/package/web/${surface}.html?v=${Date.now()}`;
 
       const send = (message) => frame.contentWindow.postMessage(message, location.origin);
       const sendContext = () => send({
         protocol,
         kind: "context",
-        instance: { selected_sound_id: selectedSoundId, sounds },
+        surface,
+        instance: { selected_sound_id: selectedSoundId, sounds, banks },
         program_draft: draft,
       });
       const respond = (requestId, result) => send({
@@ -67,6 +82,28 @@
         ok: true,
         result,
       });
+      const reject = (requestId, error) => send({
+        protocol,
+        kind: "response",
+        request_id: requestId,
+        ok: false,
+        error,
+      });
+      // Contexts come a moment after the answers, as RackForge's do.
+      const later = (action) => setTimeout(action, 25);
+
+      const memoryOf = (soundId) => {
+        const custom = customDocuments.get(soundId);
+        if (custom) return custom.payload.memory;
+        return factoryMemory.get(soundId) ?? "00".repeat(24);
+      };
+      const nextUserId = () => {
+        for (let number = 1; number <= 64; number += 1) {
+          const id = `user-${String(number).padStart(2, "0")}`;
+          if (!customDocuments.has(`custom.${id}`)) return id;
+        }
+        return null;
+      };
 
       window.addEventListener("message", (event) => {
         if (event.source !== frame.contentWindow || event.origin !== location.origin) return;
@@ -77,6 +114,8 @@
           return;
         }
         if (message.kind !== "request") return;
+        window.__requests.push(message.method);
+        const params = message.params ?? {};
         if (message.method === "plugin.parameters") {
           respond(message.request_id, {
             schema,
@@ -86,52 +125,96 @@
             })),
           });
         } else if (message.method === "plugin.set_parameter") {
-          values.set(message.params.parameter_index, message.params.value);
+          values.set(params.parameter_index, params.value);
           respond(message.request_id, {});
           send({
             protocol,
             kind: "parameter_changed",
-            parameter_index: message.params.parameter_index,
-            value: message.params.value,
+            parameter_index: params.parameter_index,
+            value: params.value,
           });
         } else if (message.method === "plugin.begin_program_edit") {
-          const original = message.params.program_id;
+          if (draft) {
+            reject(message.request_id, "Another program edit is already active");
+            return;
+          }
+          const original = params.program_id;
+          const custom = original ? customDocuments.get(original) : null;
           const source = sounds.find((sound) => sound.id === (original ?? selectedSoundId));
+          const id = custom ? custom.id : nextUserId();
+          if (!id) {
+            reject(message.request_id, "Could not begin program editing: the USER bank is full");
+            return;
+          }
           draftCounter += 1;
+          const document = custom ?? {
+            schema_version: 1,
+            id,
+            name: original ? source?.name ?? "New program" : "New program",
+            plugin_id: pluginId,
+            plugin_version: "0.1.18",
+            plugin_state_version: 14,
+            payload_version: 1,
+            tags: ["rf5", "user"],
+            payload: { memory: memoryOf(original ?? selectedSoundId) },
+          };
           draft = {
             draft_id: draftCounter,
-            name: source?.name ?? "New program",
-            ...(original ? { original_program_id: original } : {}),
+            name: document.name,
+            ...(custom ? { original_program_id: original } : {}),
+            document_json: JSON.stringify(document),
             dirty: false,
           };
           respond(message.request_id, null);
-          sendContext();
-        } else if (message.method === "plugin.set_program_name" && draft?.draft_id === message.params.draft_id) {
-          draft = { ...draft, name: String(message.params.name).trim(), dirty: true };
+          later(sendContext);
+        } else if (message.method === "plugin.set_program_name" && draft?.draft_id === params.draft_id) {
+          const document = { ...JSON.parse(draft.document_json), name: String(params.name).trim() };
+          draft = { ...draft, name: document.name, document_json: JSON.stringify(document), dirty: true };
           respond(message.request_id, null);
-          sendContext();
-        } else if (message.method === "plugin.save_program" && draft?.draft_id === message.params.draft_id) {
-          const original = sounds.find((sound) => sound.id === draft.original_program_id);
-          if (original) {
-            original.name = draft.name;
-            selectedSoundId = original.id;
-          } else {
-            customCounter += 1;
-            const id = `custom.preview-${customCounter}`;
-            sounds.push({ id, name: draft.name, bank: "custom", editable: true });
-            selectedSoundId = id;
+          later(sendContext);
+        } else if (
+          message.method === "plugin.replace_program_draft" &&
+          surface === "config" &&
+          draft?.draft_id === params.draft_id
+        ) {
+          const previous = JSON.parse(draft.document_json);
+          const document = params.document;
+          if (document.id !== previous.id || document.plugin_id !== previous.plugin_id) {
+            reject(message.request_id, "program identity cannot change while editing");
+            return;
           }
+          if (!/^[0-9a-f]{48}$/.test(document.payload?.memory ?? "")) {
+            reject(message.request_id, "invalid RF-5 program document");
+            return;
+          }
+          draft = { ...draft, name: document.name, document_json: JSON.stringify(document), dirty: true };
+          console.info(`[preview] auditioning ${document.name}: ${document.payload.memory}`);
+          respond(message.request_id, null);
+          later(sendContext);
+        } else if (message.method === "plugin.save_program" && draft?.draft_id === params.draft_id) {
+          const document = JSON.parse(draft.document_json);
+          const soundId = `custom.${document.id}`;
+          customDocuments.set(soundId, document);
+          const existing = sounds.find((sound) => sound.id === soundId);
+          if (existing) {
+            existing.name = document.name;
+          } else {
+            sounds.push({ id: soundId, name: document.name, bank: "user", editable: true });
+          }
+          selectedSoundId = soundId;
           draft = null;
           respond(message.request_id, null);
-          sendContext();
-        } else if (message.method === "plugin.cancel_program" && draft?.draft_id === message.params.draft_id) {
+          later(sendContext);
+        } else if (message.method === "plugin.cancel_program" && draft?.draft_id === params.draft_id) {
           draft = null;
           respond(message.request_id, null);
-          sendContext();
+          later(sendContext);
         } else if (message.method === "plugin.select_sound") {
-          selectedSoundId = message.params.sound_id;
+          selectedSoundId = params.sound_id;
           respond(message.request_id, {});
           sendContext();
+        } else {
+          reject(message.request_id, `The preview host does not handle ${message.method}.`);
         }
       });
     </script>

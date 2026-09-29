@@ -23,6 +23,45 @@ than its instrument-specific layout:
   touch;
 - suppression of secondary-button hardware activation.
 
+## CONFIG: the cassette interface
+
+`config.html` loads the same module with `data-surface="config"` on its root.
+CONFIG is where programs are passed on, the way Prophet-5 owners pass them:
+the Rev 3's own SAVE TO TAPE and grey LOAD FROM TAPE keys, a red LED display,
+the RF-5's program memory with an LED to mark each program, and the tape that
+was loaded.
+
+Three media are read and written (`plugin-ui/src/transfer/`):
+
+- **Tape**: WAV recordings of the Rev 3's cassette interface. The format was
+  read off the factory tapes Sequential shipped with the Rev 3: half-cycles
+  counted in 232.4 µs minims, a bit sixteen minims (a one twelve short
+  half-cycles and a long one, a zero four long ones), a leader of ones, a zero
+  start bit, 960 bytes (a program file of 40) or 192 (one bank of 8) most
+  significant bit first, then their sum modulo 256. The reader filters DC and
+  hum, sets its hysteresis from the recording's level, calibrates the minim
+  from the leader and follows drift, picks the live channel of a stereo
+  recording and reads any PCM or float WAV. A failed checksum loads the
+  programs unmarked, with the warning shown. Written tapes carry the factory
+  tapes' leader and timing, so they load into a real Rev 3.
+- **SysEx**: the Rev 4's program dumps (`F0 01 32 02 group program`, 152
+  packed bytes, `F7`) and edit buffers. The Rev 4 keeps the vintage 7-bit pot
+  positions, so programs cross exactly; its own settings are written as its
+  factory recreation of the Rev 3 programs sets them.
+- **File**: RackForge program documents, one as its
+  `.rackforge-program.json`, several as a bundle.
+
+RackForge holds the programs, so the page reaches their memory only through
+program drafts (`plugin-ui/src/cassette.rs`): SAVE TO TAPE begins a draft of
+each marked program, keeps its document and cancels it; installing begins an
+empty draft, replaces it with the tape's program (`replace_program_draft`,
+CONFIG only) and saves it into the USER bank; listening holds a draft open
+with the tape's program in it, which RackForge sounds. Each is a queue of
+steps taken as RackForge answers, with a watchdog on every wait.
+
+`tools/ui-preview.html?surface=config` previews the page with a host that
+keeps drafts and documents, and the factory programs' real memory.
+
 ## Panel map
 
 The source-backed front-panel inventory is grouped into five responsive

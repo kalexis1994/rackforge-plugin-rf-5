@@ -14,7 +14,7 @@ capabilities = [
     "parallel_render_v1",
 ]
 ui_layouts = ["little@1"]
-config_mode = false
+config_mode = true
 
 [midi]
 channel_model = "single_part"
@@ -30,6 +30,10 @@ api_version = 1
 [[web_ui.surfaces]]
 kind = "play"
 entry = "web/play.html"
+
+[[web_ui.surfaces]]
+kind = "config"
+entry = "web/config.html"
 
 [api]
 major = 1

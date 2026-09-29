@@ -1366,3 +1366,352 @@ button { -webkit-tap-highlight-color: transparent; }
     transition: none !important;
   }
 }
+
+/* CONFIG: the Rev 3's cassette interface. Its keys are the panel's
+   switches, SAVE TO TAPE and the grey LOAD FROM TAPE as the Rev 3 has them;
+   its display the program selector's red LED; the programs sit in rows of
+   black glass, each with the LED that marks it. */
+.config-panel {
+  min-height: 0;
+  flex: 1 0 auto;
+}
+
+.config-surface {
+  --section-columns: minmax(0, 1fr) minmax(0, 1fr);
+  --section-areas: "cassette cassette" "memory tape";
+  align-items: start;
+  gap: 24px 16px;
+}
+
+/* Two columns until the panel is narrow, whatever the PLAY pages do. */
+.config-surface.panel-surface {
+  grid-template-columns: var(--section-columns);
+  grid-template-areas: var(--section-areas);
+}
+
+.group-cassette { grid-area: cassette; }
+.group-memory { grid-area: memory; }
+.group-tape { grid-area: tape; }
+
+.cassette-deck {
+  padding: 4px 10px 0;
+  display: grid;
+  grid-template-columns: auto minmax(200px, 1fr) auto;
+  align-items: center;
+  gap: 12px 30px;
+}
+
+.cassette-keys {
+  display: flex;
+  gap: 16px;
+}
+
+.cassette-deck > .control-legend { grid-column: auto; }
+
+.legend-format > .legend-controls { column-gap: 4px; }
+
+.cassette-key .control-label,
+.legend-format .control-label { white-space: nowrap; }
+
+.tape-window {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+}
+
+/* The program selector's display: black glass, a red LED readout. */
+.led-display {
+  height: 44px;
+  min-width: 0;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid #030303;
+  border-radius: 1px;
+  background: #08090b;
+  box-shadow:
+    inset calc(var(--shadow-x) * 1px) calc(var(--shadow-y) * 1px) 4px rgba(0, 0, 0, 0.9),
+    calc(var(--shadow-x) * 1px) calc(var(--shadow-y) * 1px) rgba(255, 255, 255, 0.06);
+}
+
+.led-display span {
+  color: #ff342f;
+  font-family: "Segment14", monospace;
+  font-size: 19px;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 6px rgba(255, 47, 42, 0.55);
+  white-space: nowrap;
+}
+
+.tape-note,
+.section-foot,
+.tape-warning,
+.rows-empty,
+.tape-empty {
+  color: #a9a8a1;
+  font-family: "Arimo", Arial, sans-serif;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.45;
+  text-transform: uppercase;
+}
+
+.tape-note {
+  min-height: 12px;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* LOAD FROM TAPE blinks when a load fails, as the Rev 3's does. */
+.hardware-button.blinking .led.on,
+.hardware-button.blinking .led-spill {
+  animation: lamp-blink 900ms steps(1, end) infinite;
+}
+
+@keyframes lamp-blink {
+  50% { opacity: 0.12; }
+}
+
+.hardware-button:disabled { cursor: progress; }
+
+.program-bank + .program-bank { margin-top: 16px; }
+
+.bank-head,
+.tape-head {
+  margin: 2px 4px 9px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ivory);
+  font-family: "Arimo", Arial, sans-serif;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.bank-count { color: #a9a8a1; }
+
+/* The legends' white rule, run out to the bank's keys. */
+.bank-rule {
+  height: 1.5px;
+  flex: 1 1 auto;
+  border-radius: 1px;
+  background: var(--line);
+}
+
+.tape-file {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.text-key {
+  padding: 3px 7px;
+  border: 1px solid rgba(242, 240, 231, 0.5);
+  border-radius: 2px;
+  color: var(--ivory);
+  background: transparent;
+  font-family: "Arimo", Arial, sans-serif;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.text-key:hover:not(:disabled) { border-color: var(--ivory); }
+.text-key:active:not(:disabled) { background: rgba(242, 240, 231, 0.1); }
+.text-key:disabled { opacity: 0.35; cursor: default; }
+
+.program-rows {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 5px 6px;
+}
+
+.program-row {
+  width: 100%;
+  height: 28px;
+  min-width: 0;
+  padding: 0 9px 0 8px;
+  display: grid;
+  grid-template-columns: 9px 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #030304;
+  border-radius: 2px;
+  color: var(--ivory);
+  background: linear-gradient(var(--light-angle), #0e0f13, #08090b);
+  box-shadow:
+    inset calc(var(--shadow-x) * 1px) calc(var(--shadow-y) * 1px) 3px rgba(0, 0, 0, 0.85),
+    calc(var(--shadow-x) * 1px) calc(var(--shadow-y) * 1px) rgba(255, 255, 255, 0.05);
+  font-family: "Arimo", Arial, sans-serif;
+  text-align: left;
+  cursor: pointer;
+}
+
+.program-row:hover:not(:disabled) { border-color: rgba(242, 240, 231, 0.22); }
+
+.program-row:focus-visible,
+.listen-key:focus-visible,
+.text-key:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 1px;
+}
+
+.program-row:disabled { cursor: progress; }
+
+/* The mark: the panel's LED, dark red behind its lens until lit. */
+.row-led {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #4b1512, #1c0605 72%);
+  box-shadow: 0 0 0 1px #000, 0 0 0 2px rgba(255, 255, 255, 0.05);
+}
+
+.program-row.marked .row-led {
+  background: radial-gradient(circle at 35% 35%, #ffd8d0 0 10%, #ff3e39 40%, #b0130f 82%);
+  box-shadow: 0 0 0 1px #200302, 0 0 8px 2px rgba(255, 50, 44, 0.5);
+}
+
+.row-place {
+  color: #a9a8a1;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.row-name {
+  overflow: hidden;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.row-name.unnamed { color: #a9a8a1; }
+
+.rows-empty {
+  grid-column: 1 / -1;
+  margin: 2px 4px;
+}
+
+.tape-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  gap: 3px;
+}
+
+/* LISTEN: a light key, the panel's grey, with the transport's play and
+   stop marks; lit red while the program sounds. */
+.listen-key {
+  height: 28px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid #030304;
+  border-radius: 2px;
+  color: #1a1c1b;
+  background: linear-gradient(var(--light-angle), #8f9b97, #77837f 55%, #5d6764);
+  box-shadow:
+    calc(var(--shadow-x) * 1px) calc(var(--shadow-y) * 1px) 2px rgba(0, 0, 0, 0.6),
+    inset 0 1px rgba(255, 255, 255, 0.18);
+  cursor: pointer;
+}
+
+.listen-key svg {
+  width: 11px;
+  height: 11px;
+  fill: currentColor;
+}
+
+.listen-key:active:not(:disabled) { transform: translateY(1px); filter: brightness(0.92); }
+.listen-key:disabled { cursor: progress; }
+.listen-key.active { color: #ff2f29; filter: drop-shadow(0 0 4px rgba(255, 47, 41, 0.45)); }
+
+.tape-row.listening .program-row { border-color: rgba(255, 62, 57, 0.6); }
+
+.tape-warning {
+  margin: -2px 4px 10px;
+  color: #ff8a80;
+}
+
+.section-foot { margin: 12px 4px 2px; }
+
+.section-foot.over { color: #ff8a80; }
+
+.tape-foot {
+  margin-top: 8px;
+  padding: 0 4px;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.tape-foot .section-foot { margin: 0 0 10px; }
+
+.tape-empty {
+  min-height: 230px;
+  margin: 6px 4px 4px;
+  padding: 24px;
+  display: grid;
+  place-content: center;
+  gap: 5px;
+  border: 1.5px dashed rgba(242, 240, 231, 0.28);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.tape-empty p { margin: 0; }
+
+.tape-empty .tape-empty-lead {
+  margin-bottom: 8px;
+  color: var(--ivory);
+  font-size: 10px;
+}
+
+/* A file dragged over the page: the tape takes it. */
+.config-panel.dropping .tape-empty,
+.config-panel.dropping .group-tape .program-rows {
+  border-color: rgba(255, 62, 57, 0.75);
+  outline: 1.5px dashed rgba(255, 62, 57, 0.75);
+  outline-offset: 4px;
+}
+
+@media (max-width: 1000px) {
+  .config-surface {
+    --section-columns: minmax(0, 1fr);
+    --section-areas: none;
+  }
+
+  .config-surface .group-cassette,
+  .config-surface .group-memory,
+  .config-surface .group-tape { grid-area: auto; }
+
+  .config-surface .group-tape { order: 1; }
+  .config-surface .group-memory { order: 2; }
+}
+
+@media (max-width: 700px) {
+  .cassette-deck {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+  }
+
+  .tape-window { width: 100%; }
+
+  .program-rows { grid-template-columns: minmax(0, 1fr); }
+}

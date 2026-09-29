@@ -1,10 +1,16 @@
 #[cfg(any(target_arch = "wasm32", test))]
+// The page drives it only in the browser.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+mod cassette;
+#[cfg(any(target_arch = "wasm32", test))]
 mod light;
 #[cfg(any(target_arch = "wasm32", test))]
 mod panel;
 #[cfg(any(target_arch = "wasm32", test))]
 #[cfg(test)]
 mod texture;
+#[cfg(any(target_arch = "wasm32", test))]
+mod transfer;
 
 #[cfg(any(target_arch = "wasm32", test))]
 use serde::Deserialize;
@@ -514,32 +520,45 @@ mod browser {
         PointerEvent, Window,
     };
 
+    mod config;
+
     type AppHandle = Rc<RefCell<App>>;
     type ResponseHandler = Box<dyn FnOnce(&AppHandle, Result<JsValue, String>)>;
 
     #[derive(Debug, Deserialize)]
     struct HostContext {
         instance: Instance,
+        /// The program draft open on this instance, if any: the CONFIG
+        /// page reads programs through them.
+        #[serde(default)]
+        program_draft: Option<ProgramDraft>,
     }
 
-    /// The panel only follows which program is selected, to re-read its
+    /// PLAY only follows which program is selected, to re-read its
     /// controls; RackForge's program selector lists and chooses them.
+    /// CONFIG lists the programs, to save them to tape.
     #[derive(Debug, Deserialize)]
     struct Instance {
         selected_sound_id: String,
         #[serde(default)]
-        sounds: Vec<Sound>,
+        sounds: Vec<cassette::Sound>,
+        #[serde(default)]
+        banks: Vec<cassette::Bank>,
     }
 
-    /// A program as the context lists it: enough for its display digits.
     #[derive(Debug, Deserialize)]
-    struct Sound {
-        id: String,
-        name: String,
+    struct ProgramDraft {
+        draft_id: u64,
         #[serde(default)]
-        bank: Option<String>,
-        #[serde(default)]
-        editable: bool,
+        document_json: Option<String>,
+    }
+
+    /// Which of the plugin's surfaces this page is: `data-surface` on the
+    /// root.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum Surface {
+        Play,
+        Config,
     }
 
     #[derive(Clone, Debug, Deserialize)]
@@ -609,6 +628,9 @@ mod browser {
         window: Window,
         document: Document,
         root: Element,
+        surface: Surface,
+        /// The CONFIG page's cassette interface.
+        cassette: cassette::Cassette,
         /// RackForge's `<rf-program-select>`, made once and put back in the
         /// program memory bar after every render: the render replaces the
         /// whole page, and a new element each time would lose an open list.
@@ -642,6 +664,11 @@ mod browser {
                 .get_element_by_id("plugin-root")
                 .ok_or_else(|| JsValue::from_str("missing #plugin-root"))?;
             let host_origin = window.location().origin()?;
+            let surface = if root.get_attribute("data-surface").as_deref() == Some("config") {
+                Surface::Config
+            } else {
+                Surface::Play
+            };
             let program_selector = document.create_element("rf-program-select")?;
             for (name, value) in [
                 ("id", "program-selector"),
@@ -679,13 +706,17 @@ mod browser {
                 switch_svg(SAVE_SWITCH_INDEX + 1, false, None, true, Some("")),
                 switch_svg(SAVE_SWITCH_INDEX + 2, false, None, false, Some("")),
             ));
-            if let Some(body) = document.body() {
+            if surface == Surface::Play
+                && let Some(body) = document.body()
+            {
                 body.append_child(&program_save)?;
             }
             Ok(Rc::new(RefCell::new(Self {
                 window,
                 document,
                 root,
+                surface,
+                cassette: cassette::Cassette::default(),
                 program_selector,
                 host_origin,
                 context: None,
@@ -720,9 +751,13 @@ mod browser {
             html.push_str(&identity_plaque_svg());
             html.push_str("</div>");
             html.push_str("<div class=\"panel-face\">");
-            html.push_str(&self.render_program_memory());
-            html.push_str(&self.render_tabs());
-            html.push_str(&self.render_panel());
+            if self.surface == Surface::Config {
+                html.push_str(&config::render_html(self));
+            } else {
+                html.push_str(&self.render_program_memory());
+                html.push_str(&self.render_tabs());
+                html.push_str(&self.render_panel());
+            }
             html.push_str("</div>");
             html.push_str("<div class=\"wood-rail wood-rail-bottom\" aria-hidden=\"true\"></div>");
             html.push_str("</div>");
@@ -929,9 +964,6 @@ mod browser {
             )
         }
 
-        /// The program memory, under the nameplate: its maker and RackForge's
-        /// program selector, put in its slot after the page is drawn. The
-        /// selector's name carries the bank and number ("1-2 Low Strings").
         /// The program memory, under the nameplate: the RECORD switch, lit
         /// while a program is being recorded, then RackForge's program
         /// selector, put in its slot after the page is drawn.
@@ -948,37 +980,40 @@ mod browser {
         const LABEL_PADDING: f64 = 7.0;
         const CORNER_RADIUS: f64 = 15.0;
 
-        for section in panel::SECTIONS {
-            for group in section.groups {
-                let selector = format!(".control-group.group-{}", group.id);
-                let Ok(Some(container)) = root.query_selector(&selector) else {
-                    continue;
-                };
-                let Ok(Some(label)) = container.query_selector("h2 span") else {
-                    continue;
-                };
-                let Ok(Some(outline)) = container.query_selector(".section-outline") else {
-                    continue;
-                };
-                let Ok(Some(path)) = outline.query_selector("path") else {
-                    continue;
-                };
+        let Ok(groups) = root.query_selector_all(".control-group") else {
+            return;
+        };
+        for index in 0..groups.length() {
+            let Some(container) = groups
+                .item(index)
+                .and_then(|node| node.dyn_into::<Element>().ok())
+            else {
+                continue;
+            };
+            let Ok(Some(label)) = container.query_selector("h2 span") else {
+                continue;
+            };
+            let Ok(Some(outline)) = container.query_selector(".section-outline") else {
+                continue;
+            };
+            let Ok(Some(path)) = outline.query_selector("path") else {
+                continue;
+            };
 
-                let container_rect = container.get_bounding_client_rect();
-                let label_rect = label.get_bounding_client_rect();
-                let width = container_rect.width();
-                let height = container_rect.height();
-                let label_start = label_rect.left() - container_rect.left() - LABEL_PADDING;
-                let label_end = label_rect.right() - container_rect.left() + LABEL_PADDING;
-                let Some(path_data) =
-                    section_outline_path(width, height, label_start, label_end, CORNER_RADIUS)
-                else {
-                    continue;
-                };
+            let container_rect = container.get_bounding_client_rect();
+            let label_rect = label.get_bounding_client_rect();
+            let width = container_rect.width();
+            let height = container_rect.height();
+            let label_start = label_rect.left() - container_rect.left() - LABEL_PADDING;
+            let label_end = label_rect.right() - container_rect.left() + LABEL_PADDING;
+            let Some(path_data) =
+                section_outline_path(width, height, label_start, label_end, CORNER_RADIUS)
+            else {
+                continue;
+            };
 
-                let _ = outline.set_attribute("viewBox", &format!("0 0 {width:.2} {height:.2}"));
-                let _ = path.set_attribute("d", &path_data);
-            }
+            let _ = outline.set_attribute("viewBox", &format!("0 0 {width:.2} {height:.2}"));
+            let _ = path.set_attribute("d", &path_data);
         }
         layout_legend_rules(root);
     }
@@ -1317,7 +1352,11 @@ mod browser {
     fn maybe_reveal(app: &AppHandle) {
         let ready = {
             let state = app.borrow();
-            state.assets_loaded && (state.snapshot.is_some() || !state.bridge_error.is_empty())
+            let drawn = match state.surface {
+                Surface::Play => state.snapshot.is_some(),
+                Surface::Config => state.context.is_some(),
+            };
+            state.assets_loaded && (drawn || !state.bridge_error.is_empty())
         };
         if ready {
             reveal(app);
@@ -1537,6 +1576,12 @@ mod browser {
             let Some(element) = element_from_event(&event) else {
                 return;
             };
+            if click_app.borrow().surface == Surface::Config {
+                if let Some(action) = element.get_attribute("data-action") {
+                    config::click(&click_app, &element, &action);
+                }
+                return;
+            }
             match element.get_attribute("data-action").as_deref() {
                 Some("section") => {
                     if let Some(section) = element.get_attribute("data-section")
@@ -1855,6 +1900,12 @@ mod browser {
             {
                 Some("context") => {
                     if let Ok(context) = serde_wasm_bindgen::from_value::<HostContext>(data) {
+                        if message_app.borrow().surface == Surface::Config {
+                            message_app.borrow_mut().context = Some(context);
+                            config::on_context(&message_app);
+                            maybe_reveal(&message_app);
+                            return;
+                        }
                         let changed = message_app
                             .borrow()
                             .context
@@ -1927,7 +1978,11 @@ mod browser {
             root.set_attribute("style", &format!("{existing}{}", light::css_variables()))?;
         }
         install_events(&app)?;
-        follow_program_save(&app)?;
+        if app.borrow().surface == Surface::Config {
+            config::install(&app)?;
+        } else {
+            follow_program_save(&app)?;
+        }
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         let ready = Ready {
             protocol: PROTOCOL,
