@@ -38,14 +38,15 @@ wheel in RF-5.
   `R_Z` to be trimmed +/-20% to set a scale, and the LFO has no such trim, so
   the chip's own values set both the LFO's scale and its offset. RF-5 takes them
   from the one Rev 3 unit measured across the panel: the Synthmania factory
-  recordings give stable LFO fundamentals of 0.0785 Hz for 4-4 (code 19),
-  1.282 Hz for 4-7 (66), 5.76 Hz for 1-3 (90), 7.60 Hz for 4-5 (95) and
-  10.06 Hz for 5-5 (100). A single exponential fits all five within +/-53
-  cents with `K = 24.9` (+13%) and `V_M = 3.053 V` (+1.8%). The populated
-  circuit then spans 11.04 octaves from code 0 to code 127 and requests about
-  24.7 nA to 51.9 uA from the exponential generator: 0.0247 Hz at code 0,
-  4.39 Hz at code 86, 6.30 Hz at code 92, 34.0 Hz at the panel's code-120
-  ceiling and 51.9 Hz at code 127. The upper current remains far below the
+  recordings give stable LFO fundamentals of 0.0785 Hz for 4-4, 1.282 Hz for
+  4-7, 5.76 Hz for 1-3, 7.60 Hz for 4-5 and 10.06 Hz for 5-5. At the codes
+  the Rev 3's factory tapes store for those programs (16, 66, 93, 98 and 103;
+  see ORIGINAL_FACTORY_PROGRAMS.md) a single exponential fits all five within
+  +/-6 cents with `K = 23.52` (+7%) and `V_M = 3.115 V` (+3.8%). The populated
+  circuit then spans 10.22 octaves from code 0 to code 127 and requests about
+  32.2 nA to 38.3 uA from the exponential generator: 0.0322 Hz at code 0,
+  3.90 Hz at code 86, 5.45 Hz at code 92, 26.0 Hz at the panel's code-120
+  ceiling and 38.3 Hz at code 127. The upper current remains far below the
   data sheet's 400 uA minimum timing-capacitor capability, so RF-5 does not
   invent an overload limiter.
 - Saw, triangle and square are independently summable, but they do not share a
@@ -130,25 +131,29 @@ wheel in RF-5.
 The schematic and CEM3340 equations close the absolute nominal LFO law apart
 from the device's two internal multiplier values. The parts list (service
 manual pp. 75 and 85) confirms R3135 = R-123 = 487k 1% and R3136 = R-159 =
-110k 1%, so the network is not the source of any rate difference. `K = 24.9`
-and `V_M = 3.053 V` describe the measured Synthmania unit, not a typical
-chip. That unit's scale is steeper than the owner's manual's approximate
-0.04-20 Hz range implies: about 0.025-34 Hz up to code 120. Both lie inside
-the data sheet's untrimmed tolerance.
+110k 1%, so the network is not the source of any rate difference. `K = 23.52`
+and `V_M = 3.115 V` describe the measured Synthmania unit, not a typical
+chip. That unit spans about 0.032-26 Hz up to code 120, near the owner's
+manual's approximate 0.04-20 Hz. Both lie inside the data sheet's untrimmed
+tolerance.
+
+The constants were first fitted to the codes of Sequential's Rev 4
+recreation of the programs (19, 66, 90, 95 and 100), which fitted only within
++/-53 cents with `K = 24.9` and `V_M = 3.053 V` and left the Brass vibrato
+below disagreeing. The Rev 4 set lowers LFO FREQUENCY by two to five codes in
+29 programs to suit its own LFO; the recorded Rev 3 held the tape's codes.
 
 The previous single value, `V_M = 3.135 V`, was fitted to that manual range
 and to the one clean vibrato stretch of the same unit's 1-1 Brass recording
-(5.25-5.29 Hz at code 92). That stretch now disagrees with all five
-programs. Under the unit law code 92 is 6.30 Hz, so the Brass demo was
-probably played with the rate moved away from its stored code. Sequential's
-"approximately 5 Hz" for Brass describes the instrument the programs were
-voiced on, which need not share this chip's constants. A different unit is a
+(5.25-5.29 Hz at code 92). Under the unit law code 92 is 5.45 Hz, about 60
+cents above that short, rougher reading, and Sequential's "approximately
+5 Hz" for Brass agrees. A different unit is a
 two-constant change; it touches neither the reference, scale, timing
 capacitor nor DAC networks.
 
-The slow endpoint's 24.7 nA is below the data sheet's preferred 50 nA
+The slow endpoint's 32.2 nA is below the data sheet's preferred 50 nA
 accurate-current boundary but inside its 10 nA generator capability. The
-51.9 uA maximum stays inside its tightest exponential-scale accuracy through
+38.3 uA maximum stays inside its tightest exponential-scale accuracy through
 100 uA. Wheel Mod destination ratios, U380 triangle gain and
 the W-MOD source voltage are circuit-derived. Populated-unit measurements can
 refine the transistor/OTA population without restoring a host normalization
@@ -164,12 +169,13 @@ and spectral assumptions are documented separately in
 ## Acceptance tests
 
 - the frequency mapping is monotonic and exposes 128 distinct panel steps;
-- the populated scale network produces the 11.04-octave code 0-127 sweep;
+- the populated scale network produces the 10.22-octave code 0-127 sweep;
 - the 2.21 Mohm reference feed, R3135's single fixed current and C382's
-  0.1 uF reproduce approximately 24.7 nA/0.0247 Hz at code 0, 34.0 Hz at code
-  120 and 51.9 uA/51.9 Hz at code 127;
-- the five measured Rev 3 program rates (codes 19, 66, 90, 95 and 100) lie
-  within 60 cents of the law;
+  0.1 uF reproduce approximately 32.2 nA/0.0322 Hz at code 0, 26.0 Hz at code
+  120 and 38.3 uA/38.3 Hz at code 127;
+- the five measured Rev 3 program rates, at the factory tapes' codes 16, 66,
+  93, 98 and 103, lie within 10 cents of the law, and 1-1 Brass's vibrato
+  within 80;
 - square-wave high and zero intervals are equal within one sample and never
   become negative;
 - simultaneously selected waveforms sum on one shared bus;

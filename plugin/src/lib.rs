@@ -566,8 +566,15 @@ mod tests {
             0,
             2,
         );
-        assert!(output.iter().any(|sample| sample.abs() > 0.001));
         assert_eq!(processor.get_parameter(0), Some(0.25_f32 as f64));
+        // The default program, Brass, opens its filter with its attack:
+        // listen for the note over the next blocks too.
+        let mut heard = output.iter().any(|sample| sample.abs() > 0.001);
+        for _ in 0..16 {
+            processor.process(&[], &mut output, &[], &[], 256, 0, 2);
+            heard |= output.iter().any(|sample| sample.abs() > 0.001);
+        }
+        assert!(heard);
     }
 
     #[test]
@@ -877,7 +884,7 @@ mod tests {
         let catalog: serde_json::Value =
             serde_json::from_str(include_str!("../package/metadata/presets.json")).unwrap();
         let presets = catalog["presets"].as_array().unwrap();
-        assert_eq!(presets.len(), 40);
+        assert_eq!(presets.len(), 120);
 
         let mut processor = RackForgeParallelExport::default();
         for preset in presets {
