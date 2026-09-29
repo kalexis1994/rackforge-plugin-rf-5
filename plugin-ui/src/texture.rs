@@ -418,7 +418,9 @@ mod tests {
         let rgba = switch_dust_rgba(&[26.0], 0);
         assert_eq!(rgba.len(), DUST_WIDTH * DUST_HEIGHT * 4);
         assert!(
-            rgba.chunks_exact(4)
+            rgba.as_chunks::<4>()
+                .0
+                .iter()
                 .all(|p| f64::from(p[3]) <= DUST_OPACITY * 255.0 + 0.5)
         );
     }
@@ -451,12 +453,16 @@ mod tests {
         let rgba = panel_texture_rgba();
         assert_eq!(rgba.len(), TILE * TILE * 4);
         let lighter: Vec<u8> = rgba
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .filter(|pixel| pixel[0] == 255)
             .map(|pixel| pixel[3])
             .collect();
         let darker = rgba
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .filter(|pixel| pixel[0] == 0 && pixel[3] > 0)
             .count();
         // Highlights on the specks' lit sides, never a glare.
@@ -467,7 +473,12 @@ mod tests {
             lighter.iter().max()
         );
         // The plains are left as the panel.
-        let untouched = rgba.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+        let untouched = rgba
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|pixel| pixel[3] == 0)
+            .count();
         assert!(untouched > TILE * TILE / 3, "untouched {untouched}");
     }
 }
