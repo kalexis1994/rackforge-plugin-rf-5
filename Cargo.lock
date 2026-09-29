@@ -141,13 +141,13 @@ dependencies = [
 
 [[package]]
 name = "rackforge-plugin-sdk"
-version = "0.1.24"
-source = "git+https://github.com/kalexis1994/rackforge.git?rev=75a668eeb9429fea194d3a51eff2f37479ed1a1a#75a668eeb9429fea194d3a51eff2f37479ed1a1a"
+version = "0.1.25"
+source = "git+https://github.com/kalexis1994/rackforge.git?rev=2574bc3825bec08eb8895e9a054612474773d169#2574bc3825bec08eb8895e9a054612474773d169"
 
 [[package]]
 name = "rackforge-program-api"
-version = "0.1.24"
-source = "git+https://github.com/kalexis1994/rackforge.git?rev=75a668eeb9429fea194d3a51eff2f37479ed1a1a#75a668eeb9429fea194d3a51eff2f37479ed1a1a"
+version = "0.1.25"
+source = "git+https://github.com/kalexis1994/rackforge.git?rev=2574bc3825bec08eb8895e9a054612474773d169#2574bc3825bec08eb8895e9a054612474773d169"
 dependencies = [
  "semver",
  "serde",
