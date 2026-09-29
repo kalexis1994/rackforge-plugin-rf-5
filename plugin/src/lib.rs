@@ -1,9 +1,10 @@
-#![cfg_attr(target_arch = "wasm32", no_std)]
+mod program;
 
 use core::{mem, slice};
 
 use rackforge_plugin_sdk::{
-    BlockContext, ParallelProcessor, PlanWriter, UnitContext, UnitMix, export_parallel_processor,
+    BlockContext, PROGRAM_EDIT_BASIC, PROGRAM_EDIT_DECLARATIVE, PROGRAM_EDIT_PREVIEW,
+    ParallelProcessor, PlanWriter, UnitContext, UnitMix, export_parallel_processor,
 };
 use rf_5_dsp::{
     CommonVoiceFrame, Engine, ParallelVoiceUnit, PreparedSample, VOICE_COUNT, VoiceCalibration,
@@ -16,6 +17,9 @@ const MAX_MIDI_EVENTS: usize = 256;
 const MAX_PARAMETER_EVENTS: usize = 256;
 const MAX_COMMANDS_PER_UNIT: usize = 800;
 const DEFAULT_PRESET_ID: &str = "original-11-brass";
+/// One JSON exchange with the host: the catalog, with the RF-5's own
+/// programs after the factory 40, is the largest.
+const MAX_TRANSFER_BYTES: usize = 32 * 1024;
 const WIRE_VERSION: u32 = 1;
 const SHARED_MAGIC: u32 = u32::from_le_bytes(*b"RFSH");
 const DISPATCH_MAGIC: u32 = u32::from_le_bytes(*b"RFDU");
@@ -115,6 +119,8 @@ pub struct Rf5Processor {
     command_counts: [usize; VOICE_COUNT],
     dispatch_scratch: [u8; DISPATCH_STRIDE],
     command_overflow: bool,
+    /// The RF-5's own programs, as RackForge hands them back and RECORD saves them.
+    programs: program::Library,
 }
 
 impl Default for Rf5Processor {
@@ -130,6 +136,7 @@ impl Default for Rf5Processor {
             command_counts: [0; VOICE_COUNT],
             dispatch_scratch: [0; DISPATCH_STRIDE],
             command_overflow: false,
+            programs: program::Library::new(),
         }
     }
 }
@@ -215,7 +222,40 @@ impl ParallelProcessor for Rf5Processor {
     }
 
     fn load_preset(&mut self, id: &str) -> bool {
+        if let Some(memory) = program::own_memory(&self.programs, id) {
+            return self.engine.load_program_memory(memory);
+        }
         self.engine.load_program(id)
+    }
+
+    fn write_program_catalog(&mut self, destination: &mut [u8]) -> Option<usize> {
+        program::catalog(&self.programs, destination)
+    }
+
+    fn program_editing_capabilities(&self) -> u32 {
+        PROGRAM_EDIT_BASIC | PROGRAM_EDIT_PREVIEW | PROGRAM_EDIT_DECLARATIVE
+    }
+
+    fn begin_program_edit(&mut self, request: &[u8], destination: &mut [u8]) -> Option<usize> {
+        program::begin(&self.programs, &self.engine, request, destination)
+    }
+
+    fn prepare_program_save(&mut self, document: &[u8], destination: &mut [u8]) -> Option<usize> {
+        program::prepare(document, destination)
+    }
+
+    fn install_program(&mut self, prepared: &[u8]) -> bool {
+        program::install(&mut self.programs, prepared, MAX_TRANSFER_BYTES)
+    }
+
+    fn preview_program(&mut self, prepared: &[u8]) -> bool {
+        program::validated_prepared(prepared)
+            .and_then(|document| program::memory(&document))
+            .is_some_and(|memory| self.engine.load_program_memory(memory))
+    }
+
+    fn program_editor_view(&mut self, document: &[u8], destination: &mut [u8]) -> Option<usize> {
+        program::view(document, destination)
     }
 
     fn save_state(&self, destination: &mut [u8]) -> Option<usize> {
@@ -296,6 +336,7 @@ impl ParallelProcessor for Rf5Processor {
         payload: &[u8],
         context: &UnitContext<'_>,
         output: &mut [f32],
+        _report: &mut [u8],
     ) {
         let channels = context.output_channels as usize;
         let samples = context.frames as usize * channels;
@@ -445,14 +486,8 @@ export_parallel_processor!(
     max_output_channels = MAX_OUTPUT_CHANNELS,
     max_midi_events = MAX_MIDI_EVENTS,
     max_parameter_events = MAX_PARAMETER_EVENTS,
-    max_transfer_bytes = 4096
+    max_transfer_bytes = MAX_TRANSFER_BYTES
 );
-
-#[cfg(all(target_arch = "wasm32", not(test)))]
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo<'_>) -> ! {
-    core::arch::wasm32::unreachable()
-}
 
 #[cfg(test)]
 mod tests {

@@ -24,7 +24,9 @@ serde_json = "1.0"
 
 # Portable RackForge ABI used by the processor adapter. Local contributors can
 # override this revision with `.cargo/config.toml.example`.
-rackforge-plugin-sdk = { git = "https://github.com/kalexis1994/rackforge.git", rev = "03fdb0ea75850405cf57683ae957eec109e85daa" }
+rackforge-plugin-sdk = { git = "https://github.com/kalexis1994/rackforge.git", rev = "75a668eeb9429fea194d3a51eff2f37479ed1a1a" }
+# RackForge's program documents, for the RF-5's own programs.
+rackforge-program-api = { git = "https://github.com/kalexis1994/rackforge.git", rev = "75a668eeb9429fea194d3a51eff2f37479ed1a1a" }
 
 [profile.release]
 # The portable WebAssembly processor benefits materially from whole-program
