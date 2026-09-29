@@ -1,6 +1,7 @@
 {
   "banks": [
-    { "id": "factory.rf5.original", "name": "RF-5 Original 40", "order": 0 }
+    { "id": "factory.rf5.original", "name": "RF-5 Original 40", "order": 0 },
+    { "id": "user", "name": "User", "order": 1 }
   ],
   "presets": [
     { "bank": "factory.rf5.original", "editable": false, "id": "original-11-brass", "name": "1-1 Brass", "order": 0, "tags": ["rf5", "original-40", "rev3"] },
