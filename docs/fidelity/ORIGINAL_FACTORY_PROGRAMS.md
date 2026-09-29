@@ -1,19 +1,82 @@
-# Original 40 program import
+# Original factory programs
 
 ## Result
 
-RF-5 carries the forty original programs as exact compact Rev 3 records. Each
-program is stored as the same 24 seven-bit pot codes plus 22 switch bits used
-by the recovered V8.1 pack/unpack path. Loading one therefore enters the normal
-program-recall and sample/hold synchronization path; it is not a separate bank
-of hand-tuned RF-5 approximations.
+RF-5 carries the Rev 3's 120 factory programs, its three 40-program files, as
+exact compact Rev 3 records. Each program is stored as the same 24 seven-bit
+pot codes plus 22 switch bits used by the recovered V8.1 pack/unpack path.
+Loading one therefore enters the normal program-recall and sample/hold
+synchronization path; it is not a separate bank of hand-tuned RF-5
+approximations. File 1 is the "RF-5 Original 40" bank; Files 2 and 3 follow
+as their own banks.
 
 The local V8.1 archive is not the program source. Its three 2708 images contain
 three duplicated 1 KiB halves which concatenate exactly into the 3072-byte
 operating image. It contains program-management code but neither the optional
 `PROG5.5` factory-program PROM nor a cassette image.
 
-## Digital source
+## Source: the factory tapes
+
+Sequential shipped the Rev 3's factory programs on cassette, and the owner's
+manual (CM1000D, section 8) restores "the original condition" by loading them
+through the cassette interface. Recordings of the three tapes are the program
+source: every byte is what a Rev 3 held in memory.
+
+- archive `Prophet_5_Factory_Patches_Rev_3.zip` (synthchaser) SHA-256:
+  `c2bc0b117c5b76db512c720a742aa36eb0795e67823cb5f4e2091a597d5e48eb`;
+- `FACT1R3.WAV` `e2e838624e3f548786f375cb2da1cffa809126a71263889c9d59bb7aede04266`,
+  `FACT2R3.WAV` `071e790e867c09d4233d9307916d5f9190cb33dfa5a0732d452eddd0f5833564`,
+  `FACT3R3.WAV` `0ef2884297965c344e72750e6b43b8b4b925635f974216c82ef72114f6bd1229`;
+- 120 x 24-byte program matrix SHA-256:
+  `d5cb0bed9f6d3a6cf8394c8e66e88525057d494d3e9d56b9f1bdddb10af280b3`.
+
+The tape format was read off these recordings. Half-cycles count in minims
+of 232.4 us; a bit is sixteen minims, a one twelve one-minim half-cycles and
+a four-minim one, a zero four four-minim half-cycles. A leader of ones is
+followed by a zero start bit, the 960 bytes of the file most significant bit
+first, and a last byte holding their sum modulo 256. All three files pass
+that checksum. RF-5's CONFIG page reads and writes the same format.
+
+The names are the manual's File 1, 2 and 3 program maps (its section 8). Files
+2 and 3 were checked against their maps by unmistakable programs: Bass Guitar
+Unison is the only unison program of its bank; Snare, Tom-Toms, Gunshots and
+Wind are noise with zero amplifier attack; Slow Strings and Slow Brass have
+the slow attacks. File 1 keeps the names RF-5 has always used. The 1982 map
+lists 5-7 and 5-8 as duplicates of 1-1 and 1-6; the factory tape, like the
+Rev 4 recreation, carries Hollow Sound and Cat there.
+
+### One slot from the Rev 4 recreation
+
+On the File 1 recording, program 1-8 is a byte-exact copy of 1-1 (Brass),
+recorded over the Percussive Organ. Program 1-8 is therefore kept from
+Sequential's Rev 4 recreation of the original programs (below), and
+Sequential's original patch sheet confirms it: oscillator A a pulse three
+octaves and a fifth up, B an octave up, zero attacks. The importer refuses
+the tape if that slot ever stops being the copy.
+
+### The tape against the Rev 4 recreation
+
+RF-5 formerly carried the forty programs from Sequential's Rev 4 factory
+SysEx (Group 5). Program for program, 89 % of the pot codes are identical to
+the tape's, so both descend from the same programs, but the Rev 4 set is not a
+copy of Rev 3 memory. Its differences are the ones that make a Rev 4 sound
+like a Rev 3, and they are wrong for a model of the Rev 3's circuit:
+
+- the tape never stores a pot above code 121 (120 is the ADC's fully
+  clockwise reading, and 154 of its 2880 pot values sit there), while the
+  Rev 4 set uses 127;
+- LFO FREQUENCY is two to five codes lower in 29 programs, a different LFO
+  curve compensated;
+- GLIDE is zeroed in ten programs where the tape has 53-78. The Rev 3's glide
+  is the common unison glide on SD334 and none of those programs uses unison,
+  so it was inaudible on the Rev 3; the Rev 4 glides polyphonically;
+- filter CUTOFF and ENVELOPE AMOUNT are retouched in about ten programs each.
+
+The largest single change is 2-1, Unison Glide With Resonance, whose Cutoff
+is 14 on the tape and was 31 in the Rev 4 set. The patch sheet's knob reads
+about 2, between the two, so it does not decide it; the tape does.
+
+## Rev 4 source (program 1-8)
 
 Sequential's official `Prophet-510-Factory-Programs-ReadMe1.02.zip` contains
 200 current-instrument SysEx records. Sequential's original-patch publication
@@ -62,22 +125,22 @@ are already zero or one.
 
 ## Evidence that this is not a visual approximation
 
-- Group 5 contains legacy pot codes up to 127 even where the current MIDI
-  document publishes a 0-120 panel range. Scaling modern knob positions would
-  not produce those preserved endpoints.
-- Current-only parameters are fixed across the group: Rev selector, Vintage,
+- The programs are the Rev 3's own memory, read off its factory tapes and
+  verified by the tapes' checksums; no value is read from a knob drawing.
+- In the Rev 4 source kept for 1-8, current-only parameters are fixed across the group: Rev selector, Vintage,
   velocity, aftertouch, voice count and unison detune do not contaminate the
   projected records.
 - Original patch sheets independently agree with sampled digital routes. For
   example, Low Strings enables both pulse waves, both Wheel-Mod pulse-width
   destinations, filter keyboard and Release; Muted Clavinet disables Release
   and filter keyboard while enabling its documented wheel-filter route.
-- A test decodes and re-encodes every imported record and requires all 960
+- A test decodes and re-encodes every imported record and requires all 2880
   bytes, including their 22 switch bits, to remain identical.
 
 ## Program 1-4 electrical and performance cross-check
 
-Percussive Electric Piano stores direct filter-envelope amount `34/127`, a
+Percussive Electric Piano stores direct filter-envelope amount `32/127` (34
+in the Rev 4 set this cross-check was first made with), a
 zero-sustain amplifier contour and RELEASE on. Sequential's original patch
 sheet explicitly describes an octave overtone at the beginning of every note
 that fades with the envelope, produced by Poly Mod and oscillator sync. The
@@ -89,8 +152,8 @@ RF-5 keeps the exact record and corrects the shared direct-envelope U422/U433
 circuit instead of adding a program-specific EQ, a fitted gain or changing the
 stored amount. R452 had been read as 475 kohm rather than its compactly
 printed 47.5 kohm, and the CA3280 linearization did not follow the data
-sheet's Figure 3A; with both corrected, amount 34 moves cutoff by
-approximately 1.5-1.6 octaves.
+sheet's Figure 3A; with both corrected, amount 32 moves cutoff by
+approximately 1.4-1.5 octaves.
 
 This program is an open discrepancy. With the ROM-confirmed filter anchor,
 U451's doubled triangle and the CEM3340 pulse-width law, RF-5 places the attack
@@ -115,10 +178,11 @@ value and the manual/service medium and slow landmarks remain independent.
 
 ## Program 2-1 internal-rate cross-check
 
-Unison Glide With Resonance decodes to the exact official record: saw only on
-both oscillators, oscillator A at the concert position, oscillator B one octave
-below it, filter Cutoff `31/127`, Resonance `71/127`, full direct filter-envelope
-amount, keyboard tracking, Unison, Glide and Release enabled. Sequential's
+Unison Glide With Resonance decodes to saw only on both oscillators,
+oscillator A at the concert position, oscillator B one octave below it,
+filter Cutoff `14/127` (31 in the Rev 4 set), Resonance `71/127`, the full
+direct filter-envelope amount (code 120, the panel ceiling), keyboard
+tracking, Unison, Glide and Release enabled. Sequential's
 original patch sheet independently agrees with those routes and values. RF-5
 therefore does not brighten this program by changing a pot byte or adding EQ.
 
@@ -177,7 +241,7 @@ across the full 30 V. The CA3280 data sheet's Figure 3A law,
 `Iout = 0.776 Is IABC / ID`, and the ID pin's 28.8 V span replace that
 product and the 0.84 reference gain once applied here, so no fitted gain
 remains and the official amount byte is unchanged. A regression test holds the
-program's code-86 peak Poly Mod bus at 4.3-4.9 V, well below U431's 12 V
+program's code-78 peak Poly Mod bus (86 in the Rev 4 set) at 3.9-4.5 V, well below U431's 12 V
 boundary, on every deterministic voice profile.
 
 The same audit corrected a separate topology error: U446 receives oscillator
@@ -189,13 +253,17 @@ license to bake oscillator B into the factory program.
 
 ## Reproduction
 
-The official ZIP or its SysEx can be converted again without retaining the
-third-party container in the repository:
+The programs are read again from the tape archive, which stays outside the
+repository:
 
 ```powershell
-python tools/import-original-programs.py C:\path\to\Prophet-510-Factory-Programs-ReadMe1.02.zip
+python tools/import-factory-tapes.py C:\path\to\Prophet_5_Factory_Patches_Rev_3.zip
 ```
 
-The importer rejects any source whose SHA-256, message count, addressing,
-packing or legacy switch domains differ. RF-5 has no runtime dependency on the
-SysEx, firmware or an external bank.
+The importer rejects any archive or recording whose SHA-256 differs, any tape
+bit that does not add up as the Prophet writes it, a failed checksum, a pot
+above the panel ceiling or a set unused switch bit. It writes the engine's
+program data and the preset catalog, keeping any bank the catalog declares
+beyond the factory files. `tools/import-original-programs.py` still converts
+the Rev 4 SysEx, the source of program 1-8. RF-5 has no runtime dependency on
+the tapes, the SysEx, firmware or an external bank.

@@ -131,8 +131,8 @@ unmeasured.
 - direct envelope depth follows U422/U433 current, Figure 3A's linearized
   transfer and resistor ratios rather than a free maximum-octaves constant or
   fitted gain, reaching approximately 6.2-6.7 octaves at code 120 and
-  1.45-1.65 octaves at 1-4's amount 34;
-- factory 1-4 keeps its exact 34/127 amount while its attack octave remains
+  1.40-1.46 octaves at 1-4's amount 32 (34 in the Rev 4 set);
+- factory 1-4 keeps its exact 32/127 amount while its attack octave remains
   within a bounded ratio of the fundamental;
 - Poly Mod amount rises monotonically and its two CA3280 modes retain their
   distinct strong-signal ranges;

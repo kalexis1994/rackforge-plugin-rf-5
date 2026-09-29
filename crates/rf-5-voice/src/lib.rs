@@ -1251,7 +1251,7 @@ mod tests {
             (Parameter::OscillatorBTriangle, 0.0),
             (Parameter::OscillatorBPulse, 0.0),
             (Parameter::OscillatorSync, 1.0),
-            (Parameter::PolyModFilterEnvelopeAmount, 86.0 / 127.0),
+            (Parameter::PolyModFilterEnvelopeAmount, 78.0 / 127.0),
             (Parameter::PolyModOscillatorAFrequency, 1.0),
             (Parameter::FilterCutoff, 75.0 / 127.0),
             (Parameter::FilterResonance, 13.0 / 127.0),
@@ -1294,15 +1294,15 @@ mod tests {
 
     #[test]
     fn sync_i_programmed_poly_mod_does_not_pin_the_shared_bus() {
-        // Program 1-7 stores 86/127 on Q304. PCB3 produces one collector
+        // Program 1-7 stores 78/127 on Q304. PCB3 produces one collector
         // current which fans out to the five U422 IABC inputs; treating that
         // total as a per-card current pins U431 near its 12 V compliance limit
         // and turns the descending sync attack into a sustained whistle.
         for voice in 0..5 {
-            let current = vca::poly_mod_filter_envelope_current_amps(1.0, 86.0 / 127.0, voice);
+            let current = vca::poly_mod_filter_envelope_current_amps(1.0, 78.0 / 127.0, voice);
             let bus = vca::poly_mod_bus_voltage(current, 0.0);
             assert!(
-                (4.3..=4.9).contains(&bus),
+                (3.9..=4.5).contains(&bus),
                 "voice {voice} Sync I peak bus {bus} V",
             );
         }

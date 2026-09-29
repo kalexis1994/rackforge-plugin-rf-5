@@ -1066,11 +1066,11 @@ mod tests {
             assert_eq!(filter_envelope_cutoff_octaves(0.0, 1.0, voice), 0.0);
         }
 
-        let factory_e_piano_amount = 34.0 / 127.0;
+        let factory_e_piano_amount = 32.0 / 127.0;
         for voice in 0..5 {
             let onset = filter_envelope_cutoff_octaves(1.0, factory_e_piano_amount, voice);
             assert!(
-                (1.45..=1.65).contains(&onset),
+                (1.35..=1.55).contains(&onset),
                 "voice {voice} 1-4 filter-envelope onset {onset} octaves"
             );
         }
