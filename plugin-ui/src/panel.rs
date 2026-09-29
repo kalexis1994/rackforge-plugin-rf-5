@@ -21,6 +21,8 @@ pub struct Legend {
 pub struct PanelSection {
     pub id: &'static str,
     pub label: &'static str,
+    /// The name on its key when the row is too narrow for `label`.
+    pub short: &'static str,
     pub caption: &'static str,
     pub groups: &'static [ControlGroup],
 }
@@ -208,30 +210,35 @@ pub const SECTIONS: &[PanelSection] = &[
     PanelSection {
         id: "modulation",
         label: "MODULATION",
+        short: "MOD",
         caption: "POLY-MOD · LFO · WHEEL-MOD",
         groups: MODULATION_GROUPS,
     },
     PanelSection {
         id: "oscillators",
         label: "OSCILLATORS",
+        short: "OSC",
         caption: "OSCILLATOR A · OSCILLATOR B · MIXER",
         groups: OSCILLATOR_GROUPS,
     },
     PanelSection {
         id: "filter",
         label: "FILTER + ENVELOPES",
+        short: "FILTER",
         caption: "FILTER · FILTER ENV · AMPLIFIER",
         groups: FILTER_GROUPS,
     },
     PanelSection {
         id: "voice",
         label: "VOICE",
+        short: "VOICE",
         caption: "GLIDE · UNISON · OUTPUT",
         groups: VOICE_GROUPS,
     },
     PanelSection {
         id: "scale",
         label: "SCALE MODE",
+        short: "SCALE",
         caption: "TWELVE PROGRAMMABLE NOTE OFFSETS",
         groups: SCALE_GROUPS,
     },

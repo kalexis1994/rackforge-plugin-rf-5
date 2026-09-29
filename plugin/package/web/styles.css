@@ -358,6 +358,32 @@ button { -webkit-tap-highlight-color: transparent; }
   text-transform: uppercase;
 }
 
+/* Too narrow for a name, the display shows what the Rev 3's shows: the
+   bank and program digits, with its decimal points marking Files 2 and 3
+   (plugin-ui sets --rf5-digits on the element). */
+.program-selector-slot { container: program-selector / inline-size; }
+
+#program-selector::part(name)::after {
+  display: none;
+  content: var(--rf5-digits, "");
+  color: #ff342f;
+  font-family: "Segment14", monospace;
+  font-size: 24px;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  text-shadow: 0 0 6px rgba(255, 47, 42, 0.55);
+  white-space: nowrap;
+}
+
+@container program-selector (max-width: 300px) {
+  #program-selector::part(name-text),
+  #program-selector::part(bank) { display: none; }
+
+  #program-selector::part(name) { justify-content: center; }
+
+  #program-selector::part(name)::after { display: block; }
+}
+
 /* The steps are the panel's light switches, an arrow printed where the LED
    would be (plugin-ui, in the element's arrow slots); the element's own
    button is stripped bare around them. */
@@ -494,6 +520,17 @@ button { -webkit-tap-highlight-color: transparent; }
 .page-key > .control-label {
   align-self: end;
   margin-bottom: 4px;
+}
+
+/* Five full page names need room; a narrow row gives each key its short
+   name. */
+.panel-tabs { container: page-keys / inline-size; }
+
+.page-key .label-short { display: none; }
+
+@container page-keys (max-width: 470px) {
+  .page-key .label-full { display: none; }
+  .page-key .label-short { display: inline; }
 }
 
 .hardware-button:focus-visible,
