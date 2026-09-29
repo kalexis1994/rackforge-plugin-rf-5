@@ -245,7 +245,8 @@ fn prophet_switch_svg(
 /// program display too narrow for its name: bank and program ("11"), a
 /// decimal point after the bank for File 2 ("1.1") and after the program
 /// for File 3 ("11."), as the Rev 3 marks its three files. The RF-5's own
-/// programs show "U" and their place in the USER bank.
+/// programs show "U" and their place in the USER bank. The point is the one
+/// dot leader (U+2024): Segment14's full stop is drawn as a dash.
 fn program_digits(name: &str, bank: Option<&str>, user_place: Option<usize>) -> String {
     if let Some(place) = user_place {
         return format!("U{place}");
@@ -258,10 +259,11 @@ fn program_digits(name: &str, bank: Option<&str>, user_place: Option<usize>) -> 
     {
         return "--".to_owned();
     }
+    const POINT: char = '\u{2024}';
     let (bank_digit, program_digit) = (char::from(place[0]), char::from(place[2]));
     match bank.unwrap_or_default() {
-        bank if bank.ends_with("file2") => format!("{bank_digit}.{program_digit}"),
-        bank if bank.ends_with("file3") => format!("{bank_digit}{program_digit}."),
+        bank if bank.ends_with("file2") => format!("{bank_digit}{POINT}{program_digit}"),
+        bank if bank.ends_with("file3") => format!("{bank_digit}{program_digit}{POINT}"),
         _ => format!("{bank_digit}{program_digit}"),
     }
 }
@@ -2125,11 +2127,11 @@ mod tests {
         assert_eq!(program_digits("5-8 Cat", original, None), "58");
         assert_eq!(
             program_digits("2-4 Dog", Some("factory.rf5.file2"), None),
-            "2.4"
+            "2\u{2024}4"
         );
         assert_eq!(
             program_digits("3-7 Slide Guitar", Some("factory.rf5.file3"), None),
-            "37."
+            "37\u{2024}"
         );
         assert_eq!(program_digits("My Horns", Some("user"), Some(7)), "U7");
         assert_eq!(program_digits("Init", None, None), "--");
