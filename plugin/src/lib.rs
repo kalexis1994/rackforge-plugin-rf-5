@@ -18,8 +18,9 @@ const MAX_PARAMETER_EVENTS: usize = 256;
 const MAX_COMMANDS_PER_UNIT: usize = 800;
 const DEFAULT_PRESET_ID: &str = "original-11-brass";
 /// One JSON exchange with the host: the catalog, with the RF-5's own
-/// programs after the factory 40, is the largest.
-const MAX_TRANSFER_BYTES: usize = 32 * 1024;
+/// programs after the factory ones, is the largest. 64 full-length own
+/// programs after the Rev 3's 120 factory programs need about 32 KiB.
+const MAX_TRANSFER_BYTES: usize = 64 * 1024;
 const WIRE_VERSION: u32 = 1;
 const SHARED_MAGIC: u32 = u32::from_le_bytes(*b"RFSH");
 const DISPATCH_MAGIC: u32 = u32::from_le_bytes(*b"RFDU");
