@@ -247,6 +247,32 @@ fn prophet_switch_svg(
 }
 
 #[cfg(any(target_arch = "wasm32", test))]
+/// What the Rev 3's own two-digit display shows for a program, for a
+/// program display too narrow for its name: bank and program ("11"), a
+/// decimal point after the bank for File 2 ("1.1") and after the program
+/// for File 3 ("11."), as the Rev 3 marks its three files. The RF-5's own
+/// programs show "U" and their place in the USER bank.
+fn program_digits(name: &str, bank: Option<&str>, user_place: Option<usize>) -> String {
+    if let Some(place) = user_place {
+        return format!("U{place}");
+    }
+    let place = name.as_bytes();
+    if place.len() < 3
+        || !place[0].is_ascii_digit()
+        || place[1] != b'-'
+        || !place[2].is_ascii_digit()
+    {
+        return "--".to_owned();
+    }
+    let (bank_digit, program_digit) = (char::from(place[0]), char::from(place[2]));
+    match bank.unwrap_or_default() {
+        bank if bank.ends_with("file2") => format!("{bank_digit}.{program_digit}"),
+        bank if bank.ends_with("file3") => format!("{bank_digit}{program_digit}."),
+        _ => format!("{bank_digit}{program_digit}"),
+    }
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
 /// Which way a program step goes.
 #[derive(Clone, Copy)]
 enum Step {
@@ -737,12 +763,40 @@ mod browser {
             if let Some(slot) = self.document.get_element_by_id("program-selector-slot") {
                 let _ = slot.append_child(&self.program_selector);
             }
+            // The digits a narrow display shows in place of the name.
+            let _ = self.program_selector.set_attribute(
+                "style",
+                &format!("--rf5-digits: \"{}\"", self.program_digits()),
+            );
             layout_group_outlines(&self.root);
         }
 
         /// The panel's pages, chosen with a row of the panel's own switches:
         /// the lit LED marks the page shown, and a PAGE legend runs under
         /// the row.
+        /// The selected program's display digits (see `program_digits`).
+        fn program_digits(&self) -> String {
+            let Some(instance) = self.context.as_ref().map(|context| &context.instance) else {
+                return "--".to_owned();
+            };
+            let Some(sound) = instance
+                .sounds
+                .iter()
+                .find(|sound| sound.id == instance.selected_sound_id)
+            else {
+                return "--".to_owned();
+            };
+            let user_place = sound.editable.then(|| {
+                instance
+                    .sounds
+                    .iter()
+                    .filter(|other| other.editable)
+                    .position(|other| other.id == sound.id)
+                    .map_or(0, |place| place + 1)
+            });
+            program_digits(&sound.name, sound.bank.as_deref(), user_place)
+        }
+
         fn render_tabs(&self) -> String {
             let mut keys = String::new();
             for (position, section) in panel::SECTIONS.iter().enumerate() {
@@ -750,10 +804,11 @@ mod browser {
                 let switch =
                     prophet_switch_svg(PAGE_SWITCH_INDEX + position as u32, active, None, false);
                 keys.push_str(&format!(
-                    "<div class=\"page-key\"><span class=\"control-label\">{label}</span><button type=\"button\" class=\"hardware-button page-button{}\" data-action=\"section\" data-section=\"{}\" aria-pressed=\"{active}\" aria-label=\"{label}: {caption}\" title=\"{caption}\">{switch}</button></div>",
+                    "<div class=\"page-key\"><span class=\"control-label\"><span class=\"label-full\">{label}</span><span class=\"label-short\">{short}</span></span><button type=\"button\" class=\"hardware-button page-button{}\" data-action=\"section\" data-section=\"{}\" aria-pressed=\"{active}\" aria-label=\"{label}: {caption}\" title=\"{caption}\">{switch}</button></div>",
                     if active { " active" } else { "" },
                     section.id,
                     label = section.label,
+                    short = section.short,
                     caption = section.caption,
                 ));
             }
@@ -1743,15 +1798,14 @@ mod browser {
                             finish_drag(&drag_app);
                         }
                     }
-                    "pointercancel" | "lostpointercapture" => {
+                    "pointercancel" | "lostpointercapture"
                         if active
                             .borrow()
                             .as_ref()
-                            .is_some_and(|(id, ..)| *id == pointer_id)
-                        {
-                            *active.borrow_mut() = None;
-                            finish_drag(&drag_app);
-                        }
+                            .is_some_and(|(id, ..)| *id == pointer_id) =>
+                    {
+                        *active.borrow_mut() = None;
+                        finish_drag(&drag_app);
                     }
                     _ => {}
                 }
@@ -2106,6 +2160,34 @@ mod tests {
             .find("render_program_memory());")
             .expect("the program memory");
         assert!(plaque < memory, "the nameplate comes first");
+    }
+
+    #[test]
+    fn every_page_key_has_a_short_name_for_a_narrow_row() {
+        for section in panel::SECTIONS {
+            assert!(
+                !section.short.is_empty() && section.short.len() <= 6,
+                "{}",
+                section.id
+            );
+        }
+    }
+
+    #[test]
+    fn narrow_displays_show_the_rev_3s_digits() {
+        let original = Some("factory.rf5.original");
+        assert_eq!(program_digits("1-1 Brass", original, None), "11");
+        assert_eq!(program_digits("5-8 Cat", original, None), "58");
+        assert_eq!(
+            program_digits("2-4 Dog", Some("factory.rf5.file2"), None),
+            "2.4"
+        );
+        assert_eq!(
+            program_digits("3-7 Slide Guitar", Some("factory.rf5.file3"), None),
+            "37."
+        );
+        assert_eq!(program_digits("My Horns", Some("user"), Some(7)), "U7");
+        assert_eq!(program_digits("Init", None, None), "--");
     }
 
     #[test]
