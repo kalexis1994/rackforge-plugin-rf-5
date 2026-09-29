@@ -9,7 +9,7 @@ the original one-edge CEM3340 hard-sync path, audio-rate polyphonic modulation,
 a four-pole resonant low-pass filter, separate filter and amplifier envelopes,
 unison and performance controls. All factory programs and interface assets
 needed at runtime are embedded in the plugin. The public catalog is the
-bit-exact V8.1 projection of the original forty-program set; development-only
+Rev 3's 120 factory programs as its factory tapes store them; development-only
 diagnostic fixtures are not packaged as user presets.
 
 ## Current status
@@ -73,7 +73,7 @@ now follows SD334's complete CEM3340 reference, multiplier,
 0.1-uF timing-capacitor and 1/12 V-per-code DAC network instead of a
 provisional 20 Hz anchor. The untrimmed chip's two internal constants come
 from five LFO rates measured on one Rev 3 unit's factory recordings, and it
-runs from approximately 0.0247 Hz at code 0 to 34.0 Hz at the panel's
+runs from approximately 0.0322 Hz at code 0 to 26.0 Hz at the panel's
 code-120 ceiling. Its
 saw and loaded square retain their positive-going Wheel Mod displacement;
 U380 alone centres triangle around ground for symmetric vibrato. A unified 6/11
@@ -103,7 +103,7 @@ measurements still pass through the evidence gates in
 
 The integrated RF-5 control surface is now active. It is rendered by a Rust
 WebAssembly module, binds every one of the sixty-three public controls exactly once,
-keeps the original forty-program bank below the hardware panel and reorganizes its five
+keeps the factory program banks below the hardware panel and reorganizes its five
 sections at phone, tablet and desktop widths. Pointer capture gives knobs the
 same relative vertical drag on mouse and touch, while RackForge parameter
 attributes keep host-owned context menus and MIDI Link available.
@@ -111,10 +111,12 @@ Automatic controller defaults use eleven Control Profile v1 declarations;
 their exact mappings and deliberately unbound roles are documented in
 [`docs/RACKFORGE_CONTROL_MAPPING.md`](docs/RACKFORGE_CONTROL_MAPPING.md).
 
-The `RF-5 Original 40` bank is generated from Sequential's official Group 5
-SysEx data. Its forty 24-byte records retain all 960 V8.1 record bytes,
-including their 22 stored switch bits, without reading knob positions from patch-sheet
-images. Provenance, conversion rules and reproducibility hashes are documented
+The factory banks, `RF-5 Original 40`, `RF-5 File 2` and `RF-5 File 3`, are
+read off recordings of the Rev 3's three factory program cassettes, each file
+verified by the tape's own checksum. Their 120 24-byte records are what a
+Rev 3 held in memory, including the 22 stored switch bits, without reading
+knob positions from patch-sheet images; program 1-8, overwritten on the File 1
+recording, comes from Sequential's Rev 4 recreation. Provenance, conversion rules and reproducibility hashes are documented
 in [`docs/fidelity/ORIGINAL_FACTORY_PROGRAMS.md`](docs/fidelity/ORIGINAL_FACTORY_PROGRAMS.md).
 
 Focused DSP conditions for Wheel/Poly Mod, Sync, resonance, envelopes and
@@ -137,8 +139,10 @@ tools/                 Reproducible package builders
 
 ## Build and test
 
-A RackForge checkout is expected next to this repository. For local development,
-copy `.cargo/config.toml.example` to `.cargo/config.toml` to use that checkout.
+A RackForge checkout is expected next to this repository. To build against
+that checkout, copy `.cargo/config.toml.example` to `.cargo/config.toml` in the directory
+that holds both checkouts -- not into this repository, whose own
+`.cargo/config.toml` carries the SIMD build flag every checkout needs.
 
 ```bash
 cargo fmt --all -- --check
