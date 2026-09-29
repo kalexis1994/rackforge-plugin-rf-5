@@ -73,6 +73,7 @@ impl WireVoiceCommand {
             1 => VoiceCommandKind::Start,
             2 => VoiceCommandKind::Retune,
             3 => VoiceCommandKind::Release,
+            4 => VoiceCommandKind::Damp,
             _ => return None,
         };
         Some(VoiceCommand {
@@ -653,6 +654,42 @@ mod tests {
     }
 
     #[test]
+    fn program_change_tail_cut_reaches_every_unit_exactly() {
+        let _guard = parallel_export_test_guard();
+        let mut reference = Engine::default();
+        let mut parallel = RackForgeParallelExport::default();
+        assert!(reference.load_program(DEFAULT_PRESET_ID));
+        assert!(reference.prepare(48_000.0));
+        assert!(parallel.prepare(48_000.0, TEST_FRAMES, 0, 2));
+        assert!(reference.load_program("original-38-echo-repeat"));
+        assert!(parallel.load_preset("original-38-echo-repeat"));
+
+        let mut actual = [0.0; TEST_FRAMES as usize * 2];
+        for block in 0..40 {
+            let midi_events: &[MidiEvent] = match block {
+                0 => &[midi(5, [0x90, 60, 110]), midi(9, [0x90, 64, 100])],
+                20 => &[midi(17, [0x80, 60, 0])],
+                _ => &[],
+            };
+            let expected = render_reference(&mut reference, midi_events, &[]);
+            parallel.process(&[], &mut actual, midi_events, &[], TEST_FRAMES, 0, 2);
+            assert_eq!(
+                actual, expected,
+                "diverged before the recall at block {block}"
+            );
+        }
+
+        // One tail is releasing and one key is held when the program changes.
+        assert!(reference.load_program("original-11-brass"));
+        assert!(parallel.load_preset("original-11-brass"));
+        for block in 0..40 {
+            let expected = render_reference(&mut reference, &[], &[]);
+            parallel.process(&[], &mut actual, &[], &[], TEST_FRAMES, 0, 2);
+            assert_eq!(actual, expected, "tail cut diverged at block {block}");
+        }
+    }
+
+    #[test]
     fn percussive_originals_retrigger_every_voice_through_the_parallel_contract() {
         let _guard = parallel_export_test_guard();
         for program in ["original-14-percussive-e-piano", "original-16-harpsichord"] {
@@ -776,6 +813,28 @@ mod tests {
                 settled_reference,
             );
         }
+    }
+
+    /// RackForge refuses a package whose runtime descriptor and manifest
+    /// disagree, so a version or state-format bump must move both.
+    #[test]
+    fn runtime_descriptor_matches_the_manifest() {
+        let runtime: serde_json::Value =
+            serde_json::from_str(include_str!("../package/metadata/runtime.json")).unwrap();
+        let manifest = include_str!("../package/rackforge-plugin.toml");
+        let field = |name: &str| {
+            manifest
+                .lines()
+                .find_map(|line| line.strip_prefix(&format!("{name} = ")))
+                .map(|value| value.trim().trim_matches('"').to_owned())
+                .unwrap_or_else(|| panic!("manifest has no {name}"))
+        };
+        assert_eq!(runtime["id"].as_str().unwrap(), field("id"));
+        assert_eq!(runtime["version"].as_str().unwrap(), field("version"));
+        assert_eq!(
+            runtime["state_version"].as_u64().unwrap().to_string(),
+            field("state_version")
+        );
     }
 
     #[test]

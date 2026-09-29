@@ -290,6 +290,9 @@ pub struct Voice {
     voice_index: usize,
     amplifier_envelope: AdsrEnvelope,
     filter_envelope: AdsrEnvelope,
+    /// Set when a program recall asks a releasing voice to fall silent; its
+    /// amplifier release then runs at the firmware's RELEASE-off time.
+    release_damped: bool,
     filter: Cem3320Filter,
     #[cfg(any(feature = "two-times", feature = "hybrid-four-two"))]
     decimator: decimator::Decimator2x,
@@ -419,6 +422,7 @@ impl Voice {
             self.filter.clear_signal_state();
             self.signal_path_dormant = false;
         }
+        self.release_damped = false;
         self.amplifier_envelope.trigger();
         self.filter_envelope.trigger();
     }
@@ -439,6 +443,16 @@ impl Voice {
         }
         self.amplifier_envelope.release();
         self.filter_envelope.release();
+    }
+
+    /// Silence a tail without touching a held note. Only a voice whose
+    /// amplifier envelope is already releasing obeys; its release then runs at
+    /// the fixed time V8.1 writes with RELEASE off, which the owner's manual
+    /// describes as no release "but also no audible whack".
+    pub fn damp_release(&mut self) {
+        if self.active && self.amplifier_envelope.is_releasing() {
+            self.release_damped = true;
+        }
     }
 
     pub fn next(
@@ -481,7 +495,11 @@ impl Voice {
             quantize_analog_pot(settings.amp_attack),
             quantize_analog_pot(settings.amp_decay),
             quantize_analog_pot(settings.amp_sustain),
-            quantize_analog_pot(settings.amp_release),
+            if self.release_damped {
+                rf_5_contract::hardware::RELEASE_DISABLED_EQUIVALENT_NORMALIZED
+            } else {
+                quantize_analog_pot(settings.amp_release)
+            },
         );
         if self.amplifier_envelope.is_idle() {
             self.active = false;

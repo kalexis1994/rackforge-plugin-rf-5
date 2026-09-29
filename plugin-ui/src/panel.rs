@@ -105,6 +105,7 @@ const OUTPUT: ControlGroup = ControlGroup {
         "master-volume",
         "tune",
         "vintage-spread",
+        "program-change-mutes-tails",
     ],
 };
 const SCALE: ControlGroup = ControlGroup {

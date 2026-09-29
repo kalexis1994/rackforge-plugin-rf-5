@@ -40,6 +40,8 @@ const PRE_MASTER_TUNE_PARAMETER_COUNT: usize = 60;
 const PRE_MASTER_TUNE_STATE_BYTES: usize = PRE_MASTER_TUNE_PARAMETER_COUNT * 4;
 const PRE_MACHINE_OPERATIONS_PARAMETER_COUNT: usize = 61;
 const PRE_MACHINE_OPERATIONS_STATE_BYTES: usize = PRE_MACHINE_OPERATIONS_PARAMETER_COUNT * 4;
+const PRE_TAIL_MUTE_PARAMETER_COUNT: usize = 63;
+const PRE_TAIL_MUTE_STATE_BYTES: usize = PRE_TAIL_MUTE_PARAMETER_COUNT * 4;
 // MIDI CC1 has only 128 positions, whereas the original wheel is a continuous
 // passive potentiometer. A short reconstruction filter removes controller
 // steps without adding perceptible lag to a physical wheel gesture.
@@ -54,6 +56,7 @@ pub enum VoiceCommandKind {
     Start = 1,
     Retune = 2,
     Release = 3,
+    Damp = 4,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -123,6 +126,7 @@ impl ParallelVoiceUnit {
             ),
             VoiceCommandKind::Retune => self.voice.retune(command.channel, command.note),
             VoiceCommandKind::Release => self.voice.release(),
+            VoiceCommandKind::Damp => self.voice.damp_release(),
         }
     }
 
@@ -931,7 +935,24 @@ impl Engine {
         if was_unison != self.unison_enabled() {
             self.rebuild_allocation_for_mode();
         }
+        if self.settings.get(Parameter::ProgramChangeMutesTails) >= 0.5 {
+            self.damp_releasing_voices();
+        }
         true
+    }
+
+    /// Only a voice already in its release obeys; held notes take the new
+    /// program exactly as on the original.
+    fn damp_releasing_voices(&mut self) {
+        for unit in 0..VOICE_COUNT {
+            self.voices[unit].damp_release();
+            self.push_voice_command(VoiceCommand {
+                unit: unit as u8,
+                kind: VoiceCommandKind::Damp,
+                epoch: self.voice_epoch,
+                ..VoiceCommand::default()
+            });
+        }
     }
 
     pub fn save_state(&self, destination: &mut [u8]) -> Option<usize> {
@@ -1011,6 +1032,23 @@ impl Engine {
             }
             let mut values = Settings::default().as_array();
             values[..PRE_MACHINE_OPERATIONS_PARAMETER_COUNT].copy_from_slice(&old);
+            let Some(settings) = Settings::from_array(values) else {
+                return false;
+            };
+            self.install_loaded_settings(settings);
+            return true;
+        }
+        if state.len() == PRE_TAIL_MUTE_STATE_BYTES {
+            let mut old = [0.0_f32; PRE_TAIL_MUTE_PARAMETER_COUNT];
+            let (chunks, remainder) = state.as_chunks::<4>();
+            if !remainder.is_empty() {
+                return false;
+            }
+            for (value, chunk) in old.iter_mut().zip(chunks) {
+                *value = f32::from_le_bytes(*chunk);
+            }
+            let mut values = Settings::default().as_array();
+            values[..PRE_TAIL_MUTE_PARAMETER_COUNT].copy_from_slice(&old);
             let Some(settings) = Settings::from_array(values) else {
                 return false;
             };
@@ -1644,6 +1682,83 @@ mod tests {
         assert_eq!(engine.settings.get(Parameter::MasterTune), 0.31);
         assert_eq!(engine.settings.get(Parameter::A440), 0.0);
         assert_eq!(engine.parameter(Parameter::Tune as u32), Some(0.0));
+    }
+
+    #[test]
+    fn pre_tail_mute_state_enables_the_tail_cut() {
+        let mut old_values = Settings::default().as_array();
+        old_values[Parameter::VintageSpread as usize] = 0.4;
+        let mut state = [0_u8; PRE_TAIL_MUTE_STATE_BYTES];
+        for (chunk, value) in state
+            .as_chunks_mut::<4>()
+            .0
+            .iter_mut()
+            .zip(old_values[..PRE_TAIL_MUTE_PARAMETER_COUNT].iter())
+        {
+            chunk.copy_from_slice(&value.to_le_bytes());
+        }
+
+        let mut engine = Engine::default();
+        assert!(engine.set_parameter(Parameter::ProgramChangeMutesTails as u32, 0.0));
+        assert!(engine.load_state(&state));
+        assert_eq!(engine.settings.get(Parameter::VintageSpread), 0.4);
+        assert_eq!(engine.settings.get(Parameter::ProgramChangeMutesTails), 1.0);
+    }
+
+    /// Plays a note into its release and holds another, recalls a program,
+    /// and reports whether each voice is still sounding 60 ms later.
+    fn voices_after_program_change(cut_tails: bool) -> (bool, bool) {
+        let mut engine = Engine::default();
+        assert!(engine.prepare(48_000.0));
+        assert!(engine.load_program("original-38-echo-repeat"));
+        assert!(engine.set_parameter(
+            Parameter::ProgramChangeMutesTails as u32,
+            if cut_tails { 1.0 } else { 0.0 }
+        ));
+        engine.note_on(0, 60, 100);
+        for _ in 0..24_000 {
+            let _ = engine.next_sample();
+        }
+        engine.note_off(0, 60);
+        engine.note_on(0, 67, 100);
+        for _ in 0..4_800 {
+            let _ = engine.next_sample();
+        }
+        let released = (0..VOICE_COUNT)
+            .find(|&unit| engine.voices[unit].note() == 60)
+            .unwrap();
+        let held = (0..VOICE_COUNT)
+            .find(|&unit| engine.voices[unit].matches(0, 67))
+            .unwrap();
+        assert!(
+            engine.voices[released].is_active(),
+            "the tail should still ring"
+        );
+
+        assert!(engine.load_program("original-11-brass"));
+        for _ in 0..2_880 {
+            let _ = engine.next_sample();
+        }
+        (
+            engine.voices[released].is_active(),
+            engine.voices[held].is_active(),
+        )
+    }
+
+    #[test]
+    fn program_change_cuts_only_releasing_tails() {
+        let (tail, held) = voices_after_program_change(true);
+        assert!(!tail, "the releasing voice kept ringing on the new program");
+        assert!(
+            held,
+            "a held note must take the new program, as on the original"
+        );
+    }
+
+    #[test]
+    fn original_program_change_lets_tails_finish_on_the_new_program() {
+        let (tail, held) = voices_after_program_change(false);
+        assert!(tail && held);
     }
 
     #[test]

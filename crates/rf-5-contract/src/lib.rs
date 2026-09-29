@@ -9,7 +9,7 @@ pub mod hardware;
 
 pub const PATCH_PARAMETER_COUNT: usize = 48;
 pub const SCALE_NOTE_COUNT: usize = 12;
-pub const PARAMETER_COUNT: usize = PATCH_PARAMETER_COUNT + SCALE_NOTE_COUNT + 3;
+pub const PARAMETER_COUNT: usize = PATCH_PARAMETER_COUNT + SCALE_NOTE_COUNT + 4;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]
@@ -77,6 +77,9 @@ pub enum Parameter {
     MasterTune = 60,
     A440 = 61,
     Tune = 62,
+    /// Host convenience, not a Rev 3 control: releasing voices fade out when a
+    /// program is recalled instead of finishing their tails on the new one.
+    ProgramChangeMutesTails = 63,
 }
 
 pub const SCALE_PARAMETERS: [Parameter; SCALE_NOTE_COUNT] = [
@@ -162,6 +165,7 @@ impl TryFrom<u32> for Parameter {
             60 => Ok(Self::MasterTune),
             61 => Ok(Self::A440),
             62 => Ok(Self::Tune),
+            63 => Ok(Self::ProgramChangeMutesTails),
             _ => Err(()),
         }
     }
@@ -240,6 +244,7 @@ impl Default for Settings {
                 0.5,
                 0.0,
                 0.0,
+                1.0,
             ],
         }
     }

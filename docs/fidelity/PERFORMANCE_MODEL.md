@@ -44,6 +44,18 @@ MASTER TUNE, not to the wheel.
   It moves R2's wiper across the same wheel-assembly travel as the PITCH
   wheel: 9.67% of the track from the grounded stop at full CC1 (see
   [`LFO_AND_WHEEL_MOD_MODEL.md`](LFO_AND_WHEEL_MOD_MODEL.md)).
+- Program recall follows the V8.1 PROGRAM SELECT routine (0x07AE to 0x07F0),
+  which marks the pots inactive, copies the 24 program bytes to the edit
+  buffer and unpacks the switches. It gates nothing off and resets no voice,
+  so on the original held notes and releasing tails both continue on the new
+  program as the next scan refreshes the sample-and-holds.
+- CUT TAILS (`program-change-mutes-tails`, on by default) is a host
+  convenience with no Rev 3 counterpart. When a program is recalled, a voice
+  whose amplifier envelope is already releasing finishes it at the firmware's
+  RELEASE-off time, V8.1's fixed code 0x64, which is short and click-free.
+  Held keys and pedal-sustained notes still take the new program as on the
+  original. Switching CUT TAILS off restores the original behaviour. It is not
+  stored in programs.
 - MIDI CC64 defers key releases until the sustain pedal rises, in both
   polyphonic and Unison allocation.
 - Polyphonic assignment gives the first five distinct notes to physical voices
