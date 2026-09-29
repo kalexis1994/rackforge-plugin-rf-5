@@ -215,15 +215,28 @@ dependencies = [
 
 [[package]]
 name = "rackforge-plugin-sdk"
-version = "0.1.7"
-source = "git+https://github.com/kalexis1994/rackforge.git?rev=03fdb0ea75850405cf57683ae957eec109e85daa#03fdb0ea75850405cf57683ae957eec109e85daa"
+version = "0.1.25"
+source = "git+https://github.com/kalexis1994/rackforge.git?rev=2574bc3825bec08eb8895e9a054612474773d169#2574bc3825bec08eb8895e9a054612474773d169"
+
+[[package]]
+name = "rackforge-program-api"
+version = "0.1.25"
+source = "git+https://github.com/kalexis1994/rackforge.git?rev=2574bc3825bec08eb8895e9a054612474773d169#2574bc3825bec08eb8895e9a054612474773d169"
+dependencies = [
+ "semver",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "rackforge-rf-5"
 version = "0.1.18"
 dependencies = [
  "rackforge-plugin-sdk",
+ "rackforge-program-api",
  "rf-5-dsp",
+ "serde",
  "serde_json",
 ]
 
@@ -292,6 +305,12 @@ name = "rustversion"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
+
+[[package]]
+name = "semver"
+version = "1.0.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
 
 [[package]]
 name = "serde"
@@ -385,6 +404,26 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "thiserror"
+version = "2.0.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09e52cb86a36cede5cb101bf8908837b3e4c6e5e59fe7fd85c23fb56200d189e"
+dependencies = [
+ "thiserror-impl",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "2.0.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe5197923287db20a58125f0bc85c062f7f2c892de97b18c356f9efb14b28524"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.4",
 ]
 
 [[package]]

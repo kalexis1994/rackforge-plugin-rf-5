@@ -20,8 +20,15 @@ use lfo::{Lfo, LfoWaveSelection};
 use noise::{PinkNoise, WhiteNoise};
 use rf_5_contract::{
     PARAMETER_COUNT, Parameter, Settings,
-    hardware::{ControlVoltageDestination, decode_program, encode_program, quantize_analog_pot},
+    hardware::{
+        ControlVoltageDestination, PROGRAM_BYTES, ProgramByte, decode_program, encode_program,
+        quantize_analog_pot,
+    },
 };
+
+/// Bytes in one program of the Rev 3's memory: 24, one per pot position (7
+/// bits) with a switch in the eighth.
+pub const PROGRAM_MEMORY_BYTES: usize = PROGRAM_BYTES;
 use rf_5_voice::{
     Voice, VoiceModulation, VoiceSettings,
     autotune::{AutoTune, Oscillator},
@@ -905,6 +912,36 @@ impl Engine {
             return false;
         };
         self.apply_program(program)
+    }
+
+    /// The program memory the panel would store now, as the Rev 3's RECORD
+    /// does: every pot at its 128 positions, every switch as a bit, in the
+    /// 24 bytes of one program.
+    pub fn program_memory(&self) -> [u8; PROGRAM_MEMORY_BYTES] {
+        encode_program(self.settings).map(ProgramByte::raw)
+    }
+
+    /// Recalls a program from its memory bytes, as a program button does.
+    pub fn load_program_memory(&mut self, memory: [u8; PROGRAM_MEMORY_BYTES]) -> bool {
+        self.apply_program(programs::Program::original(
+            memory.map(ProgramByte::from_raw),
+        ))
+    }
+
+    /// A factory program's memory, for a copy of it.
+    pub fn factory_program_memory(id: &str) -> Option<[u8; PROGRAM_MEMORY_BYTES]> {
+        let program = programs::find(id)?;
+        let raw = match program.raw_v81 {
+            Some(raw) => raw,
+            None => {
+                let mut settings = Settings::default();
+                if !settings.apply_patch_array(program.values) {
+                    return None;
+                }
+                encode_program(settings)
+            }
+        };
+        Some(raw.map(ProgramByte::raw))
     }
 
     #[cfg(any(test, feature = "diagnostic-programs"))]
