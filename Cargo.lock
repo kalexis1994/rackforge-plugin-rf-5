@@ -231,7 +231,7 @@ dependencies = [
 
 [[package]]
 name = "rackforge-rf-5"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "rackforge-plugin-sdk",
  "rackforge-program-api",
@@ -242,7 +242,7 @@ dependencies = [
 
 [[package]]
 name = "rf-5-audition"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "rf-5-contract",
  "rf-5-dsp",
@@ -253,11 +253,11 @@ dependencies = [
 
 [[package]]
 name = "rf-5-contract"
-version = "0.1.18"
+version = "0.1.19"
 
 [[package]]
 name = "rf-5-dsp"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "libm",
  "rf-5-contract",
@@ -266,7 +266,7 @@ dependencies = [
 
 [[package]]
 name = "rf-5-voice"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "libm",
  "rf-5-contract",
@@ -274,7 +274,7 @@ dependencies = [
 
 [[package]]
 name = "rf-5-web"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "js-sys",
  "png",
