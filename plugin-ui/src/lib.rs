@@ -287,7 +287,7 @@ enum Step {
 /// printed on the panel under it in two lines.
 fn step_key_svg(index: u32, step: Step) -> String {
     let name = match step {
-        Step::Previous => "BACK<br>PROGRAM",
+        Step::Previous => "PREV<br>PROGRAM",
         Step::Next => "NEXT<br>PROGRAM",
     };
     format!(
@@ -2126,7 +2126,7 @@ mod tests {
 
         let step = step_key_svg(12, Step::Next);
         assert!(!step.contains("data-led=") && step.contains(">NEXT<br>PROGRAM</span>"));
-        assert!(step_key_svg(13, Step::Previous).contains(">BACK<br>PROGRAM</span>"));
+        assert!(step_key_svg(13, Step::Previous).contains(">PREV<br>PROGRAM</span>"));
 
         let light = prophet_switch_svg(11, false, None, true);
         assert!(light.contains("stop-color=\"#77837f\""));
