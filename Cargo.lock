@@ -215,13 +215,13 @@ dependencies = [
 
 [[package]]
 name = "rackforge-plugin-sdk"
-version = "0.1.25"
-source = "git+https://github.com/kalexis1994/rackforge.git?rev=2574bc3825bec08eb8895e9a054612474773d169#2574bc3825bec08eb8895e9a054612474773d169"
+version = "0.1.24"
+source = "git+https://github.com/kalexis1994/rackforge.git?rev=e68611b4bed5dcc351522153894a76a08c89b1d2#e68611b4bed5dcc351522153894a76a08c89b1d2"
 
 [[package]]
 name = "rackforge-program-api"
-version = "0.1.25"
-source = "git+https://github.com/kalexis1994/rackforge.git?rev=2574bc3825bec08eb8895e9a054612474773d169#2574bc3825bec08eb8895e9a054612474773d169"
+version = "0.1.24"
+source = "git+https://github.com/kalexis1994/rackforge.git?rev=e68611b4bed5dcc351522153894a76a08c89b1d2#e68611b4bed5dcc351522153894a76a08c89b1d2"
 dependencies = [
  "semver",
  "serde",
@@ -231,7 +231,7 @@ dependencies = [
 
 [[package]]
 name = "rackforge-rf-5"
-version = "0.1.20"
+version = "0.1.21"
 dependencies = [
  "rackforge-plugin-sdk",
  "rackforge-program-api",
@@ -242,7 +242,7 @@ dependencies = [
 
 [[package]]
 name = "rf-5-audition"
-version = "0.1.20"
+version = "0.1.21"
 dependencies = [
  "rf-5-contract",
  "rf-5-dsp",
@@ -253,11 +253,11 @@ dependencies = [
 
 [[package]]
 name = "rf-5-contract"
-version = "0.1.20"
+version = "0.1.21"
 
 [[package]]
 name = "rf-5-dsp"
-version = "0.1.20"
+version = "0.1.21"
 dependencies = [
  "libm",
  "rf-5-contract",
@@ -266,7 +266,7 @@ dependencies = [
 
 [[package]]
 name = "rf-5-voice"
-version = "0.1.20"
+version = "0.1.21"
 dependencies = [
  "libm",
  "rf-5-contract",
@@ -274,7 +274,7 @@ dependencies = [
 
 [[package]]
 name = "rf-5-web"
-version = "0.1.20"
+version = "0.1.21"
 dependencies = [
  "js-sys",
  "png",

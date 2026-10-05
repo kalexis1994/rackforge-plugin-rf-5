@@ -12,6 +12,12 @@ concurrency:
   group: rf-5-ci-${{ github.ref }}
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
+env:
+  CARGO_INCREMENTAL: "0"
+  # The RackForge whose SDK the processor builds against (Cargo.toml pins the
+  # same commit) and whose tools check and pack it.
+  RACKFORGE_REF: e68611b4bed5dcc351522153894a76a08c89b1d2
+
 jobs:
   rust:
     strategy:
@@ -36,11 +42,14 @@ jobs:
       - name: Build portable processor
         run: cargo build --locked --release -p rackforge-rf-5 --target wasm32-unknown-unknown
 
-  rfplugin:
-    name: Portable .rfplugin
+  # The wasm-v1 component every RackForge host runs, packed as before.
+  component:
+    name: Component
     needs: rust
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    outputs:
+      version: ${{ steps.package.outputs.version }}
     steps:
       - name: Check out RF-5
         uses: actions/checkout@v6
@@ -48,7 +57,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: kalexis1994/rackforge
-          ref: 3095cc0c3fe4b13f74af8de07458ce44d3349908
+          ref: ${{ env.RACKFORGE_REF }}
           path: .rackforge
           persist-credentials: false
       - name: Set up Rust and WebAssembly target
@@ -76,19 +85,180 @@ jobs:
         run: |
           version="$(sed -n 's/^version = "\([^"]*\)"$/\1/p' plugin/package/rackforge-plugin.toml | head -n 1)"
           test -n "$version"
-          output="$GITHUB_WORKSPACE/artifacts/RF-5.rfplugin"
-          bash tools/build-package.sh "$output"
-          digest="$(sha256sum "$output" | awk '{print $1}')"
-          printf '%s  %s\n' "$digest" "$(basename "$output")" > "$output.sha256"
-          echo "artifact_name=RF-5-$version-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
-          echo "artifact=$output" >> "$GITHUB_OUTPUT"
+          bash tools/build-package.sh "$GITHUB_WORKSPACE/component.rfplugin"
+          # The package exactly as packed, the component as binaryen left it:
+          # what every native build is compared with and packed beside.
+          unzip -q "$GITHUB_WORKSPACE/component.rfplugin" -d "$GITHUB_WORKSPACE/component"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Keep the component package
+        uses: actions/upload-artifact@v6
+        with:
+          name: rf-5-component
+          path: component
+          if-no-files-found: error
+          retention-days: 7
+
+  # The same processor built natively, every build a runner can execute held
+  # to the component first: every program, played through both forms and
+  # through the native build's units, must come out the same bits.
+  native:
+    name: Native ${{ matrix.platform }}
+    needs: component
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The oldest glibc a runner offers, so the library loads on every
+          # distribution as new or newer; on an older one the host runs the
+          # component instead.
+          - platform: linux-x86_64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            library: librackforge_rf_5.so
+            compare: true
+          - platform: linux-aarch64
+            os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+            library: librackforge_rf_5.so
+            compare: true
+          - platform: windows-x86_64
+            os: windows-2022
+            target: x86_64-pc-windows-msvc
+            library: rackforge_rf_5.dll
+            compare: true
+          - platform: macos-aarch64
+            os: macos-14
+            target: aarch64-apple-darwin
+            library: librackforge_rf_5.dylib
+            compare: true
+          # Built, not run: no runner executes Android. The packer still
+          # refuses it unless it exports the portable entry.
+          - platform: android-aarch64
+            os: ubuntu-24.04
+            target: aarch64-linux-android
+            library: librackforge_rf_5.so
+            compare: false
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out RF-5
+        uses: actions/checkout@v6
+      - name: Check out the pinned RackForge tools
+        uses: actions/checkout@v6
+        with:
+          repository: kalexis1994/rackforge
+          ref: ${{ env.RACKFORGE_REF }}
+          path: .rackforge
+          persist-credentials: false
+      - name: Set up Rust and the target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Use the NDK's linker
+        if: matrix.platform == 'android-aarch64'
+        run: |
+          linker="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
+          test -x "$linker"
+          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$linker" >> "$GITHUB_ENV"
+      - name: Build the native processor
+        run: cargo build --locked --release --target ${{ matrix.target }} -p rackforge-rf-5
+      - name: Install the system libraries RackForge's tools link against
+        if: matrix.compare && runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev pkg-config
+      - name: Build RackForge's comparison tool
+        if: matrix.compare
+        working-directory: .rackforge
+        run: cargo build --locked --release -p rackforge-core --bin rackforge-core
+      - name: Fetch the component package
+        if: matrix.compare
+        uses: actions/download-artifact@v8
+        with:
+          name: rf-5-component
+          path: component
+      - name: Hold the native build to the component
+        if: matrix.compare
+        run: |
+          .rackforge/target/release/rackforge-core compare-native component \
+            "target/${{ matrix.target }}/release/${{ matrix.library }}" --seconds 1.5
+      - name: Keep the native build
+        uses: actions/upload-artifact@v6
+        with:
+          name: rf-5-native-${{ matrix.platform }}
+          path: target/${{ matrix.target }}/release/${{ matrix.library }}
+          if-no-files-found: error
+          retention-days: 7
+
+  # One .rfplugin: the component and every native build beside it.
+  rfplugin:
+    name: RF-5 .rfplugin
+    needs: [component, native]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out the pinned RackForge tools
+        uses: actions/checkout@v6
+        with:
+          repository: kalexis1994/rackforge
+          ref: ${{ env.RACKFORGE_REF }}
+          path: .rackforge
+          persist-credentials: false
+      - name: Install the system libraries RackForge's tools link against
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev pkg-config
+      - name: Build RackForge's packager and inspector
+        working-directory: .rackforge
+        run: cargo build --locked --release -p rackforge-store -p rackforge-core
+      - name: Fetch the component package
+        uses: actions/download-artifact@v8
+        with:
+          name: rf-5-component
+          path: component
+      - name: Fetch the native builds
+        uses: actions/download-artifact@v8
+        with:
+          pattern: rf-5-native-*
+          path: native
+      - name: Pack the component with every native build
+        run: |
+          tools=.rackforge/target/release
+          natives=()
+          for directory in native/rf-5-native-*; do
+            platform="${directory#native/rf-5-native-}"
+            library="$(find "$directory" -maxdepth 1 -type f | head -n 1)"
+            natives+=(--native "$platform=$library")
+          done
+          mkdir -p artifacts
+          # The component is packed as compared: already optimised, not again.
+          RACKFORGE_OPTIMIZE_PLUGINS=0 "$tools/rackforge-store" pack-wasm \
+            component component/component.wasm artifacts/RF-5.rfplugin "${natives[@]}"
+      - name: Check the package as a host will install it
+        run: |
+          tools=.rackforge/target/release
+          mkdir check
+          unzip -q artifacts/RF-5.rfplugin -d check
+          "$tools/rackforge-core" inspect check
+          version="${{ needs.component.outputs.version }}"
+          "$tools/rackforge-store" install-local artifacts/RF-5.rfplugin store --official
+          # Installed as the official set installs it, this runner's own
+          # build is the one that loads.
+          "$tools/rackforge-core" smoke "store/packages/org.rackforge.rf-5/$version" \
+            --data-root smoke-data 2> smoke.log
+          cat smoke.log
+          grep -q '^PLUGIN_NATIVE_BUILD id=org.rackforge.rf-5' smoke.log
+          (cd artifacts && sha256sum RF-5.rfplugin > RF-5.rfplugin.sha256)
+          cat artifacts/RF-5.rfplugin.sha256
       - name: Upload RF-5 package
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ steps.package.outputs.artifact_name }}
+          name: RF-5-${{ needs.component.outputs.version }}-${{ github.sha }}
           path: |
-            ${{ steps.package.outputs.artifact }}
-            ${{ steps.package.outputs.artifact }}.sha256
+            artifacts/RF-5.rfplugin
+            artifacts/RF-5.rfplugin.sha256
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
