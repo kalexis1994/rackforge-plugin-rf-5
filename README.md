@@ -2,7 +2,7 @@
 
 ![RF-5 instrument](plugin/package/branding/banner.png)
 
-RF-5 is a five-voice analog-modelled polysynth for RackForge. Two oscillators, a resonant low-pass filter and separate envelopes for the filter and amplifier make it easy to move from a soft pad to a sharp brass sound.
+RF-5 is a five-voice analog-modelled polysynth for RackForge inspired by the Sequential Prophet-5. Two oscillators, a resonant low-pass filter and separate envelopes for the filter and amplifier make it easy to move from a soft pad to a sharp brass sound.
 
 ## Install
 
